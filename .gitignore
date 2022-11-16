@@ -1,0 +1,18 @@
+# Ignore files in folder except .gitkeep
+data/scATACseq/*
+!data/scATACseq/.gitkeep
+data/bulkATACseq/*
+!data/bulkATACseq/.gitkeep
+data/scRNAseq/*
+!data/scRNAseq/.gitkeep
+report/*
+!report/.gitkeep
+exp/*
+!exp/.gitkeep
+
+# Ignore automatic created files
+.Rhistory
+.RData
+
+# Ignore Snakemake environments
+.snakemake/*
