@@ -1,0 +1,287 @@
+---
+title: "scATACseq_R_NormalizationReduction"
+author: "Laëtitia Racine"
+date: "2022-09-02"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+```{r, Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(Seurat)
+library(Signac)
+library(ggplot2)
+library(cowplot) # plot_grid() function
+library(gridExtra) # arrangeGrob() function
+library(knitr)
+library(stringr)
+
+```
+
+```{r, Working directories and external script}
+
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory,"exp/","scATACseq_R_NormalizationReduction/"))
+dir.create(path = paste0(directory,"exp/","scATACseq_R_NormalizationReduction/", current_date))
+directory_output = paste0(directory,"exp/","scATACseq_R_NormalizationReduction/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_AddAnnotations/"))
+seurat_common_merged = readRDS(paste0(dir, "/", "seurat_obj_qc_annot_common_merged.rds"))
+
+```
+
+
+# Normalization and dimension choice
+
+```{r, Normalization, message=F, warning=F, results = 'hold', fig.width=16, fig.height=6}
+
+seurat_common_merged <- RunTFIDF(seurat_common_merged)
+seurat_common_merged <- FindTopFeatures(seurat_common_merged, min.cutoff = 'q0') 
+seurat_common_merged <- RunSVD(seurat_common_merged)
+
+plot_dim_depth = DepthCor(object = seurat_common_merged, 
+                          assay = "peaks", 
+                          reduction = "lsi", 
+                          n = NULL) + 
+  geom_hline(yintercept = -0.7, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = + 0.7, linetype = "dashed", color = "red")
+
+plot_dim_elb = ElbowPlot(object = seurat_common_merged, 
+                         ndims = 50, 
+                         reduction = "lsi") + 
+  ylim(0.2, 3) +
+  theme(plot.background = element_rect(fill = "white"))
+
+print(plot_dim_depth | plot_dim_elb)
+
+```
+
+```{r, Dimension choice}
+
+print("We chose dimensions 2 --> 30 for downstream analysis.")
+dims_choice = c(2:30)
+
+```
+
+
+# Dimensional reduction and clusters determination
+
+```{r, UMAP Reduction - Resolution Calcul}
+
+reduction_possibility = function(seurat_obj, dims_choice) {
+  
+  seurat_obj <- RunUMAP(object = seurat_obj, reduction = 'lsi', dims = dims_choice)
+  seurat_obj <- FindNeighbors(object = seurat_obj, reduction = 'lsi', dims = dims_choice)
+  
+  # Try different resolution to find the best granularity
+  for (res in c(0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 
+                0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 0.25)) {
+    seurat_obj <- FindClusters(
+      object = seurat_obj, 
+      resolution = res, 
+      algorithm = 3)
+  }
+  return(seurat_obj)
+  
+}
+
+seurat_common_merged = reduction_possibility(seurat_common_merged, dims_choice)
+
+```
+
+```{r, UMAP Reduction - Visualize resolutions, results = 'hold', fig.width=20, fig.height=30}
+
+plot_resolution = plot_grid(ncol = 3, 
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.01") + ggtitle("Resolution_0.01"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.02") + ggtitle("Resolution_0.02"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.03") + ggtitle("Resolution_0.03"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.04") + ggtitle("Resolution_0.04"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.05") + ggtitle("Resolution_0.05"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.06") + ggtitle("Resolution_0.06"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap",
+            group.by = "peaks_snn_res.0.07") + ggtitle("Resolution_0.07"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.08") + ggtitle("Resolution_0.08"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.09") + ggtitle("Resolution_0.09"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.1") + ggtitle("Resolution_0.1"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.2") + ggtitle("Resolution_0.2"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.25") + ggtitle("Resolution_0.25"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.3") + ggtitle("Resolution_0.3"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.4") + ggtitle("Resolution_0.4"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.5") + ggtitle("Resolution_0.5"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.6") + ggtitle("Resolution_0.6"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.7") + ggtitle("Resolution_0.7"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.8") + ggtitle("Resolution_0.8"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.0.9") + ggtitle("Resolution_0.9"),
+    DimPlot(seurat_common_merged, label = TRUE, reduction = "umap", 
+            group.by = "peaks_snn_res.1") + ggtitle("Resolution_1"))
+
+print(plot_resolution)
+  
+```
+
+
+# Visualization on UMAP graph 
+
+```{r, Visualize all cond, fig.height = 12, fig.width = 10, results = 'keep'}
+
+allcond_umap = DimPlot(object = seurat_common_merged, 
+                       group.by = 'orig.ident', 
+                       reduction ="umap",
+                       pt.size = 0.1) + 
+  ggtitle("") + 
+  scale_color_manual(values = color_code, limits = force)
+
+allcond_split_umap = DimPlot(object = seurat_common_merged, 
+                             group.by = 'orig.ident', 
+                             split.by = 'orig.ident',
+                             reduction ="umap",
+                             pt.size = 0.1) + 
+  ggtitle("") + 
+  scale_color_manual(values = color_code, limits = force)
+
+
+allcond_umap / allcond_split_umap
+
+```
+
+```{r, Visualize individual cond, fig.height = 6, fig.width = 14}
+
+seurat_common_merged = SetIdent(object = seurat_common_merged, value = "orig.ident")
+ind_umap = list() 
+
+for (i in 1:length(unique(seurat_common_merged$orig.ident))) {
+  
+  # Select condition to highlight
+  highlight_cond = unique(seurat_common_merged$orig.ident)[i]
+  color = unname(noquote(color_code[highlight_cond]))
+  others_cond = setdiff(unique(seurat_common_merged$orig.ident), highlight_cond)
+  others_cond_group = paste(others_cond, collapse=", ")
+  
+  # Sort cell according to their condition
+  cell_highlight = unlist(CellsByIdentities(object = seurat_common_merged, idents = highlight_cond))
+  cell_nohighlight = unlist(CellsByIdentities(object = seurat_common_merged, idents = others_cond))
+  
+  # Plot 
+  plot_umap = DimPlot(object = seurat_common_merged,
+                      group.by = "orig.ident",
+                      reduction ="umap",
+                      pt.size = 0.1,
+                      cells.highlight = list(cell_highlight, cell_nohighlight),
+                      cols.highlight = c(color,"grey")) +
+    ggtitle(highlight_cond) +
+    theme(legend.position = "none")
+  
+  ind_umap[[i]] = plot_umap
+  
+}
+
+ind_umap[[1]] | ind_umap[[2]] | ind_umap[[3]] | ind_umap[[4]]
+
+```
+
+```{r, Resolution choice, results='hold', fig.height=10, fig.width=16}
+
+cat("Based on the conditions we want to analyze, two resolutions can be interesting for downstream analysis :", "\n", 
+    "- resolution 0.06 for bigger clusters", "\n",
+    "- resolution 0.25 for more precise clusters", "\n",
+    "We erase seurat_clusters meta.data column and we keep the two columns with clusters number for resolution 0.06 and 0.25.")
+
+seurat_common_merged@meta.data = seurat_common_merged@meta.data %>%
+  dplyr::select(-peaks_snn_res.0.01,-peaks_snn_res.0.02,-peaks_snn_res.0.03,
+                -peaks_snn_res.0.04,-peaks_snn_res.0.05,-peaks_snn_res.0.07,
+                -peaks_snn_res.0.08,-peaks_snn_res.0.09,-peaks_snn_res.0.1,
+                -peaks_snn_res.0.2,-peaks_snn_res.0.3,-peaks_snn_res.0.4,
+                -peaks_snn_res.0.5,-peaks_snn_res.0.6,-peaks_snn_res.0.7,
+                -peaks_snn_res.0.8,-peaks_snn_res.0.9,-peaks_snn_res.1,
+                -seurat_clusters)
+
+plot_clusters = 
+  DimPlot(seurat_common_merged, reduction = "umap", 
+          group.by = "peaks_snn_res.0.06") + ggtitle("Resolution_0.06") |
+  DimPlot(seurat_common_merged, reduction = "umap", 
+          group.by = "peaks_snn_res.0.25") + ggtitle("Resolution_0.25")
+plot_clusters
+
+```
+
+```{r, Save outputs}
+
+ggsave(plot = plot_dim_depth | plot_dim_elb, 
+       file = paste0(directory_output, "plot_dimension_choice.svg"))
+
+ggsave(plot = plot_resolution, 
+       file = paste0(directory_output, "plot_resolution.svg"))
+
+ggsave(plot = allcond_umap, 
+       file = paste0(directory_output, "plot_umap_allconditions_merged.svg"))
+
+ggsave(plot = allcond_split_umap, 
+       file = paste0(directory_output, "plot_umap_allconditions_split.svg"))
+
+ggsave(plot = arrangeGrob(grobs = ind_umap, ncol = 4, nrow = 1),
+       filename = paste0(directory_output, "plot_umap_individual.svg"),
+       width = 40, height = 12)
+
+ggsave(plot = plot_clusters, 
+       file = paste0(directory_output, "plot_umap_clusters.svg"))
+
+saveRDS(object = seurat_common_merged, 
+        file = paste0(directory_output, "seurat_common_merged_qc_norm_reduced.rds"))
+
+```
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+# Show package version
+sessionInfo()
+
+```
