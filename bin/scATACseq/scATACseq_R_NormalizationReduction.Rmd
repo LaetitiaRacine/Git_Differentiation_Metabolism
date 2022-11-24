@@ -50,7 +50,7 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 ```{r, Input loading}
 
 dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_AddAnnotations/"))
-seurat_common_merged = readRDS(paste0(dir, "/", "seurat_obj_qc_annot_common_merged.rds"))
+seurat_common_merged = readRDS(paste0(dir, "/", "merged_seurat_qc_filter_annot.rds"))
 
 ```
 
@@ -268,7 +268,7 @@ ggsave(plot = plot_clusters,
        file = paste0(directory_output, "plot_umap_clusters.svg"))
 
 saveRDS(object = seurat_common_merged, 
-        file = paste0(directory_output, "seurat_common_merged_qc_norm_reduced.rds"))
+        file = paste0(directory_output, "merged_seurat_qc_filter_annot_normreduc.rds"))
 
 ```
 

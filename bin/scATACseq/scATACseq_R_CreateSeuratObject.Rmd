@@ -46,9 +46,6 @@ dir.create(path = paste0(directory, "exp/", "scATACseq_R_CreateSeuratObject/"))
 dir.create(path = paste0(directory, "exp/","scATACseq_R_CreateSeuratObject/", current_date))
 directory_output = paste0(directory, "exp/", "scATACseq_R_CreateSeuratObject/", current_date, "/")
 
-# Load external script with functions and constants
-source(file = paste0(directory, "bin/", "functions_constants.R"))
-
 ```
 
 ```{r, Input loading}
@@ -160,7 +157,8 @@ list_seurat_obj[["CTRL"]]@meta.data
 
 ```{r, Save output}
 
-saveRDS(object = list_seurat_obj, file = paste0(directory_output, "list_seurat_obj_annot.rds"))
+saveRDS(object = list_seurat_obj, 
+        file = paste0(directory_output, "list_seurat.rds"))
 
 ```
 

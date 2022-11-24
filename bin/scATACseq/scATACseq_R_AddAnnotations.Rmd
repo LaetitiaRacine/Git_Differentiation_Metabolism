@@ -47,7 +47,7 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 
 # Load seurat objects 
 dir_seurat = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_MergeObjectsCommonPeaks/"))
-seurat_common_merged = readRDS(paste0(dir_seurat, "/", "seurat_obj_qc_common_merged.rds"))
+seurat_common_merged = readRDS(paste0(dir_seurat, "/", "merged_seurat_qc_filter.rds"))
 
 # Load grange with hg38 annotations
 dir_annot = pic_last_dir(paste0(directory, "exp/", "AnnotationsFiles_createGrange/"))
@@ -110,7 +110,7 @@ print(seurat_common_merged@assays$peaks@ranges)
 
 ```{r, Save outputs}
 
-saveRDS(seurat_common_merged, paste0(directory_output, "seurat_obj_qc_annot_common_merged.rds"))a = 
+saveRDS(seurat_common_merged, paste0(directory_output, "merged_seurat_qc_filter_annot.rds"))
 
 ```
 

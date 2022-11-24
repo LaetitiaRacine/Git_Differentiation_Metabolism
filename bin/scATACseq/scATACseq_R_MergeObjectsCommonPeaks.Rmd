@@ -36,9 +36,9 @@ start_time = Sys.time()
 
 # Create a unique folder for output corresponding to the date of the day
 current_date = format(Sys.time(), "%Y%m%d")
-dir.create(path = paste0(directory,"exp/","scATACseq_R_MergeObjects/"))
-dir.create(path = paste0(directory,"exp/","scATACseq_R_MergeObjects/", current_date))
-directory_output = paste0(directory,"exp/","scATACseq_R_MergeObjects/", current_date, "/")
+dir.create(path = paste0(directory,"exp/","scATACseq_R_MergeObjectsCommonPeaks/"))
+dir.create(path = paste0(directory,"exp/","scATACseq_R_MergeObjectsCommonPeaks/", current_date))
+directory_output = paste0(directory,"exp/","scATACseq_R_MergeObjectsCommonPeaks/", current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
@@ -48,7 +48,7 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 ```{r, Input loading}
 
 dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_QualityControl/"))
-list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat_obj_annot_qc_filtered.rds"))
+list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat_qc_filter.rds"))
 
 # List of files available in data folder
 fragment_list = list.files(path = directory_data, pattern = "fragments.tsv.gz$")
@@ -143,7 +143,8 @@ cat("Total number of cells in dataset : ", ncol(seurat_common_merged), "\n",
 ```
 ```{r, Save outputs}
 
-saveRDS(seurat_common_merged, paste0(directory_output, "seurat_obj_qc_common_merged.rds"))
+saveRDS(object = seurat_common_merged, 
+        file = paste0(directory_output, "merged_seurat_qc_filter.rds"))
 
 ```
 

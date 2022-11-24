@@ -1,0 +1,195 @@
+---
+title: "src_scATACseq_preprocessing"
+author: "Laëtitia"
+date: "2022-09-02"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+```{r, Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+library(stringr)
+
+```
+
+# annotationsFiles_createGrange.Rmd
+
+*OBJECTIVE*  
+Extract hg38 and hg19 annotations informations (annotatr package) in R objects.    
+  
+*OUTPUTS*   
+- hg19_annotations_gr.rds  
+- hg38_annotations_gr.rds  
+  
+```{r, annotation_grange}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/", "annotationsFiles_createGrange.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "annotationsFiles_createGrange.html"))
+
+```
+
+
+# scATACseq_R_CreateSeuratObject.Rmd
+
+*OBJECTIVE*     
+Create a usable R object from Cell Ranger outputs :  
+- load cell ranger output files  
+- create seurat object with chromatin assay for each condition  
+- add genomic annotations from EnsDB.Hsapiens.v86 database  
+- update orig.ident with the name of the condition  
+- visualize CTRL object   
+
+*INPUTS*       
+- [DRUG]_filtered_peak_bc_matrix.h5      
+- [DRUG]_singlecell.csv      
+- [DRUG]_fragments.tsv.gz      
+      
+*OUTPUT*     
+- list_seurat.rds      
+    
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATACseq_R_CreateSeuratObject.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_R_CreateSeuratObject.html"))
+
+```
+
+
+# scATACseq_R_QualityControl.Rmd
+
+*OBJECTIVE*  
+Check quality of cells and fragments detected and filter the dataset :    
+- filter on nucleosome banding pattern    
+- filter on fragments and blaklist reads    
+- filter on TSS enrichment score     
+- keep only standard chromosomes    
+- create QC plots    
+    
+*INPUTS*       
+- functions_constants.R    
+- list_seurat.rds **(cf. scATACseq_R_CreateSeuratObject)**      
+    
+*OUTPUTS*     
+- list_seurat_qc.rds    
+- list_graphs_qc.rds    
+- list_seurat_qc_filter.rds    
+- [DRUG]_plot_quality_control.svg    
+- df_filter.csv    
+  
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATACseq_R_QualityControl.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_R_QualityControl.html"))
+
+```
+
+
+# scATACseq_R_MergeObjectsCommonPeaks.Rmd
+
+*OBJECTIVE*    
+Merge all conditions into one seurat object :  
+- load filtered seurat object of each condition (in a list)  
+- extract a common list of peaks   
+- create a seurat object with merged conditions  
+
+*INPUTS*  
+- functions_constants.R  
+- list_seurat_qc_filter.rds **(cf. scATACseq_R_QualityControl.Rmd)**      
+- [DRUG]_fragments.tsv.gz      
+  
+*OUTPUT*     
+- merged_seurat_qc_filter.rds    
+  
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATACseq_R_MergeObjectsCommonPeaks.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_R_MergeObjectsCommonPeaks.html"))
+
+```
+
+
+# scATACseq_R_AddAnnotations
+
+*OBJECTIVE*    
+Add genomic annotations in each element of the seurat object list :  
+- add annotations from EnsDb database in assay/peaks/annotation  
+- add peak name (chr-start-end) in the metadata  
+- associate peaks with hg38 annotations from annotatr package in the metadata  
+  
+*INPUTS*    
+- functions_constants.R    
+- merged_seurat_qc_filter.rds **(cf.scATACseq_R_MergeObjectsCommonPeaks)**    
+- hg38_annotations_gr.rds **(cf. annotationsFiles_createGrange)**    
+    
+*OUTPUT*       
+- merged_seurat_qc_filter_annot.rds  
+  
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATACseq_R_AddAnnotations.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_R_AddAnnotations.html"))
+
+```
+
+# scATACseq_R_NormalizationReduction.Rmd
+
+*OBJECTIVE*  
+Normalize and reduced the dataset :  
+- load filtered merged object based on a common list of peaks  
+- normalize it with TFIDF and SVD  
+- choose working dimensions  
+- visualize clustering with different resolutions  
+- umap plots with individual conditions   
+- choose best resolutions to keep   
+  
+*INPUTS* 
+- functions_constants.R  
+- merged_seurat_qc_filter_annot.rds **(cf.scATACseq_R_NormalizationReduction)**  
+  
+*OUTPUTS*  
+- plot_dimension_choice.svg  
+- plot_resolution.svg  
+- plot_umap_allconditions_merged.svg  
+- plot_umap_individual.svg  
+- plot_umap_clusters.svg  
+- merged_seurat_qc_filter_annot_normreduc.rds  
+
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATACseq_R_NormalizationReduction.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_R_NormalizationReduction.html"))
+
+```
+

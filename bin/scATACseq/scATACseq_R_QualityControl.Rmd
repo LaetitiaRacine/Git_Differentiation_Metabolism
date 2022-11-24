@@ -56,7 +56,7 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 ```{r, Input loading}
 
 dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_CreateSeuratObject/"))
-list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat_obj_annot.rds"))
+list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat.rds"))
 
 number_condition = length(list_seurat_obj)
 list_graphs = list()
@@ -298,7 +298,7 @@ for (i in 1:number_condition) {
   
 }        
 
-# saveRDS(object = list_seurat_obj, file = paste0(directory_output, "list_seurat_obj_annot_qc.rds"))
+saveRDS(object = list_seurat_obj, file = paste0(directory_output, "list_seurat_qc.rds"))
 saveRDS(object = list_graphs, file = paste0(directory_output, "list_graphs_qc.rds"))
 
 ```
@@ -446,7 +446,9 @@ df_filter
 ```{r, Save outputs}
 
 saveRDS(object = list_seurat_obj, 
-        file = paste0(directory_output, "list_seurat_obj_annot_qc_filtered.rds"))
+        file = paste0(directory_output, "list_seurat_qc_filter.rds"))
+write.csv2(x = df_filter,
+           file = paste0(directory_output, "df_filter.csv"))
 
 ```
 
