@@ -94,7 +94,11 @@ dims_choice = c(2:30)
 
 reduction_possibility = function(seurat_obj, dims_choice) {
   
-  seurat_obj <- RunUMAP(object = seurat_obj, reduction = 'lsi', dims = dims_choice)
+  seurat_obj <- RunUMAP(object = seurat_obj,
+                        assays = "peaks",
+                        reduction = 'lsi', 
+                        dims = dims_choice, 
+                        set.seed = 42)
   seurat_obj <- FindNeighbors(object = seurat_obj, reduction = 'lsi', dims = dims_choice)
   
   # Try different resolution to find the best granularity
@@ -249,23 +253,28 @@ plot_clusters
 ```{r, Save outputs}
 
 ggsave(plot = plot_dim_depth | plot_dim_elb, 
-       file = paste0(directory_output, "plot_dimension_choice.svg"))
+       file = paste0(directory_output, "plot_dimension_choice.svg"),
+       width = 20, height = 8)
 
 ggsave(plot = plot_resolution, 
-       file = paste0(directory_output, "plot_resolution.svg"))
+       file = paste0(directory_output, "plot_resolution.svg"),
+       width = 30, height = 40)
 
 ggsave(plot = allcond_umap, 
-       file = paste0(directory_output, "plot_umap_allconditions_merged.svg"))
+       file = paste0(directory_output, "plot_umap_allconditions_merged.svg"),
+       width = 10, height = 12)
 
 ggsave(plot = allcond_split_umap, 
-       file = paste0(directory_output, "plot_umap_allconditions_split.svg"))
+       file = paste0(directory_output, "plot_umap_allconditions_split.svg"),
+       width = 25, height = 12)
 
 ggsave(plot = arrangeGrob(grobs = ind_umap, ncol = 4, nrow = 1),
        filename = paste0(directory_output, "plot_umap_individual.svg"),
        width = 40, height = 12)
 
 ggsave(plot = plot_clusters, 
-       file = paste0(directory_output, "plot_umap_clusters.svg"))
+       file = paste0(directory_output, "plot_umap_clusters.svg"),
+       width = 20, height = 12)
 
 saveRDS(object = seurat_common_merged, 
         file = paste0(directory_output, "merged_seurat_qc_filter_annot_normreduc.rds"))

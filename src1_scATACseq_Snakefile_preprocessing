@@ -1,0 +1,37 @@
+# Command line to launch the script in a terminal (opened from the working folder)
+# snakemake -s src1_scATACseq_Snakefile_preprocessing --use-conda --reason --cores 12 (or 16 depending on the computer at use)
+
+from snakemake.io import expand
+
+SAMPLE = ['CTRL', 'DON', '2DG', 'AOA']
+
+rule all :
+	input :
+		expand("exp/scATACseq_SKMK_preprocessing/{sample}_seurat.rds", sample = SAMPLE),
+		expand("exp/scATACseq_SKMK_preprocessing/{sample}_seurat_qc.rds", sample = SAMPLE),
+		expand("exp/scATACseq_SKMK_preprocessing/{sample}_seurat_qc_filter.rds", sample = SAMPLE),
+		expand("exp/scATACseq_SKMK_preprocessing/{sample}_plots_quality_control.svg", sample = SAMPLE),
+		expand("exp/scATACseq_SKMK_preprocessing/{sample}_plots_qc_list.rds", sample = SAMPLE),
+		expand("exp/scATACseq_SKMK_preprocessing/{sample}_df_filter.csv", sample = SAMPLE)
+
+rule Create_Seurat_Object :
+	input :
+		matrixh5 = "data/scATACseq/{sample}_filtered_peak_bc_matrix.h5",
+		fragment = "data/scATACseq/{sample}_fragments.tsv.gz",
+		metadata = "data/scATACseq/{sample}_singlecell.csv"
+	output : "exp/scATACseq_SKMK_preprocessing/{sample}_seurat.rds"
+	conda : "env/scATACseq_10X_env.yaml"
+	shell : """ Rscript bin/scATACseq/scATACseq_SKMK_CreateSeuratObject.R {input.matrixh5} {input.fragment} {input.metadata} {output}"""
+
+rule QualityControl :
+	resources:
+		mem_mb=20000
+	input : "exp/scATACseq_SKMK_preprocessing/{sample}_seurat.rds"
+	output :
+		seurat = "exp/scATACseq_SKMK_preprocessing/{sample}_seurat_qc.rds",
+		seurat_filtered = "exp/scATACseq_SKMK_preprocessing/{sample}_seurat_qc_filter.rds",
+		plots_panel = "exp/scATACseq_SKMK_preprocessing/{sample}_plots_quality_control.svg",
+		plots_list = "exp/scATACseq_SKMK_preprocessing/{sample}_plots_qc_list.rds",
+		tab = "exp/scATACseq_SKMK_preprocessing/{sample}_df_filter.csv"
+	conda : "env/scATACseq_10X_env.yaml"
+	shell : """ Rscript bin/scATACseq/scATACseq_SKMK_QualityControl.R {wildcards.sample} {input} {output.seurat} {output.seurat_filtered} {output.plots_panel} {output.plots_list} {output.tab} """

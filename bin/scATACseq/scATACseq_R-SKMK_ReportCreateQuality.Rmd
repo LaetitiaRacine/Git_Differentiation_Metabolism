@@ -1,42 +1,176 @@
+---
+title: "scATACseq_R-SKMK_ReportCreateQuality"
+author: "Laëtitia Racine"
+date: "2022-09-22"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
 
-start.time <- Sys.time()
+<style>
+body {text-align: justify}
+</style>
 
-#*********************
-# Link with Snakefile
-#*********************
+```{r, Setup, include=F}
 
-"Apply quality control filter on the dataset
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
 
-Usage:
-  scATACseq_SKMK_QualityControl.R [options] <cond> <seurat_obj> <output_seurat> <output_seurat_filtered> <output_plots_panel> <output_plots_list> <output_tab>
-  scATACseq_SKMK_QualityControl.R -h | --help
+```
 
-Options:
-  -h, --help               Show this screen
-" -> doc
+```{r, Dependencies}
 
-library(docopt)
-arguments <- docopt(doc)
-# arguments <- list(cond="2DG",
-#                  seurat_obj="exp/scATACseq_SKMK_preprocessing/2DG_seurat.rds",
-#                  output_seurat="exp/scATACseq_SKMK_preprocessing/2DG_seurat_qc.rds",
-#                  output_seurat_filtered="exp/scATACseq_SKMK_preprocessing/2DG_seurat__qc_filter.rds",
-#                  output_plots_panel ="exp/scATACseq_SKMK_preprocessing/2DG_plot_quality_control.svg",
-#                  output_plots_list ="exp/scATACseq_SKMK_preprocessing/2DG_plots_list.rds",
-#                  output_tab="exp/scATACseq_SKMK_preprocessing/2DG_tab_filter.csv")
-
-#*************
-# Dependencies
-#*************
-
+library(knitr)
 library(Seurat)
 library(Signac)
-library(ggplot2)
-library(dplyr)
+library(stringr)
 library(gridExtra)
-library(grid)
-library(BRGenomics) # function tidyChromosomes()
+library(kableExtra)
 
+```
+
+```{r, Working directory }
+
+start_time = Sys.time()
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+directory_skmk = paste0(directory, "exp/", "scATACseq_SKMK_preprocessing/")
+
+```
+
+
+# scATACseq_SKMK_CreateSeuratObject - Report
+
+## Script command lines to create Seurat Object
+
+```{r, eval = FALSE}
+
+#**************
+# Input loading
+#**************
+
+matrixh5 = arguments$matrixh5_file
+fragment = arguments$fragment_file
+singlecell = arguments$metadata_file
+
+name_cond = str_extract(string = singlecell, pattern = "[:alnum:]+(?=_singlecell.csv)")
+
+
+#*********************
+# Create Seurat Object
+#*********************
+
+counts <- Seurat::Read10X_h5(filename = matrixh5)
+
+metadata <- read.csv(
+  file = singlecell,
+  header = TRUE,
+  row.names = 1
+)
+
+chrom_assay <- CreateChromatinAssay(
+  counts = counts,
+  sep = c(":", "-"),
+  genome = 'hg38',
+  fragments = fragment,
+  min.cells = 100,
+  min.features = 200
+)
+
+seurat_obj <- CreateSeuratObject(
+  counts = chrom_assay,
+  assay = "peaks",
+  meta.data = metadata)
+
+
+#*****************
+# Add annotations
+#*****************
+
+# Extract annotations from EnsDb database
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86, standard.chromosomes = TRUE)
+seqlevelsStyle(annotations) = "UCSC"
+print(table(annotations$type))
+
+# Add annotation database into seurat object (needed for downstream analysis (QC functions))
+Annotation(seurat_obj) = annotations
+
+# Visualize first object of the list to see the annotations
+seurat_obj@assays$peaks@annotation
+
+
+#*****************
+# Update orig.ident
+#*****************
+
+Idents(object = seurat_obj) = name_cond
+seurat_obj$orig.ident = name_cond
+
+
+#************
+# Save output
+#************
+
+saveRDS(object = seurat_obj, file = arguments$output)
+
+```
+
+## CTRL object visualisation
+
+```{r, eval = TRUE, results = 'hold'}
+
+# Load file 
+seurat_obj = readRDS(paste0(directory_skmk, "CTRL_seurat.rds"))
+
+# Global structure
+seurat_obj
+## chromatin assay with the peaks
+seurat_obj@assays$peaks
+## list of peaks from chromatin assay
+seurat_obj@assays$peaks@ranges
+## raw count matrix store in counts.slot (first 10 rows and column)
+as.data.frame(seurat_obj@assays$peaks@counts)[1:10, 1:10]
+## normalized count matrix store in data.slot (first 10 rows and column)
+as.data.frame(seurat_obj@assays$peaks@data)[1:10, 1:10]
+# => same as the raw matrix because the normalization is not done yet
+
+# database annotations
+seurat_obj@assays$peaks@annotation
+
+```
+
+
+# scATACseq_SKMK_QualityControl - Report
+
+https://caleblareau.com/cshl-ast2019-scATAC/code/scATAC-tutorial.html  
+https://satijalab.org/signac/articles/pbmc_vignette.html  
+https://satijalab.org/signac/articles/mouse_brain_vignette.html  
+  
+Metrics to check to remove outliers cell if needed :     
+- Nucleosome banding pattern : fragment length periodicity, the histogram of DNA fragment sizes should exhibit a strong nucleosome banding pattern corresponding to the length of DNA wrapped around a single nucleosome.    
+- Ratio reads in genomic blacklist regions : Cells with a high proportion of reads mapping to these areas often represent technical artifacts and should be removed.       
+- Fraction of fragments in peaks   
+- Total number of fragments : the total number of high-quality fragments captured for the cell, Cells with very few reads may need to be excluded due to low sequencing depth. Cells with extremely high levels may represent doublets, nuclei clumps, or other artefacts.   
+- Transcriptional start site enrichment score : Poor ATAC-seq experiments typically will have a low TSS enrichment score.     
+
+First, we visualize the initial number of  cells. 
+Then, we compute QC metrics and filter the data.
+
+NB : nucleosome signal limit at 2, possible to adapt depending the data  
+We try to find the most fitted limits for all conditions = to apply same filtering on all data  
+
+Grange = liste des peaks avec leur location génomique (chr, start, end)
+Count = matrice de count avec la liste des peaks et le nombre de fragments qu'ils contiennent par cellule
+Attention lorsqu'on change le grange, ça ne change pas automatiquement la matrice de count. 
+Il faut ensuite faire correspondre les listes de peak pour ne garder que ceux qui sont dans le grange filtré. 
+
+## Script command lines
+
+```{r, eval = FALSE}
 
 #**************
 # Input loading
@@ -214,18 +348,40 @@ df_filter$Chromosome_filter = c(ncol(seurat_obj), nrow(seurat_obj))
 saveRDS(object = seurat_obj, file = arguments$output_seurat_filtered)
 write.table(x = df_filter, file = arguments$output_tab)
 
-#**********
-# Rsession
-#**********
 
-# Show running time 
-end.time <- Sys.time()
-time.taken <- round(end.time - start.time,2)
-cat("Total execution time :", time.taken)
 
-# Clean working space 
+
+```
+
+## Filtering summary for all conditions
+
+```{r}
+
+# Load summary tab for each condition
+CTRL_df_filter = read.csv2(file = paste0(directory_skmk, "CTRL_df_filter.csv"), sep = "")
+DDG_df_filter = read.csv2(file = paste0(directory_skmk, "2DG_df_filter.csv"), sep = "")
+DON_df_filter = read.csv2(file = paste0(directory_skmk, "DON_df_filter.csv"), sep = "")
+AOA_df_filter = read.csv2(file = paste0(directory_skmk, "AOA_df_filter.csv"), sep = "")
+
+# Merge tab into one global tab
+df_filter_glob = rbind(CTRL_df_filter, DDG_df_filter, DON_df_filter, AOA_df_filter)
+
+df_filter_glob %>%
+  kable() %>%
+  kable_styling()
+
+```
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Clean working space and memory 
 rm(list = ls())
 gc()
 
 # Show package version
 sessionInfo()
+```

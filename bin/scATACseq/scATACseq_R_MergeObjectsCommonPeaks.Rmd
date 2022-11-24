@@ -47,8 +47,11 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 
 ```{r, Input loading}
 
-dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_QualityControl/"))
-list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat_qc_filter.rds"))
+dir = paste0(directory, "exp/", "scATACseq_SKMK_preprocessing/")
+list_seurat_obj = list("CTRL" = readRDS(paste0(dir, "/", "CTRL_seurat_qc_filter.rds")),
+                       "2DG" = readRDS(paste0(dir, "/", "2DG_seurat_qc_filter.rds")),
+                       "DON" = readRDS(paste0(dir, "/", "DON_seurat_qc_filter.rds")),
+                       "AOA" = readRDS(paste0(dir, "/", "AOA_seurat_qc_filter.rds")))
 
 # List of files available in data folder
 fragment_list = list.files(path = directory_data, pattern = "fragments.tsv.gz$")
