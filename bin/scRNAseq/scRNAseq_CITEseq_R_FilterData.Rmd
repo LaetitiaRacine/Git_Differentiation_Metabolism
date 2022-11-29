@@ -1,0 +1,595 @@
+---
+title: "scRNAseq_CITEseq_R_FilterData"
+author: "Laëtitia Racine"
+date: "06/12/2021"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r, Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(kableExtra)
+library(gridExtra) # function grid.arrange()
+library(grid) # function textGrob()
+library(matrixStats) # function rowMedians()
+library(knitr)
+library(stringr)
+
+```
+
+Ce code **permet de** :      
+- filtrer les cellules sur la base du nombre de gènes détectés    
+- filtrer les cellules sr la base de leur pourcentage d'ARN mitochondrial    
+- filtrer les cellules sur la base de leur pourcentage d'ARN ribosomal    
+- filtrer les gènes pour enlever les gènes mitochondriaux     
+- créer un tableau récapitulatif indiquant le nombre de cellules et gènes écartés par chaque filtre
+- créer un tableau récapitulatif
+- visualiser l'effet des filtres sur une umap
+  
+Il est **inspiré** de :     
+- https://satijalab.org/seurat/articles/pbmc3k_tutorial.html     
+- https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html     
+    
+On obtient **en sortie** un objet Seurat après chaque filtre (sachant que les filtres sont cumulatifs, si on veut appliquer un seul filtre, il faut le faire à la main et enregistrer un objet intermédiaire) ainsi qu'un tableau récapitulatif de l'effet des filtres.
+
+```{r, Working directories and external script}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+directory_data = paste0(directory, "data/scRNAseq/")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_FilterData/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_FilterData/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_FilterData/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading and output initializing}
+
+# Load seurat objects (document initial sans filtre appliqué)
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_CreateSeuratObject/"))
+list_seurat_obj = readRDS(paste0(dir, "/", "list_seurat_obj.rds"))
+number_conditions = length(list_seurat_obj)
+
+# Initialize empty list for output (list_seurat_obj sur lequel ont été appliqués les filtres en cumulatif)
+filtered_list_seurat_obj = list()
+
+# Initialize a list of list to store all versions of seurat object (different filter levels)
+list_seurat_obj_filter = list()
+for(i in 1:length(list_seurat_obj)) { list_seurat_obj_filter[[i]] = list()}
+names(list_seurat_obj_filter) = names(list_seurat_obj)
+
+```
+
+
+# Application de filtres Qualité CUMULATIFS sur les données 
+
+
+## Ajout de l'information du pourcentage mitochondrial et ribosomal
+
+```{r}
+
+ARN_percentage_fun = function(obj) {
+  
+  # Extraction de la liste des gènes mitochondriaux et ribosomaux
+  mito_genes = rownames(obj)[grep("^MT-", rownames(obj))]
+  ribo_genes <- rownames(obj)[grep("^RP[SL]", rownames(obj))]
+  cat("\n", "Mitochondrial genes", length(mito_genes), ":", mito_genes, "\n")
+  cat("Ribosomal genes", length(ribo_genes), ":", ribo_genes, "\n")
+
+  # Ajout du pourcentage dans l'objet seurat
+  obj[["percent.mt"]] <- PercentageFeatureSet(obj, pattern = "^MT-")
+  obj[["percent.ribo"]] <- PercentageFeatureSet(obj, pattern = "^RP[SL]")
+
+  # Output 
+  return(obj)
+  
+}
+
+for (i in 1:number_conditions) {
+  # Calculate percentage of mitochondrial and ribosomal RNA
+  filtered_list_seurat_obj[[i]] = ARN_percentage_fun(list_seurat_obj[[i]])
+  # Save seurat object without filter in list_seurat_obj_filter
+  list_seurat_obj_filter[[i]]["seurat_obj"] = filtered_list_seurat_obj[[i]]
+}
+  
+names(filtered_list_seurat_obj) = names(list_seurat_obj)
+
+```
+
+
+## Filtre_nbG : les cellules conservées ont **entre 1000 et 6500 gènes détectés**
+
+Les cellules dans lesquelles il y a très peu de gènes détectés peuvent correpondre à des biais de technique. On décide donc d'appliquer un filtre sur le nombre minimum de gènes détectés pour être considéré comme une vraie cellule de bonne qualité. De la même façon, les cellules qui semblent avoir beaucoup plus de gènes détectés par rapport aux autres cellules de l'expérience peuvent correspondre à des doublets. Il existe un pourcentage d'erreur d'encapsulation des cellules en fonction du nombre inséré dans la puce. Il est en effet possible que des deux cellules aient été emprisonnées dans le même GEM, leurs transcrits auront donc tous le même barcode et seront considérés comme appartenant à une seule cellules. Il convient ainsi de nettoyer le jeu de données en enlevant les possibles doublets présents. On peut utiliser des outils particulier avant de fusionner les fichiers (https://www.youtube.com/watch?v=NqvAS4HgmrE) mais on peut aussi se contenter d'appliquer un filtre sur le nombre de genes détectés dans les cellules (https://kb.10xgenomics.com/hc/en-us/articles/360001074271-Does-Cell-Ranger-automatically-exclude-doublets-). C'est ce qu'on va faire ici.  
+On applique donc deux seuils pour garder les cellules les plus qualitatives. Pour savoir où les placer, on observe de plus près le nombre de gènes détectés par cellules en fonction des conditions.
+
+```{r, Number of genes detected per cell, message=F, results='hold', fig.width=20, fig.height=12}
+
+# Initialize list of graphs 
+plot_feature_graphs = list()
+
+# Loop to create features_RNA graphs and store them into the list
+for (i in 1:number_conditions) {
+
+  plot_feature = VlnPlot(filtered_list_seurat_obj[[i]], features = "nFeature_RNA") + 
+    geom_hline(aes(yintercept = 6500), color = "red", size = 1) +
+    geom_hline(aes(yintercept = 1000), color = "red", size = 1) +
+    stat_summary(fun = median, geom='point', size = 5 , colour = "white") +
+    ylim(0,8000) +
+    scale_fill_manual(values = color_code, limits = force) +
+    theme(axis.title.x = element_blank(),
+          plot.title = element_blank()) +
+    NoLegend() 
+ 
+  plot_feature_graphs[[i]] = plot_feature
+  
+}
+
+# Show graphs
+grid.arrange(grobs = plot_feature_graphs,
+             ncol = 5,
+             nrow = 2,
+             top = textGrob("nFeature_RNA"))
+
+```
+
+En se basant sur ces graphiques, on peut établir des seuils "à l'oeil". On décide ainsi d'enlever toutes les cellules avec moins de *1000 gènes et toutes celles avec plus de 6500 gènes*. La médiane des gènes détectés par cellule se situant entre 2731 et 3880 selon les conditions (cf. résultats websummary cellRanger), les limites appliquées semblent cohérentes. On peut se permettre d'être restrictif à ce niveau car on ne cherche pas de population rare. => **filtre_nbG**
+
+```{r, Filter_nbG}
+
+for (i in 1:number_conditions) {
+  
+  # Apply filter on cell depending on their genes number 
+  filtered_list_seurat_obj[[i]] = subset(filtered_list_seurat_obj[[i]], 
+                                         subset = 1000 < nFeature_RNA & 
+                                           nFeature_RNA < 6500)
+  filtered_list_seurat_obj[[i]][["filter_nbG"]] = "1000<nFeatures>6500"
+  
+  # Save seurat object with nbG filter in list_seurat_obj_filter
+  list_seurat_obj_filter[[i]]["seurat_obj_nbG"] = filtered_list_seurat_obj[[i]] 
+  
+}
+
+```
+
+
+
+## Filtre_pMT et Filtre_pRB : les cellules conservées ont **moins de 25% d'ARN mitochondrial** et **plus de 5% d'ARN ribosomal**
+
+```{r, Percentages RNA, message=F, warning=F, fig.width=16, fig.height=20, fig.fullwidth=TRUE}
+
+plot_percentage_graphs = list()
+
+for (i in 1:number_conditions) {
+  
+  p1 = VlnPlot(filtered_list_seurat_obj[[i]], 
+               features = "percent.mt", 
+               group.by = "orig.ident") +
+    geom_hline(aes(yintercept = 25), color = "red", size = 1) +
+    ylim(0,100)  +
+    scale_fill_manual(values = color_code, limits = force) +
+    theme(axis.title.x = element_blank()) +
+    NoLegend()
+
+  p2 = VlnPlot(filtered_list_seurat_obj[[i]], 
+               features = "percent.ribo", 
+               group.by = "orig.ident") +
+    geom_hline(aes(yintercept = 5), color = "red", size = 1) +
+    ylim(0,100) +
+    scale_fill_manual(values = color_code, limits = force) +
+    theme(axis.title.x = element_blank()) +
+    NoLegend()
+
+  p3 = FeatureScatter(filtered_list_seurat_obj[[i]], 
+                      feature1 = "percent.mt", 
+                      feature2 = "percent.ribo", 
+                      group.by = "orig.ident") +
+    ylim(0,100) +
+    scale_color_manual(values = color_code, limits = force) +
+    annotate("rect", xmin = 0, xmax = 25, ymin = 5, 
+             ymax = 60, alpha = 0.1, color = "red") +
+    ggtitle(names(filtered_list_seurat_obj[i])) +
+    NoLegend()
+
+  plot_percentage_graphs[[i]] = list(p1, p2, p3)
+  
+}
+
+# Show graphs
+grid.arrange(grobs = unlist(plot_percentage_graphs, recursive = FALSE),
+             ncol = 6,
+             top = textGrob("Mitochondrial and ribosomal RNA percentages"))
+
+```
+
+Les cellules présentant un fort pourcentage d'ARN mitochondrial et un faible pourcentage d'ARN ribosomal sont certainement mortes ou en train de mourir. On remarque en effet deux groupes de cellules lorsqu'on trace le scatter plot percent.ribo vs percent.mt : un groupe de cellules à gauche avec un faible pourcentage d'ARN mitochondrial et un pourcentage d'ARN ribosomal allant d'environ 10 à plus de 50% correspondant aux cellules vivantes, et un groupe de cellules à droite avec un fort pourcentage d'ARN mitochondrial et un faible pourcentage d'ARN ribosomal. Pour enlever le maximum de cellules mortes tout en gardant suffisamment d'informations, on applique des filtres sur ces deux paramètres : on conserve ainsi les cellules avec **moins de 25% d'ARN mitochondrial** (**Filtre_pMT**) et avec **plus de 5% d'ARN ribosomal** (**Filtre_pRB**).
+
+```{r, Filter_pMT_pRB, warning=F, message=F}
+
+for (i in 1:number_conditions) {
+  
+  # Apply filter on cell depending on their percentage of mitochondrial RNA
+  filtered_list_seurat_obj[[i]] = subset(filtered_list_seurat_obj[[i]], subset = percent.mt < 25)
+  filtered_list_seurat_obj[[i]][["filter_pMT"]] = "< 25% MT" 
+  
+  # Save seurat object with nbG and pMT filters
+  list_seurat_obj_filter[[i]]["seurat_obj_nbG_pMT"] = filtered_list_seurat_obj[[i]] 
+  
+  # Apply filter on cell depending on their percentage of ribosomal RNA 
+  filtered_list_seurat_obj[[i]] = subset(filtered_list_seurat_obj[[i]], subset = percent.ribo > 5)
+  filtered_list_seurat_obj[[i]][["filter_pRB"]] = "> 5% RB"  
+  
+  # Save seurat object with nbG, pMT and pRB filters
+  list_seurat_obj_filter[[i]]["seurat_obj_nbG_pMT_pRB"] = filtered_list_seurat_obj[[i]] 
+  
+}
+
+```
+
+
+
+## Filtre_rmMT : les gènes **mitochondriaux** sont retirés de l'analyse
+
+Pour éviter que les cellules ne clusterisent sur la base de leurs gènes mitochondriaux, on décide de les retirer de l'analyse. => **Filtre_rmMT**  
+
+```{r, Filter_rmMT, warning=F, message=F}
+
+rm_mito_list = function(obj) {
+  # Extract features "ADT" names
+  DefaultAssay(obj) = "ADT"
+  feature_adt_list = rownames(obj)
+  # Extract features "RNA gene" names and identify mitochondrial ones
+  DefaultAssay(obj) = "RNA"
+  mito_genes = rownames(obj)[grep("^MT-", rownames(obj))]
+  feature_rna_list = rownames(obj)
+  # Keep ADT and non mitochondrial RNA genes
+  feature_list = c(feature_adt_list, feature_rna_list)
+  features_keep = setdiff(feature_list, mito_genes) # The elements of setdiff(x,y) are those elements in x but not in y.
+  return(features_keep)
+}
+
+
+for (i in 1:number_conditions) {
+  
+  # Apply filter on genes to remove mitochondrial ones
+  filtered_list_seurat_obj[[i]] = subset(filtered_list_seurat_obj[[i]], features = rm_mito_list(filtered_list_seurat_obj[[i]]))
+  filtered_list_seurat_obj[[i]][["filter_rmMT"]] = "rm MTgenes" 
+  
+  # Save seurat object with nbG, pMT, pRB and rmMT filters
+  list_seurat_obj_filter[[i]]["seurat_obj_nbG_pMT_pRB_rmMT"] = filtered_list_seurat_obj[[i]] 
+  
+}
+
+```
+
+
+
+
+# Récapitulatif des filtres et données
+
+## Tableau récapitulatif des filtres appliqués 
+
+```{r, Filter_summary}
+
+extract_nbgene_detected = function(obj) {
+  matrix = as.data.frame(obj@assays$RNA@counts) # work on raw data stored in counts slot
+  sum_UMI = as.data.frame(rowSums(matrix))
+  detected_genes = sum_UMI %>% dplyr::filter(`rowSums(matrix)` != 0)
+  return(nrow(detected_genes))
+}
+
+# Initialize
+filter_tab = data_frame(condition = character(),
+                        category = character(),
+                        no_filter = integer(),
+                        filter_nbG_keep = integer(),
+                        filter_nbG_pMT_keep = integer(),
+                        filter_nbG_pMT_pRB_keep = integer(),
+                        filter_nbG_pMT_pRB_rmMT_keep = integer())
+  
+for(i in 1:number_conditions) {  # très long
+
+  temp_gene = data.frame(condition = names(list_seurat_obj[i]),
+                         category = "genes",
+                         no_filter = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj"]]),
+                         filter_nbG_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG"]]),
+                         filter_nbG_pMT_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT"]]),
+                         filter_nbG_pMT_pRB_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB"]]),
+                         filter_nbG_pMT_pRB_rmMT_keep = extract_nbgene_detected(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT"]]))
+  
+  temp_cell = data.frame(condition = names(list_seurat_obj[i]),
+                         category = "cells",
+                         no_filter = ncol(list_seurat_obj_filter[[i]][["seurat_obj"]]),
+                         filter_nbG_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG"]]),
+                         filter_nbG_pMT_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT"]]),
+                         filter_nbG_pMT_pRB_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB"]]),
+                         filter_nbG_pMT_pRB_rmMT_keep = ncol(list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT"]]))
+  
+   temp = rbind(temp_gene, temp_cell)
+   filter_tab = rbind(filter_tab, temp)
+   
+}
+
+filter_tab = filter_tab %>%
+  dplyr::mutate(filter_nbG_remove = no_filter - filter_nbG_keep) %>%
+  dplyr::mutate(filter_pMT_remove = filter_nbG_keep - filter_nbG_pMT_keep) %>%
+  dplyr::mutate(filter_pRB_remove = filter_nbG_pMT_keep - filter_nbG_pMT_pRB_keep) %>%
+  dplyr::mutate(filter_rmMT_remove = filter_nbG_pMT_pRB_keep - filter_nbG_pMT_pRB_rmMT_keep)
+
+filter_tab %>%
+  kable() %>%
+  kable_styling()
+  
+```
+
+D'autres filtres pourraient être appliqués sur le jeu de données. Par exemple, on pourrait appliquer un filtre sur le nombre d'UMI nécessaire par gène pour qu'il ne soit pas considéré comme du bruit de fond, ou alors sur le nombre de cellules devant exprimer le gène pour qu'on le conserve, ou encore écarter les gènes qui monopolisent les reads... Avant d'aller plus loin de ce côté, on continue l'analyse des données pour voir ce qu'il est pertinent d'appliquer ou non. Cela évite d'enlever trop d'informations dès le début. Il sera toujours possible d'appliquer ce genre de filtre par la suite si on se rend compte que les données sont biaisées.
+
+## Tableau des caractéristiques des cellules et gènes conservés
+
+```{r, Cells parameters}
+
+summary_cell_tab = data.frame(condition = character(),
+                              statistic = character(),
+                              nbgenes_per_cell = numeric(),
+                              percent_MT_RNA = numeric(),
+                              percent_RB_RNA = numeric())
+
+for(i in 1:number_conditions) {
+  # nFeature_RNA : number of genes detected in each cell
+  temp = data.frame(condition = rep(names(filtered_list_seurat_obj[i]), 3),
+                    statistic = c("min", "median", "max"),
+                    nbgenes_per_cell = c(
+                      min(filtered_list_seurat_obj[[i]]$nFeature_RNA), 
+                      median(filtered_list_seurat_obj[[i]]$nFeature_RNA), 
+                      max(filtered_list_seurat_obj[[i]]$nFeature_RNA)),
+                    percent_MT_RNA = c(
+                      min(filtered_list_seurat_obj[[i]]$percent.mt), 
+                      median(filtered_list_seurat_obj[[i]]$percent.mt), 
+                      max(filtered_list_seurat_obj[[i]]$percent.mt)),
+                    percent_RB_RNA = c(
+                      min(filtered_list_seurat_obj[[i]]$percent.ribo), 
+                      median(filtered_list_seurat_obj[[i]]$percent.ribo), 
+                      max(filtered_list_seurat_obj[[i]]$percent.ribo))
+  )
+  summary_cell_tab = rbind(summary_cell_tab, temp)
+  
+}
+
+summary_cell_tab %>%
+  kable() %>%
+  kable_styling()
+
+```
+
+```{r, Genes parameters}
+
+# Liste de matrices (gène/cellule/nbUMI) par condition
+list_mat = lapply(filtered_list_seurat_obj, function(x) { 
+  as.data.frame(x@assays$RNA@counts) }) 
+
+# Extract statistic information
+list_tab = list()
+for (i in 1:length(list_mat)) {
+  
+    # Extract matrix (contains genes not detected at all)
+    temp_mat = list_mat[[i]]
+    
+    # Keep only genes detected in at least one cell
+    detected_genes = rowSums(temp_mat) !=0
+    detected_genes = detected_genes[detected_genes == TRUE]
+    detected_genes = names(detected_genes)
+    temp_filter = temp_mat %>% dplyr::filter(rownames(temp_mat) %in% detected_genes)
+
+    # Transform into binary matrix (detected/non detected)
+    temp_binary = temp_filter %>% mutate_all(as.logical)
+    
+    # Transform tab to calcul mean
+    temp_mean = temp_filter
+    temp_mean[temp_mean == 0] = NA
+    
+    # Tab with individual genes info
+    ind_genes = data.frame(
+      gene = rownames(temp_filter),
+      nbcell_expressed = rowSums(temp_binary),
+      nbcell_expressed_1UMI = rowSums(temp_filter == 1),
+      total_UMI_allcells = rowSums(temp_filter),
+      moy_UMI_per_cell_expressed = round(rowMeans(temp_mean, na.rm = TRUE),3)
+    )
+    ind_genes[is.na(ind_genes)] = 0
+
+    # Tab summary per condition
+    summary_condition = data.frame(
+      condition = names(list_mat[i]),
+      nbtot_gene = nrow(temp_filter),
+      nbtot_cell = ncol(temp_filter),
+      # minimum/median/max nb cells expressing simultaneously a gene
+      min_nbcell_expressing_same_gene = min(rowSums(temp_binary)), 
+      median_nbcell_expressing_same_gene = median(rowSums(temp_binary)),
+      max_nbcell_expressing_same_gene = max(rowSums(temp_binary)),
+      # minimum/median/max nb genes detected in cells
+      min_nbgenes_detected_per_cell = min(colSums(temp_binary)), 
+      median_nbgenes_detected_per_cell = median(colSums(temp_binary)),
+      max_nbgenes_detected_per_cell = max(colSums(temp_binary)),
+      # minimum/median/max sum UMI of all cells for one gene
+      min_sumUMI_per_gene = min(rowSums(temp_filter)),
+      median_sumUMI_per_gene = median(rowSums(temp_filter)),
+      max_sumUMI_per_gene = max(rowSums(temp_filter)),
+      # minimum/median/max sum UMI of all genes for one cell
+      min_sumUMI_per_cell = min(colSums(temp_filter)),
+      median_sumUMI_per_cell = median(colSums(temp_filter)),
+      max_sumUMI_per_cell = max(colSums(temp_filter)),
+      # details
+      nbgenes_1UMI_total = sum((rowSums(temp_filter) == 1), na.rm = TRUE),
+      nbgenes_detected_1cell = sum((rowSums(temp_binary) == 1), na.rm = TRUE),
+      nbcells_1UMI_total = sum((colSums(temp_filter) == 1), na.rm = TRUE),
+      nbcells_expressing_only1gene = sum((colSums(temp_binary) == 1), na.rm = TRUE)
+    )
+    
+    list_tab[[i]] = list(ind_genes, summary_condition)
+    
+}
+
+# Groupement des tableaux des conditions dans un tableau général
+names(list_tab) = names(list_mat)
+list_ind_genes = lapply(list_tab, `[[`, 1)
+list_summary_cond = lapply(list_tab, `[[`, 2)
+ind_genes_tab = dplyr::bind_rows(list_ind_genes, .id = "condition")
+summary_cond_tab = dplyr::bind_rows(list_summary_cond, .id = "condition")
+
+ind_genes_tab[1:100,] %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(width = "650px", height = "500px")
+
+summary_cond_tab %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(width = "650px", height = "500px")
+
+```
+
+```{r, UMI, fig.width=14}
+
+tab_UMI = data.frame(condition = character(),
+                     category = character(),
+                     equal_1UMI = integer(),
+                     equal_2UMI = integer(),
+                     between_2_10_UMI = integer(),
+                     between_10_100_UMI = integer(),
+                     between_100_1000_UMI = integer(),
+                     between_1000_2000_UMI = integer(),
+                     between_2000_5000_UMI = integer(),
+                     between_5000_10000_UMI = integer(),
+                     between_10000_20000_UMI = integer(),
+                     sup_20000UMI = integer())
+
+for (i in 1:length(list_mat)) {
+  
+  x = list_mat[[i]]
+  
+  cell_sum = data.frame(sum_UMI = colSums(x)) %>%
+    dplyr::mutate(category = case_when(sum_UMI==1 ~ "equal_1UMI",
+                                       sum_UMI==2 ~ "equal_2UMI",
+                                       (2<=sum_UMI & sum_UMI<10) ~ "between_2_10_UMI",
+                                       (10<=sum_UMI & sum_UMI<100) ~ "between_10_100_UMI",
+                                       (100<=sum_UMI  & sum_UMI<1000) ~ "between_100_1000_UMI",
+                                       (1000<=sum_UMI  & sum_UMI<2000) ~ "between_1000_2000_UMI",
+                                       (2000<=sum_UMI  & sum_UMI<5000) ~ "between_2000_5000_UMI",
+                                       (5000<=sum_UMI  & sum_UMI<10000) ~ "between_5000_10000_UMI",
+                                       (10000<=sum_UMI  & sum_UMI<20000) ~ "between_10000_20000_UMI",
+                                       sum_UMI>20000 ~ "sup_20000UMI"))
+  
+  recap_cell = data.frame(table(cell_sum$category))
+  recap_cell = tidyr::pivot_wider(recap_cell, names_from = "Var1", values_from = "Freq")
+  recap_cell = recap_cell %>% dplyr::mutate(condition = names(list_mat[i]), category = "cell")
+  
+  tab_UMI = bind_rows(tab_UMI, recap_cell)
+  
+  gene_sum = data.frame(sum_UMI = rowSums(x)) %>%
+    dplyr::mutate(category = case_when(sum_UMI==1 ~ "equal_1UMI",
+                                       sum_UMI==2 ~ "equal_2UMI",
+                                       (2<=sum_UMI & sum_UMI<10) ~ "between_2_10_UMI",
+                                       (10<=sum_UMI & sum_UMI<100) ~ "between_10_100_UMI",
+                                       (100<=sum_UMI  & sum_UMI<1000) ~ "between_100_1000_UMI",
+                                       (1000<=sum_UMI  & sum_UMI<2000) ~ "between_1000_2000_UMI",
+                                       (2000<=sum_UMI  & sum_UMI<5000) ~ "between_2000_5000_UMI",
+                                       (5000<=sum_UMI  & sum_UMI<10000) ~ "between_5000_10000_UMI",
+                                       (10000<=sum_UMI  & sum_UMI<20000) ~ "between_10000_20000_UMI",
+                                       sum_UMI>20000 ~ "sup_20000UMI"))
+  
+  recap_gene = data.frame(table(gene_sum$category))
+  recap_gene = tidyr::pivot_wider(recap_gene, names_from = "Var1", values_from = "Freq")
+  recap_gene = recap_gene %>% dplyr::mutate(condition = names(list_mat[i]), category = "gene")
+  
+  tab_UMI = bind_rows(tab_UMI, recap_gene)
+  
+}
+
+tab_UMI[is.na(tab_UMI)] = 0
+
+tab_UMI %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(width = "650px", height = "500px")
+
+```
+
+# Conclusion 
+
+```{r, Save outputs, results="hide"}
+
+# Save plots
+ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5, 
+                           nrow = 2, top = textGrob("nFeature_RNA")),
+       filename = paste0(directory_output, "plot_feature_filter.png"),
+       width = 16, height = 12)
+
+ggsave(plot= grid.arrange(
+  grobs = unlist(plot_percentage_graphs, recursive=F),
+  ncol = 6, top = textGrob("Mitochondrial and ribosomal RNA percentages")),
+  filename = paste0(directory_output, "plot_percentMTRB_filter.png"),
+  width = 24, height = 24)
+
+# Save tabs
+write.csv2(x = filter_tab, 
+           file = paste0(directory_output, "filter_tab_seurat_obj.csv"))
+write.csv2(x = summary_cell_tab, 
+           file = paste0(directory_output, "summary_cell_tab.csv"))
+write.csv2(x = summary_cond_tab, 
+           file = paste0(directory_output, "summary_cond_tab.csv"))
+write.csv2(x = ind_genes_tab, 
+           file = paste0(directory_output, "individual_gene_tab.csv"))
+write.csv2(x = tab_UMI, 
+           file = paste0(directory_output, "tab_UMI.csv"))
+
+# Save matrix gene UMI per cell - raw data (with undetected genes as well)
+saveRDS(object = list_mat, file = paste0(directory_output, "list_mat_raw.rds"))
+
+# Save Seurat object with all filters
+saveRDS(object = filtered_list_seurat_obj, 
+        file = paste0(directory_output, "list_seurat_obj_qc.rds"))
+saveRDS(object = list_seurat_obj_filter, 
+        file = paste0(directory_output, "list_seurat_obj_qc_each_filter.rds"))
+
+```
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+# Show package version
+sessionInfo()
+
+```
+
