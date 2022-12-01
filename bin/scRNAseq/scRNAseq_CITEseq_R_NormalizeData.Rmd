@@ -132,7 +132,7 @@ list_seurat_obj = lapply(list_seurat_obj, function(x) {
 
 ```
 
-```{r, MostVariableGenes, message=F, fig.width = 20,results='hold'}
+```{r, MostVariableGenes, message=F, fig.width = 20, fig.height = 24, results='hold'}
 
 # Initialize empty output list
 features_plot_list = list()
@@ -312,7 +312,7 @@ list_mat = lapply(list_mat, function(x) {
 # des statistiques sur les UMI (total, moyenne, médiane, variance)
 print("Calculate tab statistics")
 list_mat = lapply(list_mat, function(x) {
-    print("Calculate temp_nbcells tab")
+
     temp_nbcells = x
     ncol_temp_nbcells = ncol(temp_nbcells)
     temp_nbcells[] = lapply(temp_nbcells, as.logical)
@@ -321,7 +321,7 @@ list_mat = lapply(list_mat, function(x) {
       dplyr::mutate(percentcells = round((nbcells/ncol_temp_nbcells) *100)) %>%
       tibble::rownames_to_column(var = "gene") %>%
       dplyr::select(gene, nbcells, percentcells)
-    print("Calculate temp_umi tab")
+
     temp_umi = x 
     temp_umi = temp_umi %>%
       dplyr::mutate(totalUMI = rowSums(.),
@@ -345,7 +345,7 @@ tab_cc %>%
 
 ```
 
-```{r, results = 'hold', fig.width=20, fig.height=8, fig.fullwidth=TRUE}
+```{r, results = 'hold', fig.width=22, fig.height=14, fig.fullwidth=TRUE}
 
 plot_smedian = ggplot(tab_cc %>% filter(phase == "S"), 
                       aes(x=gene, y=medianUMI, fill=condition)) +
@@ -456,7 +456,7 @@ list_seurat_obj_cc = lapply(list_seurat_obj_cc, function(x) {
 
 ```
 
-```{r, Save outputs}
+```{r, Save outputs, results='hide'}
 
 ggsave(plot = grid.arrange(grobs = features_plot_list, ncol = 3),
        filename = paste0(directory_output, "plot_2000variablesfeatures.svg"),

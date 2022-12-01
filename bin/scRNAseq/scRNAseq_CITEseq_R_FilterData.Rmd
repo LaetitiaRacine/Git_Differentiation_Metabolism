@@ -344,7 +344,8 @@ filter_tab = filter_tab %>%
 
 filter_tab %>%
   kable() %>%
-  kable_styling()
+  kable_styling() %>%
+  scroll_box(width = "1000px")
   
 ```
 
@@ -465,12 +466,12 @@ summary_cond_tab = dplyr::bind_rows(list_summary_cond, .id = "condition")
 ind_genes_tab[1:100,] %>%
   kable() %>%
   kable_styling() %>%
-  scroll_box(width = "650px", height = "500px")
+  scroll_box(width = "1000px", height = "500px")
 
 summary_cond_tab %>%
   kable() %>%
   kable_styling() %>%
-  scroll_box(width = "650px", height = "500px")
+  scroll_box(width = "1000px", height = "500px")
 
 ```
 
@@ -542,7 +543,7 @@ tab_UMI %>%
 
 # Conclusion 
 
-```{r, Save outputs, results="hide"}
+```{r, Save outputs, results = 'hide'}
 
 # Save plots
 ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5, 
@@ -557,15 +558,20 @@ ggsave(plot= grid.arrange(
   width = 24, height = 24)
 
 # Save tabs
-write.csv2(x = filter_tab, 
+write.csv2(x = filter_tab,
+           row.names = FALSE,
            file = paste0(directory_output, "filter_tab_seurat_obj.csv"))
-write.csv2(x = summary_cell_tab, 
+write.csv2(x = summary_cell_tab,
+           row.names = FALSE,
            file = paste0(directory_output, "summary_cell_tab.csv"))
-write.csv2(x = summary_cond_tab, 
+write.csv2(x = summary_cond_tab,
+           row.names = FALSE,
            file = paste0(directory_output, "summary_cond_tab.csv"))
-write.csv2(x = ind_genes_tab, 
+write.csv2(x = ind_genes_tab,
+           row.names = FALSE,
            file = paste0(directory_output, "individual_gene_tab.csv"))
-write.csv2(x = tab_UMI, 
+write.csv2(x = tab_UMI,
+           row.names = FALSE,
            file = paste0(directory_output, "tab_UMI.csv"))
 
 # Save matrix gene UMI per cell - raw data (with undetected genes as well)
