@@ -381,11 +381,11 @@ resolution_choice = function(seurat_obj) {
 
 
 res_choice = resolution_choice(merged_all)
-merge_all = res_choice$seurat_obj
+merged_all = res_choice$seurat_obj
 print(res_choice$plot_clusters)
   
 res_choice_cc = resolution_choice(merged_cc)
-merge_cc = res_choice_cc$seurat_obj
+merged_cc = res_choice_cc$seurat_obj
 print(res_choice_cc$plot_clusters)
 
 ```

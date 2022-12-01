@@ -66,7 +66,8 @@ Apply qualityt control filters on the dataset :
 - summary_cond_tab.csv  
 - individual_gene_tab.csv  
 - tab_UMI.csv  
-- list_mat_raw.rds  
+- list_mat_raw_genes.rds
+- list_mat_raw_proteins.rds 
 - list_seurat_obj_qc.rds  
 - list_seurat_obj_qc_each_filter.rds  
   
