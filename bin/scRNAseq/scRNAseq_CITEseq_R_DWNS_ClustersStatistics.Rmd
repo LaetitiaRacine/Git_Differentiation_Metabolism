@@ -1,0 +1,566 @@
+---
+title: "scRNAseq_CITEseq_R_DWNS_ClustersStatistics"
+author: "Laëtitia Racine"
+date: "2022-10-03"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(Seurat)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(gridExtra)
+library(tidyverse)
+library(kableExtra)
+library(ggrepel)
+
+```
+
+```{r, Working directories and external script}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersInvestigation/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersInvestigation/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersInvestigation/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
+merged_all = readRDS(file = paste0(dir, "/", "merged_all_1-40dim.rds"))
+
+```
+
+As a reminder, here are the clusters we identified in the dataset.
+
+```{r, Show clusters, fig.width = 6, fig.height = 4}
+
+DimPlot(merged_all, 
+        label = TRUE, 
+        reduction = "umap", 
+        group.by = "clusters")
+
+```
+
+And the cells' distribution according culture condition (control or drug medium). 
+
+```{r, Show conditions, fig.width = 22, fig.height = 20}
+
+umap_highlight = function(seurat_obj, color_code) {
+  
+  ind_umap = list()
+  
+  for (i in 1:length(unique(seurat_obj$orig.ident))) {
+  
+  # Select condition to highlight
+  highlight_cond = unique(seurat_obj$orig.ident)[i]
+  color = unname(noquote(color_code[highlight_cond]))
+  others_cond = setdiff(unique(seurat_obj$orig.ident), highlight_cond)
+  others_cond_group = paste(others_cond, collapse=", ")
+  
+  # Sort cell according to their condition
+  cell_highlight = unlist(CellsByIdentities(object = seurat_obj, idents = highlight_cond))
+  cell_nohighlight = unlist(CellsByIdentities(object = seurat_obj, idents = others_cond))
+  
+  # Plot 
+  plot_umap = DimPlot(object = seurat_obj,
+                      group.by = "orig.ident",
+                      reduction ="umap",
+                      pt.size = 0.05,
+                      cells.highlight = list(cell_highlight, cell_nohighlight),
+                      cols.highlight = c(color,"grey")) +
+    ggtitle(highlight_cond) +
+    theme(legend.position = "none")
+  
+  ind_umap[[i]] = plot_umap
+  
+  }
+  
+  # function's output 
+  return(ind_umap)
+  
+}
+
+merged_all = SetIdent(object = merged_all, value = "orig.ident")
+umap_hl = umap_highlight(merged_all, color_code)
+do.call("grid.arrange", c(umap_hl, ncol = 3))
+
+```
+
+
+```{r, Clusters statistics - tab number - separated ctrl}
+
+clusters = as.integer(levels(unique(merged_all@meta.data$clusters)))
+merged_all = SetIdent(object = merged_all, value = "clusters")
+
+# Cells' number in cluster per condition
+tab_number = data.frame(condition = character())
+for (i in 1:length(clusters)) {
+  cat("Extract cluster", clusters[i], "information.")
+  clust = subset(merged_all, idents = clusters[i])
+  print(table(clust@meta.data$clusters))
+  tab = as.data.frame(table(clust@meta.data$orig.ident)) 
+  colnames(tab) = c("condition", paste0("cluster_", clusters[i]))
+  tab_number = full_join(tab_number, tab, by = "condition")
+}
+tab_number[is.na(tab_number)] = 0
+tab_number$total_cell_per_condition = rowSums(tab_number[,-1])
+
+# Add total per cluster
+temp = as.data.frame(t(data.frame(colSums(tab_number[,-1]))))
+rownames(temp) = "total_cell_per_cluster"
+temp = temp %>% tibble::rownames_to_column(var = "condition")
+tab_number = rbind(tab_number, temp)
+
+# Display dataframe
+tab_number %>%
+  kable(caption = "Not normalized cells' distribution") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+```{r, Clusters statistics - tab number - merged ctrl}
+
+# Merge CTRL and CTRL2
+temp = tab_number %>% dplyr::filter(condition %in% c("CTRL", "CTRL2"))
+temp = as.data.frame(t(data.frame(colSums(temp[,-1]))))
+rownames(temp) = "CTRL_CTRL2"
+temp  = temp %>% tibble::rownames_to_column(var = "condition")
+tab_number_merge = rbind(tab_number %>% dplyr::filter(condition != c("CTRL", "CTRL2")), temp)
+tab_number_merge = tab_number_merge[c(1:4, 10, 5:9),]
+
+# Display dataframe
+tab_number_merge %>%
+  kable(caption = "Not normalized cells' distribution with merged controls") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+```{r, Clusters statistics - tab number normalized - separated ctrl}
+
+# Normalize on initial cell number
+cat("We don't start with the same number of cells in each condition. A 
+    normalization step based on the initial number of cells per condition 
+    is required to be able to compare the conditions.")
+
+# Divide per the number of cells, multiply by a 1000 factor and round
+tab_number_norm = tab_number[-nrow(tab_number),]
+tab_number_norm[,-1] = round((tab_number_norm[,-1]/tab_number_norm[ ,ncol(tab_number_norm)])*1000)
+
+# Add total per cluster
+temp = as.data.frame(t(data.frame(colSums(tab_number_norm[,-1]))))
+rownames(temp) = "total_cell_per_cluster"
+temp = temp %>% tibble::rownames_to_column(var = "condition")
+tab_number_norm = rbind(tab_number_norm, temp)
+
+# Display dataframe
+tab_number_norm %>%
+  kable(caption = "Normalized cells' distribution based on the initial number of cells in each condition.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+```{r, Clusters statistics - tab number normalized - merged ctrl}
+
+# Divide per the number of cells, multiply by a 1000 factor and round
+tab_number_merge_norm = tab_number_merge[-nrow(tab_number_merge),]
+tab_number_merge_norm[,-1] = round((tab_number_merge_norm[,-1]/tab_number_merge_norm[ ,ncol(tab_number_merge_norm)])*1000)
+
+# Add total per cluster
+temp = as.data.frame(t(data.frame(colSums(tab_number_merge_norm[,-1]))))
+rownames(temp) = "total_cell_per_cluster"
+temp = temp %>% tibble::rownames_to_column(var = "condition")
+tab_number_merge_norm = rbind(tab_number_merge_norm, temp)
+
+# Display dataframe
+tab_number_merge_norm %>%
+  kable(caption = "Normalized cells' distribution based on the initial number of cells in each condition with merged controls.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+```{r, Clusters statistics - tab percent normalized - separated ctrl}
+
+# Cells' percentage in cluster per condition
+tab_percent_cond = tab_number_norm %>% dplyr::filter(condition != "total_cell_per_cluster")
+tab_percent_cond[ ,-1] = round((tab_percent_cond[ ,-1]/tab_percent_cond[ ,ncol(tab_percent_cond)])*100, 1)
+
+tab_percent_cond %>%
+  kable(caption = "Normalized cells' percentage distribution per condition.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+# Cells' percentage in condition per cluster 
+tab_percent_clust = tab_number_norm %>% dplyr::select(-total_cell_per_condition)
+tab_percent_clust = as.data.frame(t(tab_percent_clust))
+colnames(tab_percent_clust) = tab_percent_clust[1,]
+tab_percent_clust = tab_percent_clust[-1,] %>% 
+  mutate_if(is.character, ~as.numeric(.)) %>%
+  rownames_to_column(var = "cluster")
+tab_percent_clust[,-1] = round((tab_percent_clust[ ,-1]/tab_percent_clust[ ,ncol(tab_percent_clust)])*100, 1)
+
+tab_percent_clust %>%
+  kable(caption = "Normalized cells' percentage distribution per cluster.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+```{r, Clusters statistics - tab percent normalized - merged ctrl}
+
+# Cells' percentage in cluster per condition
+tab_percent_cond_merge = tab_number_merge_norm %>% dplyr::filter(condition != "total_cell_per_cluster")
+tab_percent_cond_merge[ ,-1] = round((tab_percent_cond_merge[ ,-1]/tab_percent_cond_merge[ ,ncol(tab_percent_cond_merge)])*100, 1)
+
+tab_percent_cond_merge %>%
+  kable(caption = "Normalized cells' percentage distribution per condition with merged controls.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+# Cells' percentage in condition per cluster 
+tab_percent_clust_merge = tab_number_merge_norm %>% dplyr::select(-total_cell_per_condition)
+tab_percent_clust_merge = as.data.frame(t(tab_percent_clust_merge))
+colnames(tab_percent_clust_merge) = tab_percent_clust_merge[1,]
+tab_percent_clust_merge = tab_percent_clust_merge[-1,] %>% 
+  mutate_if(is.character, ~as.numeric(.)) %>%
+  rownames_to_column(var = "cluster")
+tab_percent_clust_merge[,-1] = round((tab_percent_clust_merge[ ,-1]/tab_percent_clust_merge[ ,ncol(tab_percent_clust_merge)])*100, 1)
+
+tab_percent_clust_merge %>%
+  kable(caption = "Normalized cells' percentage distribution per clsuter with merged controls.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+  
+  
+Graphic representation of the last tables.  
+http://www.sthda.com/english/wiki/ggplot2-pie-chart-quick-start-guide-r-software-and-data-visualization  
+https://r-charts.com/part-whole/pie-chart-labels-outside-ggplot2/  
+  
+```{r, Clusters statistics - bp plots - separated ctrl, fig.width = 14, fig.height = 8}
+
+###########
+# Cluster #
+###########
+
+# Barplot with all clusters
+temp_clust = tab_percent_clust %>% dplyr::select(-total_cell_per_cluster)
+temp_clust = temp_clust %>% tidyr::pivot_longer(cols = 2:ncol(temp_clust),
+                                    names_to = "condition",
+                                    values_to = "percentage")
+
+bp_clust = ggplot(temp_clust, aes(x=cluster, y=percentage, fill=condition))+
+  geom_bar(width = 0.8, stat = "identity") +
+   scale_fill_manual(values = color_code, limits = force) +
+  theme(axis.text.x=element_text(angle=90))
+bp_clust
+
+#############
+# Condition #
+#############
+
+temp_cond = tab_percent_cond %>% dplyr::select(-total_cell_per_condition)
+temp_cond = temp_cond %>% tidyr::pivot_longer(cols = 2:ncol(temp_cond),
+                                    names_to = "cluster",
+                                    values_to = "percentage")
+
+bp_cond = ggplot(temp_cond, aes(x=condition, y=percentage, fill=cluster))+
+  geom_bar(width = 0.8, stat = "identity") +
+  theme(axis.text.x=element_text(angle=90))
+bp_cond
+
+```
+  
+```{r, Clusters statistics - pie plots - separated ctrl, fig.width = 14, fig.height = 24}
+
+###########
+# Cluster #
+###########
+
+clust_list = tab_percent_clust$cluster
+list_clust_pie = list()
+
+for (i in 1:length(clust_list)) {
+  
+  temp2 = temp_clust %>% 
+    dplyr::filter(cluster == clust_list[i]) %>% 
+    dplyr::mutate(csum = rev(cumsum(rev(percentage))), 
+                  pos = percentage/2 + lead(csum, 1),
+                  pos = if_else(is.na(pos), percentage/2, pos))
+  
+  pie = ggplot(temp2, aes(x="", y=percentage, fill=condition))+
+    geom_col(width = 1, color = 1) +
+    coord_polar("y", start=0) + 
+    scale_fill_manual(values = color_code, limits = force) +
+    geom_label_repel(data = temp2,
+                     aes(y = pos, label = paste0(percentage, "%")),
+                     size = 4, nudge_x = 1, show.legend = FALSE, 
+                     segment.color = "#999999",
+                     col = "black") +
+    theme_minimal() +
+    ggtitle(label = clust_list[i]) +
+    theme(axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.title.y = element_blank(),
+          panel.border = element_blank(),
+          panel.grid=element_blank(),
+          axis.ticks = element_blank(),
+          plot.title=element_text(size=14, face="bold")
+    )
+  
+  list_clust_pie[[i]] = pie
+  
+}
+
+do.call("grid.arrange", c(list_clust_pie, ncol = 3))
+
+#############
+# Condition #
+#############
+
+cond_list = tab_percent_cond$condition
+list_cond_pie = list()
+
+for (i in 1:length(cond_list)) {
+
+  temp2 = temp_cond %>% 
+    dplyr::filter(condition == cond_list[i]) %>%
+    dplyr::mutate(cluster = sort(cluster)) %>%
+    dplyr::mutate(csum = rev(cumsum(rev(percentage))),
+                  pos = percentage/2 + lead(csum, 1),
+                  pos = if_else(is.na(pos), percentage/2, pos))
+
+  pie = ggplot(temp2, aes(x="", y=percentage, fill=cluster))+
+    geom_col(width = 1, color = 1) +
+    coord_polar("y", start=0) +
+    geom_label_repel(data = temp2,
+                     aes(y = pos, label = paste0(percentage, "%")),
+                     size = 4, nudge_x = 1, show.legend = FALSE,
+                     segment.color = "#999999",
+                     col = "black") +
+    theme_minimal() +
+    ggtitle(label = cond_list[i]) +
+    theme(axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.title.y = element_blank(),
+          panel.border = element_blank(),
+          panel.grid=element_blank(),
+          axis.ticks = element_blank(),
+          plot.title=element_text(size=14, face="bold")
+    )
+
+  list_cond_pie[[i]] = pie
+}
+
+do.call("grid.arrange", c(list_cond_pie, ncol = 3))
+
+```
+
+```{r, Clusters statistics - bp plots - merged ctrl, fig.width = 14, fig.height = 8}
+
+###########
+# Cluster #
+###########
+
+temp_clust = tab_percent_clust_merge %>% dplyr::select(-total_cell_per_cluster)
+temp_clust = temp_clust %>% tidyr::pivot_longer(cols = 2:ncol(temp_clust),
+                                    names_to = "condition",
+                                    values_to = "percentage")
+
+bp_clust_merge = ggplot(temp_clust, aes(x=cluster, y=percentage, fill=condition))+
+  geom_bar(width = 0.8, stat = "identity") +
+  scale_fill_manual(values = color_code, limits = force) +
+  theme(axis.text.x=element_text(angle=90))
+bp_clust_merge
+
+#############
+# Condition #
+#############
+
+temp_cond = tab_percent_cond_merge %>% dplyr::select(-total_cell_per_condition)
+temp_cond = temp_cond %>% tidyr::pivot_longer(cols = 2:ncol(temp_cond),
+                                    names_to = "cluster",
+                                    values_to = "percentage")
+
+bp_cond_merge = ggplot(temp_cond, aes(x=condition, y=percentage, fill=cluster))+
+  geom_bar(width = 0.8, stat = "identity") +
+  theme(axis.text.x=element_text(angle=90))
+bp_cond_merge
+
+```
+
+```{r, Clusters statistics - pie plots - merged ctrl, fig.width = 14, fig.height = 24}
+
+###########
+# Cluster #
+###########
+
+clust_list = tab_percent_clust_merge$cluster
+list_clust_merge_pie = list()
+
+for (i in 1:length(clust_list)) {
+  
+  temp2 = temp_clust %>% 
+    dplyr::filter(cluster == clust_list[i]) %>% 
+    dplyr::mutate(csum = rev(cumsum(rev(percentage))), 
+                  pos = percentage/2 + lead(csum, 1),
+                  pos = if_else(is.na(pos), percentage/2, pos))
+  
+  pie = ggplot(temp2, aes(x="", y=percentage, fill=condition))+
+    geom_col(width = 1, color = 1) +
+    coord_polar("y", start=0) + 
+    scale_fill_manual(values = color_code, limits = force) +
+    geom_label_repel(data = temp2,
+                     aes(y = pos, label = paste0(percentage, "%")),
+                     size = 4, nudge_x = 1, show.legend = FALSE, 
+                     segment.color = "#999999",
+                     col = "black") +
+    theme_minimal() +
+    ggtitle(label = clust_list[i]) +
+    theme(axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.title.y = element_blank(),
+          panel.border = element_blank(),
+          panel.grid=element_blank(),
+          axis.ticks = element_blank(),
+          plot.title=element_text(size=14, face="bold")
+    )
+  
+  list_clust_merge_pie[[i]] = pie
+}
+
+do.call("grid.arrange", c(list_clust_merge_pie, ncol = 3))
+
+#############
+# Condition #
+#############
+
+cond_list = tab_percent_cond_merge$condition
+list_cond_merge_pie = list()
+
+for (i in 1:length(cond_list)) {
+
+  temp2 = temp_cond %>% 
+    dplyr::filter(condition == cond_list[i]) %>%
+    dplyr::mutate(cluster = sort(cluster)) %>%
+    dplyr::mutate(csum = rev(cumsum(rev(percentage))),
+                  pos = percentage/2 + lead(csum, 1),
+                  pos = if_else(is.na(pos), percentage/2, pos))
+
+  pie = ggplot(temp2, aes(x="", y=percentage, fill=cluster))+
+    geom_col(width = 1, color = 1) +
+    coord_polar("y", start=0) +
+    geom_label_repel(data = temp2,
+                     aes(y = pos, label = paste0(percentage, "%")),
+                     size = 4, nudge_x = 1, show.legend = FALSE,
+                     segment.color = "#999999",
+                     col = "black") +
+    theme_minimal() +
+    ggtitle(label = cond_list[i]) +
+    theme(axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.title.y = element_blank(),
+          panel.border = element_blank(),
+          panel.grid=element_blank(),
+          axis.ticks = element_blank(),
+          plot.title=element_text(size=14, face="bold")
+    )
+
+  list_cond_merge_pie[[i]] = pie
+
+}
+
+do.call("grid.arrange", c(list_cond_merge_pie, ncol = 3))
+
+```
+
+```{r, Save outputs, fig.show='hide'}
+
+write.csv2(x = tab_number, 
+           file = paste0(directory_output, "tab_number_cells_clusters.csv"), 
+           row.names = FALSE)
+write.csv2(x = tab_number_merge, 
+           file = paste0(directory_output, "tab_number_cells_clusters_mergectrl.csv"), 
+           row.names = FALSE)
+
+write.csv2(x = tab_number_norm, 
+           file = paste0(directory_output, "tab_number_norm_cells_clusters.csv"), 
+           row.names = FALSE)
+write.csv2(x = tab_number_merge_norm, 
+           file = paste0(directory_output, "tab_number_norm_cells_clusters_mergectrl.csv"), 
+           row.names = FALSE)
+
+write.csv2(x = tab_percent_cond_merge, 
+           file = paste0(directory_output, "tab_norm_percent_cells_conditions_mergectrl.csv"), 
+           row.names = FALSE)
+write.csv2(x = tab_percent_clust_merge, 
+           file = paste0(directory_output, "tab_norm_percent_cells_clusters_mergectrl.csv"), 
+           row.names = FALSE)
+
+ggsave(plot = bp_clust, filename = paste0(directory_output, "bp_clust.svg"))
+ggsave(plot = bp_cond, filename = paste0(directory_output, "bp_cond.svg"))
+ggsave(plot = bp_clust_merge, filename = paste0(directory_output, "bp_clust_mergectrl.svg"))
+ggsave(plot = bp_cond_merge, filename = paste0(directory_output, "bp_cond_merge_ctrl.svg"))
+
+ggsave(plot = do.call("grid.arrange", c(list_cond_pie, ncol = 3)),
+       filename = paste0(directory_output, "pie_cond.svg"),
+       height = 18, width = 20)
+ggsave(plot = do.call("grid.arrange", c(list_clust_pie, ncol = 3)),
+       filename = paste0(directory_output, "pie_clust.svg"),
+       height = 18, width = 20)
+ggsave(plot = do.call("grid.arrange", c(list_cond_merge_pie, ncol = 3)),
+       filename = paste0(directory_output, "pie_cond_mergectrl.svg"),
+       height = 18, width = 20)
+ggsave(plot = do.call("grid.arrange", c(list_clust_merge_pie, ncol = 3)),
+       filename = paste0(directory_output, "pie_clust_mergectrl.svg"),
+       height = 18, width = 20)
+
+```
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+# Show package version
+sessionInfo()
+
+```

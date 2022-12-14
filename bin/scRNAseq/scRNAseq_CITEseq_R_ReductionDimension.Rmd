@@ -31,11 +31,10 @@ library(ggplot2)
 library(stringr)
 library(cowplot)
 library(gridExtra)
+library(tibble)
+library(clustree)
 
 ```
-
-https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1
-https://satijalab.org/seurat/articles/dim_reduction_vignette.html
 
 ```{r, Working directories and external script}
 
@@ -54,6 +53,17 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 
 ```
 
+
+https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1
+https://satijalab.org/seurat/articles/dim_reduction_vignette.html
+https://sib-swiss.github.io/single-cell-training/2022.7/day2/clustering/
+
+
+# Analysis on the SCT normalized object WITHOUT cell cycle regression
+
+This part includes function definition of the analysis and the application on the normalized object without cell cycle regression.  
+If we want to study the normalized object with cell cycle regression, see part II.   
+
 ```{r, Input loading}
 
 dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_NormalizeData/"))
@@ -70,24 +80,10 @@ features_all = SelectIntegrationFeatures(object.list = list_seurat, nfeatures = 
 VariableFeatures(merged_all, assay = "SCT") = features_all
 rm(list_seurat, features_all)
 
-# Object with cc regression 
-list_seurat_cc = readRDS(paste0(dir, "/", "list_seurat_obj_qc_norm_ccr.rds"))
-features_all_cc = SelectIntegrationFeatures(object.list = list_seurat_cc, nfeatures = 3000)
-merged_cc = merge(x = list_seurat_cc[["CTRL"]], 
-                  y = c(list_seurat_cc[["CTRLaK"]], list_seurat_cc[["DON"]],
-                        list_seurat_cc[["DONaK"]], list_seurat_cc[["2DG"]],
-                        list_seurat_cc[["2DGaK"]], list_seurat_cc[["VPA"]],
-                        list_seurat_cc[["CTRL2"]], list_seurat_cc[["AOA"]],
-                        list_seurat_cc[["AOAaK"]]))
-VariableFeatures(merged_cc, assay = "SCT") = features_all_cc
-rm(list_seurat_cc, features_all_cc)
-
 ```
 
+## Perform linear dimensional reduction and determine the "dimensionality" (PCA)
 
-# Perform linear dimensional reduction and determine the "dimensionality" (PCA)
-
-https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1
 Jackstraw method is time consuming for large dataset. We choose to use only the heuristic elbow plot method to determine the dimensionality.
 On commence par tracer des "elbow plots" qui permettent de déterminer visuellement un nombre de dimensions à conserver (approximatif). Les dimensions sont rangées selon le pourcentage de variance qu'elles expliquent. On souhaite conserver les dimensions qui expliquent le plus la variance. Pour cela, on repère l'endroit où la courbe fait un coude.
 De façon approximative, on observe que les 40 premières dimensions représentent la majorité de la variance donc on ne s'occupe plus des autres dimensions. 
@@ -142,22 +138,12 @@ dim_choice_fun = function(obj, name_assay) {
 dim_seurat_obj = dim_choice_fun(merged_all, "SCT")
 merged_all = dim_seurat_obj$obj
 
-dim_seurat_obj_cc = dim_choice_fun(merged_cc, "SCT")
-merged_cc = dim_seurat_obj_cc$obj
-
 ```
 
-```{r, PCA plot1, fig.width = 20, fig.height=18}
+```{r, PCA plot, fig.width = 20, fig.height=18}
 
 (dim_seurat_obj$elb_plot | dim_seurat_obj$pca_plot) / dim_seurat_obj$pca_split_plot
 dim_seurat_obj$pca_dim
-
-```
-
-```{r, PCA plot2, fig.height = 20, fig.width = 24}
-
-(dim_seurat_obj_cc$elb_plot | dim_seurat_obj_cc$pca_plot) / dim_seurat_obj_cc$pca_split_plot
-dim_seurat_obj_cc$pca_dim
 
 ```
 
@@ -243,34 +229,31 @@ merged_all = umap_seurat_obj$obj
 merged_all = SetIdent(object = merged_all, value = "orig.ident")
 umap_hl = umap_highlight(merged_all, color_code)
 
-umap_seurat_obj_cc = umap_fun(merged_cc, "SCT", dim_choice, color_code)
-merged_cc = umap_seurat_obj_cc$obj
-merged_cc = SetIdent(object = merged_cc, value = "orig.ident")
-umap_hl_cc = umap_highlight(merged_cc, color_code)
-
 ```
 
 ```{r, UMAP plot1, fig.width = 14, fig.height = 14}
 
 umap_seurat_obj$umap_plot / umap_seurat_obj$umap_split_plot
-umap_seurat_obj_cc$umap_plot / umap_seurat_obj_cc$umap_split_plot
 
 ```
 
 Not the same graph as in BatchEffectCorrection script because we didn't choose the same dimensions.
 If we change the dimensions in 1:30, we obtain the same graph.
-For latter downstream analysis, we choose to use the merge object without cc and the SCT normalization with 1-40 dimensions.
+For latter downstream analysis, we choose to use the merged object without cc and the SCT normalization with 1-40 dimensions.
 
 ```{r, UMAP plot2, fig.width = 22, fig.height = 20}
 
 do.call("grid.arrange", c(umap_hl, ncol = 3))
-do.call("grid.arrange", c(umap_hl_cc, ncol = 3))
 
 ```
 
 
-# Clusters resolution
+## Determine clusters resolution
 
+1 = original Louvain algorithm
+2 = Louvain algorithm with multilevel refinement
+3 = SLM algorithm => SLM, Blondel et al., Journal of Statistical Mechanics
+4 = Leiden algorithm
 ```{r, Resolution Calcul}
 
 resolution_possibility = function(seurat_obj, dim_choice) {
@@ -292,7 +275,6 @@ resolution_possibility = function(seurat_obj, dim_choice) {
 }
 
 merged_all = resolution_possibility(merged_all, dim_choice)
-merged_cc = resolution_possibility(merged_cc, dim_choice)
 
 ```
 
@@ -345,53 +327,89 @@ plot_resolution_fun = function(seurat_obj) {
 }
 
 resolution_merged_all = plot_resolution_fun(merged_all)
-resolution_merged_cc = plot_resolution_fun(merged_cc)
-
 print(resolution_merged_all)
-print(resolution_merged_cc)
+
+print("Based on the conditions we want to analyze, resolution 0.6 seems the best. Clusters 17 and 18 from resolutions 0.8 are also interesting so we are going to add them manually to the clustering by extracting the cells from cluster 12 and do a reclustering.")
+
+# saveRDS(merged_all, file = paste0(directory_output, "merged_all_resolutions.rds"))
+# merged_all = readRDS(file = paste0(directory_output, "merged_all_resolutions.rds"))
 
 ```
 
-```{r, Resolution choice, results='hold', fig.height=5, fig.width=16}
+```{r, Resolution choice, fig.height=16, fig.width=10}
 
-print("Based on the conditions we want to analyze, the resolutions 0.5, 0.6 and 0.7 can be interesting.")
+clustree(merged_all@meta.data, prefix = "SCT_snn_res.")
 
-resolution_choice = function(seurat_obj) {
-  
-  seurat_obj@meta.data = seurat_obj@meta.data %>%
-    dplyr::select(-SCT_snn_res.0.01,-SCT_snn_res.0.02,-SCT_snn_res.0.03,
-                  -SCT_snn_res.0.04,-SCT_snn_res.0.05,-SCT_snn_res.0.07,
-                  -SCT_snn_res.0.08,-SCT_snn_res.0.09,-SCT_snn_res.0.1,
-                  -SCT_snn_res.0.2,-SCT_snn_res.0.3,-SCT_snn_res.0.4,
-                  -SCT_snn_res.0.8,-SCT_snn_res.0.9,-SCT_snn_res.1,
-                  -seurat_clusters)
-  
-  plot_clusters =
-    DimPlot(seurat_obj, reduction = "umap", label = TRUE,
-            group.by = "SCT_snn_res.0.5") + ggtitle("Resolution_0.5") |
-    DimPlot(seurat_obj, reduction = "umap", label = TRUE,
-            group.by = "SCT_snn_res.0.6") + ggtitle("Resolution_0.6") |
-    DimPlot(seurat_obj, reduction = "umap", label = TRUE,
-            group.by = "SCT_snn_res.0.7") + ggtitle("Resolution_0.7")
-  
-  results = list(seurat_obj = seurat_obj,
-                 plot_clusters = plot_clusters)
-  return(results)
-}
+```
 
+We choose resolution 0,6 but we redefine cluster 12 in two if possible.
+```{r, fig.width = 20, fig.height = 10}
 
-res_choice = resolution_choice(merged_all)
-merged_all = res_choice$seurat_obj
-print(res_choice$plot_clusters)
-  
-res_choice_cc = resolution_choice(merged_cc)
-merged_cc = res_choice_cc$seurat_obj
-print(res_choice_cc$plot_clusters)
+# extract cells from cluster 12
+merged_all = SetIdent(object = merged_all, value = "SCT_snn_res.0.6")
+obj = subset(merged_all, idents = "12")
+obj = FindNeighbors(object = obj, 
+                    assay = "SCT",
+                    dims = dim_choice)
+# reclusterise the cells in order to have two clusters
+for (res in c(0.01, 0.05, 0.1, 0.5, 1)) {
+    obj <- FindClusters(
+      object = obj, 
+      resolution = res, 
+      algorithm = 3)
+  }
+
+# visualize the different resolutions to choose the best one
+plot = plot_grid(ncol = 3, 
+                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.01") + ggtitle("Resolution_0.01"),
+                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.05") + ggtitle("Resolution_0.05"),
+                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.1") + ggtitle("Resolution_0.1"),
+                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.5") + ggtitle("Resolution_0.5"),
+                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.1") + ggtitle("Resolution_1"))
+plot
+print("Resolution 0.05 is the best to reclusterize those cells.")
+
+```
+
+```{r}
+
+# Create new column of clusterings
+new_clust = obj@meta.data %>% 
+  dplyr::select("SCT_snn_res.0.05") %>% 
+  dplyr::rename("new_clusters" = "SCT_snn_res.0.05") %>%
+  dplyr::mutate(new_clusters = ifelse(new_clusters == 0, 12, 17))
+
+old_clust = merged_all@meta.data %>% dplyr::select(SCT_snn_res.0.6)
+old_clust$SCT_snn_res.0.6 = as.numeric(levels(old_clust$SCT_snn_res.0.6))[old_clust$SCT_snn_res.0.6]
+# Attention ! utiliser as.integer() change la valeur dans le tableau...
+
+new_clust = full_join(x = old_clust %>% tibble::rownames_to_column(var = "cell"), 
+                      y = new_clust %>% tibble::rownames_to_column(var = "cell"), 
+                      by = "cell") %>%
+  dplyr::mutate(clusters = ifelse(is.na(new_clusters), SCT_snn_res.0.6, new_clusters)) %>%
+  dplyr::select(-new_clusters, -SCT_snn_res.0.6)
+
+# Add new clustering information in seurat object metadata
+metadata_seurat = merged_all@meta.data %>%
+  dplyr::select(-SCT_snn_res.0.01,-SCT_snn_res.0.02,-SCT_snn_res.0.03,
+                -SCT_snn_res.0.04,-SCT_snn_res.0.05,-SCT_snn_res.0.06, 
+                -SCT_snn_res.0.07,-SCT_snn_res.0.08,-SCT_snn_res.0.09,
+                -SCT_snn_res.0.1,-SCT_snn_res.0.2,-SCT_snn_res.0.3,
+                -SCT_snn_res.0.4,-SCT_snn_res.0.5,-SCT_snn_res.0.6, 
+                -SCT_snn_res.0.7,-SCT_snn_res.0.8,-SCT_snn_res.0.9,
+                -SCT_snn_res.1,-seurat_clusters) %>%
+  dplyr::mutate(clusters = new_clust$clusters)
+metadata_seurat$clusters = as.factor(metadata_seurat$clusters)
+
+merged_all@meta.data = metadata_seurat
+res_choice = DimPlot(merged_all, label = TRUE, reduction = "umap", group.by = "clusters")
+print(res_choice)
 
 ```
 
 
-```{r, Save outputs, results='hide'}
+
+```{r, Save outputs, fig.show='hide'}
 
 # Without cc regression
 ggsave(plot = (dim_seurat_obj$elb_plot | dim_seurat_obj$pca_plot) / dim_seurat_obj$pca_split_plot, 
@@ -412,17 +430,147 @@ ggsave(plot = do.call("grid.arrange", c(umap_hl, ncol = 3)),
 ggsave(plot = resolution_merged_all,
        filename = paste0(directory_output, "umap_clusters_resolution.svg"),
        height = 24, width = 24)
-ggsave(plot = res_choice$plot_clusters,
+ggsave(plot = res_choice,
        filename = paste0(directory_output, "umap_clusters_res_choice.svg"),
        height = 8, width = 24)
 
 saveRDS(merged_all, paste0(directory_output, "merged_all_1-40dim.rds"))
 
-# With cc regression
-ggsave(plot = (dim_seurat_obj_cc$elb_plot | dim_seurat_obj_cc$pca_plot) / dim_seurat_obj_cc$pca_split_plot, 
+```
+
+
+# Analysis on the SCT normalized object WITH cell cycle regression
+
+```{r}
+
+# Object with cc regression
+list_seurat_cc = readRDS(paste0(dir, "/", "list_seurat_obj_qc_norm_ccr.rds"))
+features_all_cc = SelectIntegrationFeatures(object.list = list_seurat_cc, nfeatures = 3000)
+merged_cc = merge(x = list_seurat_cc[["CTRL"]],
+                  y = c(list_seurat_cc[["CTRLaK"]], list_seurat_cc[["DON"]],
+                        list_seurat_cc[["DONaK"]], list_seurat_cc[["2DG"]],
+                        list_seurat_cc[["2DGaK"]], list_seurat_cc[["VPA"]],
+                        list_seurat_cc[["CTRL2"]], list_seurat_cc[["AOA"]],
+                        list_seurat_cc[["AOAaK"]]))
+VariableFeatures(merged_cc, assay = "SCT") = features_all_cc
+rm(list_seurat_cc, features_all_cc)
+
+dim_seurat_obj_cc = dim_choice_fun(merged_cc, "SCT")
+merged_cc = dim_seurat_obj_cc$obj
+
+```
+
+```{r, fig.height = 20, fig.width = 24}
+
+(dim_seurat_obj_cc$elb_plot | dim_seurat_obj_cc$pca_plot) / dim_seurat_obj_cc$pca_split_plot
+dim_seurat_obj_cc$pca_dim
+
+print("We chose dimensions 1 --> 40 for downstream analysis.")
+dim_choice = c(1:40)
+
+umap_seurat_obj_cc = umap_fun(merged_cc, "SCT", dim_choice, color_code)
+merged_cc = umap_seurat_obj_cc$obj
+merged_cc = SetIdent(object = merged_cc, value = "orig.ident")
+umap_hl_cc = umap_highlight(merged_cc, color_code)
+
+```
+
+```{r, fig.width = 14, fig.height = 14}
+
+umap_seurat_obj_cc$umap_plot / umap_seurat_obj_cc$umap_split_plot
+
+```
+
+```{r, fig.width = 22, fig.height = 20}
+
+do.call("grid.arrange", c(umap_hl_cc, ncol = 3))
+
+```
+
+
+```{r, fig.height=16, fig.width=10}
+
+merged_cc = resolution_possibility(merged_cc, dim_choice)
+resolution_merged_cc = plot_resolution_fun(merged_cc)
+print(resolution_merged_cc)
+
+```
+
+```{r, fig.height=16, fig.width=10}
+
+clustree(merged_cc@meta.data, prefix = "SCT_snn_res.")
+print("Based on the conditions we want to analyze, resolution 0.6 seems the best. Clusters 16 and 17 from resolutions 1 are also interesting so we are going to add them manually to the clustering by extracting the cells from cluster 12 and do a reclustering.")
+
+```
+```{r, fig.width = 20, fig.height = 10}
+
+# extract cells from cluster 12
+merged_cc = SetIdent(object = merged_cc, value = "SCT_snn_res.0.6")
+obj = subset(merged_cc, idents = "12")
+obj = FindNeighbors(object = obj, 
+                    assay = "SCT",
+                    dims = dim_choice)
+# reclusterise the cells in order to have two clusters
+for (res in c(0.01, 0.05, 0.1, 0.5, 1)) {
+    obj <- FindClusters(
+      object = obj, 
+      resolution = res, 
+      algorithm = 3)
+  }
+
+# visualize the different resolutions to choose the best one
+plot = plot_grid(ncol = 3, 
+                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.01") + ggtitle("Resolution_0.01"),
+                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.05") + ggtitle("Resolution_0.05"),
+                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.1") + ggtitle("Resolution_0.1"),
+                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.5") + ggtitle("Resolution_0.5"),
+                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.1") + ggtitle("Resolution_1"))
+plot
+print("Resolution 0.05 is the best to reclusterize those cells.")
+
+```
+
+```{r}
+# Create new column of clusterings
+new_clust = obj@meta.data %>% 
+  dplyr::select("SCT_snn_res.0.05") %>% 
+  dplyr::rename("new_clusters" = "SCT_snn_res.0.05") %>%
+  dplyr::mutate(new_clusters = ifelse(new_clusters == 0, 12, 15))
+
+old_clust = merged_cc@meta.data %>% dplyr::select(SCT_snn_res.0.6)
+old_clust$SCT_snn_res.0.6 = as.numeric(levels(old_clust$SCT_snn_res.0.6))[old_clust$SCT_snn_res.0.6]
+# Attention ! utiliser as.integer() change la valeur dans le tableau...
+
+new_clust = full_join(x = old_clust %>% tibble::rownames_to_column(var = "cell"), 
+                      y = new_clust %>% tibble::rownames_to_column(var = "cell"), 
+                      by = "cell") %>%
+  dplyr::mutate(clusters = ifelse(is.na(new_clusters), SCT_snn_res.0.6, new_clusters)) %>%
+  dplyr::select(-new_clusters, -SCT_snn_res.0.6)
+
+# Add new clustering information in seurat object metadata
+metadata_seurat = merged_cc@meta.data %>%
+  dplyr::select(-SCT_snn_res.0.01,-SCT_snn_res.0.02,-SCT_snn_res.0.03,
+                -SCT_snn_res.0.04,-SCT_snn_res.0.05,-SCT_snn_res.0.06, 
+                -SCT_snn_res.0.07,-SCT_snn_res.0.08,-SCT_snn_res.0.09,
+                -SCT_snn_res.0.1,-SCT_snn_res.0.2,-SCT_snn_res.0.3,
+                -SCT_snn_res.0.4,-SCT_snn_res.0.5,-SCT_snn_res.0.6, 
+                -SCT_snn_res.0.7,-SCT_snn_res.0.8,-SCT_snn_res.0.9,
+                -SCT_snn_res.1,-seurat_clusters) %>%
+  dplyr::mutate(clusters = new_clust$clusters)
+metadata_seurat$clusters = as.factor(metadata_seurat$clusters)
+
+merged_cc@meta.data = metadata_seurat
+res_choice_cc = DimPlot(merged_cc, label = TRUE, reduction = "umap", group.by = "clusters")
+print(res_choice_cc)
+
+```
+
+```{r, fig.show='hide'}
+
+ggsave(plot = (dim_seurat_obj_cc$elb_plot | dim_seurat_obj_cc$pca_plot) / dim_seurat_obj_cc$pca_split_plot,
        filename = paste0(directory_output, "dimension_choice_elb_pca_cc.svg"),
        height = 18, width = 20)
-ggsave(plot = dim_seurat_obj_cc$pca_dim, 
+ggsave(plot = dim_seurat_obj_cc$pca_dim,
        filename = paste0(directory_output, "dimension_choice_pca_genes_cc.svg"),
        height = 26, width = 20)
 ggsave(plot = umap_seurat_obj_cc$umap_plot,
@@ -437,13 +585,14 @@ ggsave(plot = do.call("grid.arrange", c(umap_hl_cc, ncol = 3)),
 ggsave(plot = resolution_merged_cc,
        filename = paste0(directory_output, "umap_clusters_resolution_cc.svg"),
        height = 24, width = 24)
-ggsave(plot = res_choice_cc$plot_clusters,
+ggsave(plot = res_choice_cc,
        filename = paste0(directory_output, "umap_clusters_res_choice_cc.svg"),
        height = 8, width = 24)
 
-saveRDS(merged_cc, paste0(directory_output, "merged_cc_1-40dim.rds")) 
+saveRDS(merged_cc, paste0(directory_output, "merged_cc_1-40dim.rds"))
 
 ```
+
 
 ```{r, Rsession}
 
