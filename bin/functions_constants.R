@@ -7,6 +7,7 @@
 color_code = c(
   "CTRL" = "#009E73",
   "CTRL2" = "#009E73",
+  "CTRL_CTRL2" = "#009E73",
   "DON" = "#0072B2",
   "2DG" = "#E69F00",
   "AOA" = "#D30707",
@@ -16,7 +17,6 @@ color_code = c(
   "AOAaK" = "#FF8989",
   "VPA" = "#FF59B5"
 )
-
 
 # Lists of interesting genes to study
 list_genes_TH_hemato = c('SMAD6', 'GATA1', 'GATA2', 'RUNX1', 'TAL1', 'HHEX', 'ZFPM1', 'FLI1', 'CBFA2T3', 'SPI1', 'ERG')
