@@ -543,7 +543,7 @@ tab_UMI %>%
 
 # Conclusion 
 
-```{r, Save outputs, results = 'hide'}
+```{r, Save outputs, fig.show='hide''}
 
 # Save plots
 ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5, 
