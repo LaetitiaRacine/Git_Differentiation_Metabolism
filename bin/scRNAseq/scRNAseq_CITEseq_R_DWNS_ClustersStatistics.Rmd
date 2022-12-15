@@ -36,6 +36,14 @@ library(ggrepel)
 
 ```
 
+# Overview 
+
+This code aims to analyze cell clusters' composition (which drug condition in which cluster and in which proportion) and to identify interesting clusters for further investigation. 
+  
+Based on documentations for plots :         
+- http://www.sthda.com/english/wiki/ggplot2-pie-chart-quick-start-guide-r-software-and-data-visualization  
+- https://r-charts.com/part-whole/pie-chart-labels-outside-ggplot2/       
+        
 ```{r, Working directories and external script}
 
 # Load working directories
@@ -44,9 +52,9 @@ start_time = Sys.time()
 
 # Create a unique folder for output corresponding to the date of the day
 current_date = format(Sys.time(), "%Y%m%d")
-dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersInvestigation/"))
-dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersInvestigation/", current_date))
-directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersInvestigation/", current_date, "/")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersStatistics/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersStatistics/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersStatistics/", current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
@@ -117,6 +125,9 @@ do.call("grid.arrange", c(umap_hl, ncol = 3))
 ```
 
 
+
+# Option 1 : clusters statistics with separated controls
+
 ```{r, Clusters statistics - tab number - separated ctrl}
 
 clusters = as.integer(levels(unique(merged_all@meta.data$clusters)))
@@ -149,30 +160,9 @@ tab_number %>%
 
 ```
 
-```{r, Clusters statistics - tab number - merged ctrl}
-
-# Merge CTRL and CTRL2
-temp = tab_number %>% dplyr::filter(condition %in% c("CTRL", "CTRL2"))
-temp = as.data.frame(t(data.frame(colSums(temp[,-1]))))
-rownames(temp) = "CTRL_CTRL2"
-temp  = temp %>% tibble::rownames_to_column(var = "condition")
-tab_number_merge = rbind(tab_number %>% dplyr::filter(condition != c("CTRL", "CTRL2")), temp)
-tab_number_merge = tab_number_merge[c(1:4, 10, 5:9),]
-
-# Display dataframe
-tab_number_merge %>%
-  kable(caption = "Not normalized cells' distribution with merged controls") %>%
-  kable_styling() %>%
-  scroll_box(height = "250px", width = "100%")
-
-```
-
+We don't start with the same number of cells in each condition. A normalization step based on the initial number of cells per condition is required to be able to compare the conditions.
+    
 ```{r, Clusters statistics - tab number normalized - separated ctrl}
-
-# Normalize on initial cell number
-cat("We don't start with the same number of cells in each condition. A 
-    normalization step based on the initial number of cells per condition 
-    is required to be able to compare the conditions.")
 
 # Divide per the number of cells, multiply by a 1000 factor and round
 tab_number_norm = tab_number[-nrow(tab_number),]
@@ -187,26 +177,6 @@ tab_number_norm = rbind(tab_number_norm, temp)
 # Display dataframe
 tab_number_norm %>%
   kable(caption = "Normalized cells' distribution based on the initial number of cells in each condition.") %>%
-  kable_styling() %>%
-  scroll_box(height = "250px", width = "100%")
-
-```
-
-```{r, Clusters statistics - tab number normalized - merged ctrl}
-
-# Divide per the number of cells, multiply by a 1000 factor and round
-tab_number_merge_norm = tab_number_merge[-nrow(tab_number_merge),]
-tab_number_merge_norm[,-1] = round((tab_number_merge_norm[,-1]/tab_number_merge_norm[ ,ncol(tab_number_merge_norm)])*1000)
-
-# Add total per cluster
-temp = as.data.frame(t(data.frame(colSums(tab_number_merge_norm[,-1]))))
-rownames(temp) = "total_cell_per_cluster"
-temp = temp %>% tibble::rownames_to_column(var = "condition")
-tab_number_merge_norm = rbind(tab_number_merge_norm, temp)
-
-# Display dataframe
-tab_number_merge_norm %>%
-  kable(caption = "Normalized cells' distribution based on the initial number of cells in each condition with merged controls.") %>%
   kable_styling() %>%
   scroll_box(height = "250px", width = "100%")
 
@@ -239,38 +209,6 @@ tab_percent_clust %>%
 
 ```
 
-```{r, Clusters statistics - tab percent normalized - merged ctrl}
-
-# Cells' percentage in cluster per condition
-tab_percent_cond_merge = tab_number_merge_norm %>% dplyr::filter(condition != "total_cell_per_cluster")
-tab_percent_cond_merge[ ,-1] = round((tab_percent_cond_merge[ ,-1]/tab_percent_cond_merge[ ,ncol(tab_percent_cond_merge)])*100, 1)
-
-tab_percent_cond_merge %>%
-  kable(caption = "Normalized cells' percentage distribution per condition with merged controls.") %>%
-  kable_styling() %>%
-  scroll_box(height = "250px", width = "100%")
-
-# Cells' percentage in condition per cluster 
-tab_percent_clust_merge = tab_number_merge_norm %>% dplyr::select(-total_cell_per_condition)
-tab_percent_clust_merge = as.data.frame(t(tab_percent_clust_merge))
-colnames(tab_percent_clust_merge) = tab_percent_clust_merge[1,]
-tab_percent_clust_merge = tab_percent_clust_merge[-1,] %>% 
-  mutate_if(is.character, ~as.numeric(.)) %>%
-  rownames_to_column(var = "cluster")
-tab_percent_clust_merge[,-1] = round((tab_percent_clust_merge[ ,-1]/tab_percent_clust_merge[ ,ncol(tab_percent_clust_merge)])*100, 1)
-
-tab_percent_clust_merge %>%
-  kable(caption = "Normalized cells' percentage distribution per clsuter with merged controls.") %>%
-  kable_styling() %>%
-  scroll_box(height = "250px", width = "100%")
-
-```
-  
-  
-Graphic representation of the last tables.  
-http://www.sthda.com/english/wiki/ggplot2-pie-chart-quick-start-guide-r-software-and-data-visualization  
-https://r-charts.com/part-whole/pie-chart-labels-outside-ggplot2/  
-  
 ```{r, Clusters statistics - bp plots - separated ctrl, fig.width = 14, fig.height = 8}
 
 ###########
@@ -390,6 +328,77 @@ do.call("grid.arrange", c(list_cond_pie, ncol = 3))
 
 ```
 
+  
+  
+# Option 2 : clusters statistics with merged controls 
+
+As we decided there were no batch effect on the data, we can merge the two control samples. Then, the new control describe all the kind of cells we can find in standard culture condition without any dug influence. 
+
+```{r, Clusters statistics - tab number - merged ctrl}
+
+# Merge CTRL and CTRL2
+temp = tab_number %>% dplyr::filter(condition %in% c("CTRL", "CTRL2"))
+temp = as.data.frame(t(data.frame(colSums(temp[,-1]))))
+rownames(temp) = "CTRL_CTRL2"
+temp  = temp %>% tibble::rownames_to_column(var = "condition")
+tab_number_merge = rbind(tab_number %>% dplyr::filter(condition != c("CTRL", "CTRL2")), temp)
+tab_number_merge = tab_number_merge[c(1:4, 10, 5:9),]
+
+# Display dataframe
+tab_number_merge %>%
+  kable(caption = "Not normalized cells' distribution with merged controls") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+```{r, Clusters statistics - tab number normalized - merged ctrl}
+
+# Divide per the number of cells, multiply by a 1000 factor and round
+tab_number_merge_norm = tab_number_merge[-nrow(tab_number_merge),]
+tab_number_merge_norm[,-1] = round((tab_number_merge_norm[,-1]/tab_number_merge_norm[ ,ncol(tab_number_merge_norm)])*1000)
+
+# Add total per cluster
+temp = as.data.frame(t(data.frame(colSums(tab_number_merge_norm[,-1]))))
+rownames(temp) = "total_cell_per_cluster"
+temp = temp %>% tibble::rownames_to_column(var = "condition")
+tab_number_merge_norm = rbind(tab_number_merge_norm, temp)
+
+# Display dataframe
+tab_number_merge_norm %>%
+  kable(caption = "Normalized cells' distribution based on the initial number of cells in each condition with merged controls.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+```{r, Clusters statistics - tab percent normalized - merged ctrl}
+
+# Cells' percentage in cluster per condition
+tab_percent_cond_merge = tab_number_merge_norm %>% dplyr::filter(condition != "total_cell_per_cluster")
+tab_percent_cond_merge[ ,-1] = round((tab_percent_cond_merge[ ,-1]/tab_percent_cond_merge[ ,ncol(tab_percent_cond_merge)])*100, 1)
+
+tab_percent_cond_merge %>%
+  kable(caption = "Normalized cells' percentage distribution per condition with merged controls.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+# Cells' percentage in condition per cluster 
+tab_percent_clust_merge = tab_number_merge_norm %>% dplyr::select(-total_cell_per_condition)
+tab_percent_clust_merge = as.data.frame(t(tab_percent_clust_merge))
+colnames(tab_percent_clust_merge) = tab_percent_clust_merge[1,]
+tab_percent_clust_merge = tab_percent_clust_merge[-1,] %>% 
+  mutate_if(is.character, ~as.numeric(.)) %>%
+  rownames_to_column(var = "cluster")
+tab_percent_clust_merge[,-1] = round((tab_percent_clust_merge[ ,-1]/tab_percent_clust_merge[ ,ncol(tab_percent_clust_merge)])*100, 1)
+
+tab_percent_clust_merge %>%
+  kable(caption = "Normalized cells' percentage distribution per clsuter with merged controls.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+  
 ```{r, Clusters statistics - bp plots - merged ctrl, fig.width = 14, fig.height = 8}
 
 ###########
@@ -507,6 +516,8 @@ for (i in 1:length(cond_list)) {
 do.call("grid.arrange", c(list_cond_merge_pie, ncol = 3))
 
 ```
+
+
 
 ```{r, Save outputs, fig.show='hide'}
 
