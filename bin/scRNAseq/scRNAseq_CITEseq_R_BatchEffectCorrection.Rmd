@@ -33,7 +33,7 @@ library(knitr)
 
 ```
 
-# Script's goal
+# Overview
 
 This code aims at determining if dataset need to be correcting for batch effect bias.
 

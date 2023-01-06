@@ -53,11 +53,19 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 
 ```
 
+# Overview 
 
-https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1
-https://satijalab.org/seurat/articles/dim_reduction_vignette.html
-https://sib-swiss.github.io/single-cell-training/2022.7/day2/clustering/
-
+This code aims at :            
+- choosing the best dimensionality for the data set    
+- performing linear dimensional reduction (PCA)    
+- performing non-linear dimensional reduction (UMAP)  
+- finding the best clustering resolution for the data set  
+  
+Based on :    
+- https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1    
+- https://satijalab.org/seurat/articles/dim_reduction_vignette.html    
+- https://sib-swiss.github.io/single-cell-training/2022.7/day2/clustering/    
+  
 
 # Analysis on the SCT normalized object WITHOUT cell cycle regression
 
@@ -82,11 +90,21 @@ rm(list_seurat, features_all)
 
 ```
 
+As we decided there were no batch effect, we can consider CTRL and CTRL2 as one unique sample. We update meta.data with a new orig.ident. The original one is already stored in the column old.ident. 
+
+```{r, Merged control ident}
+
+metadata = data.frame(merged_all@meta.data) %>%
+  dplyr::mutate(orig.ident = ifelse(old.ident %in% c("CTRL", "CTRL2"), "CTRL", old.ident))
+
+merged_all@meta.data = metadata
+
+```
+
+
 ## Perform linear dimensional reduction and determine the "dimensionality" (PCA)
 
-Jackstraw method is time consuming for large dataset. We choose to use only the heuristic elbow plot method to determine the dimensionality.
-On commence par tracer des "elbow plots" qui permettent de déterminer visuellement un nombre de dimensions à conserver (approximatif). Les dimensions sont rangées selon le pourcentage de variance qu'elles expliquent. On souhaite conserver les dimensions qui expliquent le plus la variance. Pour cela, on repère l'endroit où la courbe fait un coude.
-De façon approximative, on observe que les 40 premières dimensions représentent la majorité de la variance donc on ne s'occupe plus des autres dimensions. 
+Jackstraw method is time consuming for large dataset. We choose to use only the heuristic elbow plot method to determine the dimensionality. Dimensions are ordered according to their implication in the global variance. To keep only the dimensions that explain the most the variance, we identify the bend on the elbow plot.  
 
 ```{r, PCA and dimensionality, fig.width = 20}
 
@@ -155,7 +173,7 @@ dim_choice = c(1:40)
 ```
 
 
-# Perform non-linear dimensional reduction (UMAP)
+## Perform non-linear dimensional reduction (UMAP)
 
 ```{r, UMAP}
 
@@ -250,10 +268,9 @@ do.call("grid.arrange", c(umap_hl, ncol = 3))
 
 ## Determine clusters resolution
 
-1 = original Louvain algorithm
-2 = Louvain algorithm with multilevel refinement
-3 = SLM algorithm => SLM, Blondel et al., Journal of Statistical Mechanics
-4 = Leiden algorithm
+We are looking for the clustering resolution that describe the best the data set and highlight the differences between conditions. 
+<br>
+
 ```{r, Resolution Calcul}
 
 resolution_possibility = function(seurat_obj, dim_choice) {
@@ -269,6 +286,10 @@ resolution_possibility = function(seurat_obj, dim_choice) {
       object = seurat_obj, 
       resolution = res, 
       algorithm = 3)
+      # 1 = original Louvain algorithm
+      # 2 = Louvain algorithm with multilevel refinement
+      # 3 = SLM algorithm => SLM, Blondel et al., Journal of Statistical Mechanics
+      # 4 = Leiden algorithm
   }
   return(seurat_obj)
   
@@ -329,21 +350,20 @@ plot_resolution_fun = function(seurat_obj) {
 resolution_merged_all = plot_resolution_fun(merged_all)
 print(resolution_merged_all)
 
-print("Based on the conditions we want to analyze, resolution 0.6 seems the best. Clusters 17 and 18 from resolutions 0.8 are also interesting so we are going to add them manually to the clustering by extracting the cells from cluster 12 and do a reclustering.")
-
-# saveRDS(merged_all, file = paste0(directory_output, "merged_all_resolutions.rds"))
-# merged_all = readRDS(file = paste0(directory_output, "merged_all_resolutions.rds"))
-
 ```
 
+<br>
+To help in the decision, we used the clustree package : https://cran.r-project.org/web/packages/clustree/vignettes/clustree.html.  
+<br>
 ```{r, Resolution choice, fig.height=16, fig.width=10}
 
 clustree(merged_all@meta.data, prefix = "SCT_snn_res.")
 
+print("Based on the conditions we want to analyze and the confirmation of the tree, resolution 0.6 seems the best for our study. However, clusters 17 and 18 from resolutions 0.8 are also interesting  because they allow to separate conditions. We are going to add them manually to the clustering by extracting the cells from cluster 12 and do a reclustering.")
+
 ```
 
-We choose resolution 0,6 but we redefine cluster 12 in two if possible.
-```{r, fig.width = 20, fig.height = 10}
+```{r, Reclustering cluster 12, fig.width = 20, fig.height = 10}
 
 # extract cells from cluster 12
 merged_all = SetIdent(object = merged_all, value = "SCT_snn_res.0.6")
@@ -371,7 +391,7 @@ print("Resolution 0.05 is the best to reclusterize those cells.")
 
 ```
 
-```{r}
+```{r, Add reclustering info to seurat object}
 
 # Create new column of clusterings
 new_clust = obj@meta.data %>% 
@@ -406,8 +426,6 @@ res_choice = DimPlot(merged_all, label = TRUE, reduction = "umap", group.by = "c
 print(res_choice)
 
 ```
-
-
 
 ```{r, Save outputs, fig.show='hide'}
 
@@ -487,7 +505,6 @@ do.call("grid.arrange", c(umap_hl_cc, ncol = 3))
 
 ```
 
-
 ```{r, fig.height=16, fig.width=10}
 
 merged_cc = resolution_possibility(merged_cc, dim_choice)
@@ -499,9 +516,11 @@ print(resolution_merged_cc)
 ```{r, fig.height=16, fig.width=10}
 
 clustree(merged_cc@meta.data, prefix = "SCT_snn_res.")
+
 print("Based on the conditions we want to analyze, resolution 0.6 seems the best. Clusters 16 and 17 from resolutions 1 are also interesting so we are going to add them manually to the clustering by extracting the cells from cluster 12 and do a reclustering.")
 
 ```
+
 ```{r, fig.width = 20, fig.height = 10}
 
 # extract cells from cluster 12

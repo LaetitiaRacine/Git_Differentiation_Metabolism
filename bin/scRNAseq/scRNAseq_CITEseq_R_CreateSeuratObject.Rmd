@@ -32,16 +32,18 @@ library(knitr)
 
 ```
 
-Ce code **permet de** :    
-- créer les matrices de count à partir des fichiers issus de CellRanger    
-- mettre les matrices de count au format Seurat Object pour chaque condition     
-- enregistrer les objets Seurat créés  
-  
-Il s'est **inspiré** de : 
+<br> 
+
+This code aims to :  
+- create count matrix from CellRanger output files  
+- store count matrix into a Seurat Object for each culture condition  
+- save seurat object for further analyzes
+
+Based on documentations : 
 - https://satijalab.org/seurat/articles/multimodal_vignette.html    
 - https://github.com/satijalab/seurat/issues/2362
     
-On obtient **en sortie** un objet Seurat par condition. Un objet Seurat sert de conteneurs qui regroupe à la fois les données (comme les matrices de counts) mais aussi les analyses (comme les PCA ou clustering) d'un même *single-cell dataset*. Il contient plusieurs *Assays* selon le type de données : ARN, Protéine (ADT), Normalisation... On retrouve la matrice de *counts* pour chaque assay indiquant les features (= gènes de la base de données GRCh38) en ligne et les cellules identifiées par leur barcode en colonnes. Les commandes principales pour manipuler un objet Seurat sont indiquées dans la vignette : https://satijalab.org/seurat/articles/essential_commands.html.  
+As output file, we obtain a list of seurat object (one object per condition). A seurat object is a container gathering data (as raw count matrix) but also analyzes (as PCA or clustering) of a *single-cell dataset*. It as several *Assays* depending the data type : RNA, Protein (ADT), Normalization SCT... Each assay contains its own *count matrix* with features (= genes from GRCh38 database) as rows and cells identified by a unique barcode as column. Principal command lines to handle seurat object are presented in the vignette : https://satijalab.org/seurat/articles/essential_commands.html.  
   
 ```{r, Working directories and external script}
 
@@ -81,8 +83,10 @@ list_seurat_obj = list()
 
 ```
 
-On travaille ici à partir du dossier envoyé par la plateforme de Cochin, contenant les fichiers traités via CellRanger. Pour chaque échantillon obtenus en multiplexage, on dispose d'un dossier contenant les informations nécessaires à la création des matrices de *count* stockées dans : [nom échantillon]/outs/per_sample_outs/sample[1ou2]/count. Pour chaque échantillon obtenu sans multiplexage et avec la nouvelle version de Cell Ranger, les informations sont stockées dans : [nom échantillon]/outs/filtered_feeature_bc_matrix. Pour plus de facilité pour la suite, les fichiers utiles au code ont été extraits des dossiers et renommés pour suivre la même nomenclature.  
-Pour que le gène (assay = RNA) puisse être différencié facilement de la protéine (assay = ADT) pour le CD34, la détection de la protéine est indiquée sous le nom CD34.1. Pour le CD133, on n'a pas ce problème car le gène associé au CD133 porte un autre nom : PROM1. 
+<br> 
+
+We work here from the folder we received from Cochin platform, with all output files from CellRanger software. For each multiplexing sample, we have a folder with all needed files for *count matrix* creation, which are stored in : [sample name]/outs/per_sample_outs/sample[1ou2]/count. For each simple sample obtained with updated CellRanger software, files are stored in folders named as : [sample name]/outs/filtered_feature_bc_matrix. To simplify, the files we use in this code were moved and renammed to follow the same nomenclature.  
+To easily distinguish the gene (assay = RNA) from the protein (assay = ADT) for the CD34 marker, protein detection is indicated under CD34.1. FOR CD133 marker, there is no problem as the associated gene as a different name known as PROM1.  
 
 ```{r, Create Individual Seurat Object - function definition}
 
@@ -159,14 +163,14 @@ for (i in 1:number_condition) {
 ## global structure
 list_seurat_obj["CTRL"]
 ## meta.data 
-list_seurat_obj["CTRL"]$meta.data
+list_seurat_obj[["CTRL"]]@meta.data[1:10,]
 ## RNA assay with the genes
 list_seurat_obj[["CTRL"]]@assays$RNA
 ## raw count matrix store in counts.slot (first 10 rows and column)
 as.data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@counts)[1:10, 1:10]
 ## normalized count matrix store in data.slot (first 10 rows and column)
-as.data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@data)[1:10, 1:10]
 # => same as the raw matrix because the normalization is not done yet
+as.data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@data)[1:10, 1:10]
 
 ```
   
