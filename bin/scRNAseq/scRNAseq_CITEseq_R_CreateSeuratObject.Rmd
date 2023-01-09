@@ -163,14 +163,14 @@ for (i in 1:number_condition) {
 ## global structure
 list_seurat_obj["CTRL"]
 ## meta.data 
-list_seurat_obj[["CTRL"]]@meta.data[1:10,]
+data.frame(list_seurat_obj[["CTRL"]]@meta.data[1:10,]) %>% kable()
 ## RNA assay with the genes
 list_seurat_obj[["CTRL"]]@assays$RNA
 ## raw count matrix store in counts.slot (first 10 rows and column)
-as.data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@counts)[1:10, 1:10]
+data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@counts[1:10, 1:5]) %>% kable()
 ## normalized count matrix store in data.slot (first 10 rows and column)
 # => same as the raw matrix because the normalization is not done yet
-as.data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@data)[1:10, 1:10]
+data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@data[1:10, 1:5]) %>% kable()
 
 ```
   
