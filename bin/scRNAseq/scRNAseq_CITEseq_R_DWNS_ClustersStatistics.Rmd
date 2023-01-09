@@ -81,7 +81,7 @@ DimPlot(merged_all,
 
 And the cells' distribution according culture condition (control or drug medium). 
 
-```{r, Show conditions, fig.width = 22, fig.height = 20}
+```{r, Show conditions, fig.width = 22, fig.height = 18}
 
 umap_highlight = function(seurat_obj, color_code) {
   
@@ -125,10 +125,11 @@ do.call("grid.arrange", c(umap_hl, ncol = 3))
 ```
 
 
+# Cells' distribution in clusters 
 
-# Option 1 : clusters statistics with separated controls
+As we decided there were no batch effect on the data, we use the two control samples as one. Then, the CTRL sample (orig.ident) describe all the kind of cells we can find in standard culture condition without any drug influence. 
 
-```{r, Clusters statistics - tab number - separated ctrl}
+```{r, Clusters statistics - tab number}
 
 clusters = as.integer(levels(unique(merged_all@meta.data$clusters)))
 merged_all = SetIdent(object = merged_all, value = "clusters")
@@ -152,7 +153,7 @@ rownames(temp) = "total_cell_per_cluster"
 temp = temp %>% tibble::rownames_to_column(var = "condition")
 tab_number = rbind(tab_number, temp)
 
-# Display dataframe
+# Display data frame
 tab_number %>%
   kable(caption = "Not normalized cells' distribution") %>%
   kable_styling() %>%
@@ -161,8 +162,8 @@ tab_number %>%
 ```
 
 We don't start with the same number of cells in each condition. A normalization step based on the initial number of cells per condition is required to be able to compare the conditions.
-    
-```{r, Clusters statistics - tab number normalized - separated ctrl}
+
+```{r, Clusters statistics - tab number normalized}
 
 # Divide per the number of cells, multiply by a 1000 factor and round
 tab_number_norm = tab_number[-nrow(tab_number),]
@@ -182,7 +183,11 @@ tab_number_norm %>%
 
 ```
 
-```{r, Clusters statistics - tab percent normalized - separated ctrl}
+Then we study the data in two alternative ways :  
+- the condition composition : percentages of each cluster for a condition (tab_percent_cond)  
+- the cluster composition : percentages of cells from each condition for a cluster (tab_percent_clust)    
+    
+```{r, Clusters statistics - tab percent normalized}
 
 # Cells' percentage in cluster per condition
 tab_percent_cond = tab_number_norm %>% dplyr::filter(condition != "total_cell_per_cluster")
@@ -208,23 +213,32 @@ tab_percent_clust %>%
   scroll_box(height = "250px", width = "100%")
 
 ```
-
-```{r, Clusters statistics - bp plots - separated ctrl, fig.width = 14, fig.height = 8}
+  
+  
+# Graphic representations  
+  
+```{r, Clusters statistics - bp plots, fig.width = 14, fig.height = 8}
 
 ###########
 # Cluster #
 ###########
 
-# Barplot with all clusters
 temp_clust = tab_percent_clust %>% dplyr::select(-total_cell_per_cluster)
 temp_clust = temp_clust %>% tidyr::pivot_longer(cols = 2:ncol(temp_clust),
                                     names_to = "condition",
                                     values_to = "percentage")
+temp_clust$cluster =  factor(temp_clust$cluster,
+                             levels = c("cluster_0", "cluster_1", "cluster_2", 
+                                        "cluster_3", "cluster_4", "cluster_5",
+                                        "cluster_6", "cluster_7", "cluster_8",
+                                        "cluster_9", "cluster_10", "cluster_11", 
+                                        "cluster_12", "cluster_13", "cluster_14",
+                                        "cluster_15", "cluster_16", "cluster_17"))
 
 bp_clust = ggplot(temp_clust, aes(x=cluster, y=percentage, fill=condition))+
   geom_bar(width = 0.8, stat = "identity") +
-   scale_fill_manual(values = color_code, limits = force) +
-  theme(axis.text.x=element_text(angle=90))
+  scale_fill_manual(values = color_code, limits = force) +
+  coord_flip()
 bp_clust
 
 #############
@@ -235,15 +249,22 @@ temp_cond = tab_percent_cond %>% dplyr::select(-total_cell_per_condition)
 temp_cond = temp_cond %>% tidyr::pivot_longer(cols = 2:ncol(temp_cond),
                                     names_to = "cluster",
                                     values_to = "percentage")
+temp_cond$cluster =  factor(temp_cond$cluster,
+                            levels = c("cluster_0", "cluster_1", "cluster_2", 
+                                       "cluster_3", "cluster_4", "cluster_5",
+                                       "cluster_6", "cluster_7", "cluster_8",
+                                       "cluster_9", "cluster_10", "cluster_11", 
+                                       "cluster_12", "cluster_13", "cluster_14",
+                                       "cluster_15", "cluster_16", "cluster_17"))
 
 bp_cond = ggplot(temp_cond, aes(x=condition, y=percentage, fill=cluster))+
-  geom_bar(width = 0.8, stat = "identity") +
-  theme(axis.text.x=element_text(angle=90))
+  geom_bar(width = 0.8, stat = "identity", color="#737373") +
+  coord_flip()
 bp_cond
 
 ```
-  
-```{r, Clusters statistics - pie plots - separated ctrl, fig.width = 14, fig.height = 24}
+
+```{r, Clusters statistics - pie plots, fig.width = 14, fig.height = 24}
 
 ###########
 # Cluster #
@@ -281,7 +302,6 @@ for (i in 1:length(clust_list)) {
     )
   
   list_clust_pie[[i]] = pie
-  
 }
 
 do.call("grid.arrange", c(list_clust_pie, ncol = 3))
@@ -322,242 +342,58 @@ for (i in 1:length(cond_list)) {
     )
 
   list_cond_pie[[i]] = pie
+
 }
 
 do.call("grid.arrange", c(list_cond_pie, ncol = 3))
 
 ```
 
-  
-  
-# Option 2 : clusters statistics with merged controls 
+```{r, Clusters number - bp plots}
 
-As we decided there were no batch effect on the data, we can merge the two control samples. Then, the new control describe all the kind of cells we can find in standard culture condition without any dug influence. 
+temp = tab_number_norm[-nrow(tab_number_norm),] %>% dplyr::select(-total_cell_per_condition)
+temp = temp %>% tidyr::pivot_longer(cols = 2:ncol(temp),
+                                    names_to = "cluster",
+                                    values_to = "cell_number")
 
-```{r, Clusters statistics - tab number - merged ctrl}
+temp$cluster =  factor(temp$cluster,
+                       levels = c("cluster_0", "cluster_1", "cluster_2", 
+                                  "cluster_3", "cluster_4", "cluster_5",
+                                  "cluster_6", "cluster_7", "cluster_8",
+                                  "cluster_9", "cluster_10", "cluster_11", 
+                                  "cluster_12", "cluster_13", "cluster_14",
+                                  "cluster_15", "cluster_16", "cluster_17"))
 
-# Merge CTRL and CTRL2
-temp = tab_number %>% dplyr::filter(condition %in% c("CTRL", "CTRL2"))
-temp = as.data.frame(t(data.frame(colSums(temp[,-1]))))
-rownames(temp) = "CTRL_CTRL2"
-temp  = temp %>% tibble::rownames_to_column(var = "condition")
-tab_number_merge = rbind(tab_number %>% dplyr::filter(condition != c("CTRL", "CTRL2")), temp)
-tab_number_merge = tab_number_merge[c(1:4, 10, 5:9),]
-
-# Display dataframe
-tab_number_merge %>%
-  kable(caption = "Not normalized cells' distribution with merged controls") %>%
-  kable_styling() %>%
-  scroll_box(height = "250px", width = "100%")
-
-```
-
-```{r, Clusters statistics - tab number normalized - merged ctrl}
-
-# Divide per the number of cells, multiply by a 1000 factor and round
-tab_number_merge_norm = tab_number_merge[-nrow(tab_number_merge),]
-tab_number_merge_norm[,-1] = round((tab_number_merge_norm[,-1]/tab_number_merge_norm[ ,ncol(tab_number_merge_norm)])*1000)
-
-# Add total per cluster
-temp = as.data.frame(t(data.frame(colSums(tab_number_merge_norm[,-1]))))
-rownames(temp) = "total_cell_per_cluster"
-temp = temp %>% tibble::rownames_to_column(var = "condition")
-tab_number_merge_norm = rbind(tab_number_merge_norm, temp)
-
-# Display dataframe
-tab_number_merge_norm %>%
-  kable(caption = "Normalized cells' distribution based on the initial number of cells in each condition with merged controls.") %>%
-  kable_styling() %>%
-  scroll_box(height = "250px", width = "100%")
-
-```
-
-```{r, Clusters statistics - tab percent normalized - merged ctrl}
-
-# Cells' percentage in cluster per condition
-tab_percent_cond_merge = tab_number_merge_norm %>% dplyr::filter(condition != "total_cell_per_cluster")
-tab_percent_cond_merge[ ,-1] = round((tab_percent_cond_merge[ ,-1]/tab_percent_cond_merge[ ,ncol(tab_percent_cond_merge)])*100, 1)
-
-tab_percent_cond_merge %>%
-  kable(caption = "Normalized cells' percentage distribution per condition with merged controls.") %>%
-  kable_styling() %>%
-  scroll_box(height = "250px", width = "100%")
-
-# Cells' percentage in condition per cluster 
-tab_percent_clust_merge = tab_number_merge_norm %>% dplyr::select(-total_cell_per_condition)
-tab_percent_clust_merge = as.data.frame(t(tab_percent_clust_merge))
-colnames(tab_percent_clust_merge) = tab_percent_clust_merge[1,]
-tab_percent_clust_merge = tab_percent_clust_merge[-1,] %>% 
-  mutate_if(is.character, ~as.numeric(.)) %>%
-  rownames_to_column(var = "cluster")
-tab_percent_clust_merge[,-1] = round((tab_percent_clust_merge[ ,-1]/tab_percent_clust_merge[ ,ncol(tab_percent_clust_merge)])*100, 1)
-
-tab_percent_clust_merge %>%
-  kable(caption = "Normalized cells' percentage distribution per clsuter with merged controls.") %>%
-  kable_styling() %>%
-  scroll_box(height = "250px", width = "100%")
-
-```
-  
-```{r, Clusters statistics - bp plots - merged ctrl, fig.width = 14, fig.height = 8}
-
-###########
-# Cluster #
-###########
-
-temp_clust = tab_percent_clust_merge %>% dplyr::select(-total_cell_per_cluster)
-temp_clust = temp_clust %>% tidyr::pivot_longer(cols = 2:ncol(temp_clust),
-                                    names_to = "condition",
-                                    values_to = "percentage")
-
-bp_clust_merge = ggplot(temp_clust, aes(x=cluster, y=percentage, fill=condition))+
+bp_number = ggplot(temp, aes(x=cluster, y=cell_number, fill=condition))+
   geom_bar(width = 0.8, stat = "identity") +
   scale_fill_manual(values = color_code, limits = force) +
-  theme(axis.text.x=element_text(angle=90))
-bp_clust_merge
-
-#############
-# Condition #
-#############
-
-temp_cond = tab_percent_cond_merge %>% dplyr::select(-total_cell_per_condition)
-temp_cond = temp_cond %>% tidyr::pivot_longer(cols = 2:ncol(temp_cond),
-                                    names_to = "cluster",
-                                    values_to = "percentage")
-
-bp_cond_merge = ggplot(temp_cond, aes(x=condition, y=percentage, fill=cluster))+
-  geom_bar(width = 0.8, stat = "identity") +
-  theme(axis.text.x=element_text(angle=90))
-bp_cond_merge
+  coord_flip()
+bp_number
 
 ```
-
-```{r, Clusters statistics - pie plots - merged ctrl, fig.width = 14, fig.height = 24}
-
-###########
-# Cluster #
-###########
-
-clust_list = tab_percent_clust_merge$cluster
-list_clust_merge_pie = list()
-
-for (i in 1:length(clust_list)) {
   
-  temp2 = temp_clust %>% 
-    dplyr::filter(cluster == clust_list[i]) %>% 
-    dplyr::mutate(csum = rev(cumsum(rev(percentage))), 
-                  pos = percentage/2 + lead(csum, 1),
-                  pos = if_else(is.na(pos), percentage/2, pos))
+Interesting clusters :  
+- AOA : 15,14, 8, 12, 16  
+- 2DG : 2, 11    
   
-  pie = ggplot(temp2, aes(x="", y=percentage, fill=condition))+
-    geom_col(width = 1, color = 1) +
-    coord_polar("y", start=0) + 
-    scale_fill_manual(values = color_code, limits = force) +
-    geom_label_repel(data = temp2,
-                     aes(y = pos, label = paste0(percentage, "%")),
-                     size = 4, nudge_x = 1, show.legend = FALSE, 
-                     segment.color = "#999999",
-                     col = "black") +
-    theme_minimal() +
-    ggtitle(label = clust_list[i]) +
-    theme(axis.title.x = element_blank(),
-          axis.text.x = element_blank(),
-          axis.title.y = element_blank(),
-          panel.border = element_blank(),
-          panel.grid=element_blank(),
-          axis.ticks = element_blank(),
-          plot.title=element_text(size=14, face="bold")
-    )
-  
-  list_clust_merge_pie[[i]] = pie
-}
-
-do.call("grid.arrange", c(list_clust_merge_pie, ncol = 3))
-
-#############
-# Condition #
-#############
-
-cond_list = tab_percent_cond_merge$condition
-list_cond_merge_pie = list()
-
-for (i in 1:length(cond_list)) {
-
-  temp2 = temp_cond %>% 
-    dplyr::filter(condition == cond_list[i]) %>%
-    dplyr::mutate(cluster = sort(cluster)) %>%
-    dplyr::mutate(csum = rev(cumsum(rev(percentage))),
-                  pos = percentage/2 + lead(csum, 1),
-                  pos = if_else(is.na(pos), percentage/2, pos))
-
-  pie = ggplot(temp2, aes(x="", y=percentage, fill=cluster))+
-    geom_col(width = 1, color = 1) +
-    coord_polar("y", start=0) +
-    geom_label_repel(data = temp2,
-                     aes(y = pos, label = paste0(percentage, "%")),
-                     size = 4, nudge_x = 1, show.legend = FALSE,
-                     segment.color = "#999999",
-                     col = "black") +
-    theme_minimal() +
-    ggtitle(label = cond_list[i]) +
-    theme(axis.title.x = element_blank(),
-          axis.text.x = element_blank(),
-          axis.title.y = element_blank(),
-          panel.border = element_blank(),
-          panel.grid=element_blank(),
-          axis.ticks = element_blank(),
-          plot.title=element_text(size=14, face="bold")
-    )
-
-  list_cond_merge_pie[[i]] = pie
-
-}
-
-do.call("grid.arrange", c(list_cond_merge_pie, ncol = 3))
-
-```
-
-
-
-```{r, Save outputs, fig.show='hide'}
+```{r, Save outputs, fig.show ='hide'}
 
 write.csv2(x = tab_number, 
            file = paste0(directory_output, "tab_number_cells_clusters.csv"), 
            row.names = FALSE)
-write.csv2(x = tab_number_merge, 
-           file = paste0(directory_output, "tab_number_cells_clusters_mergectrl.csv"), 
-           row.names = FALSE)
-
 write.csv2(x = tab_number_norm, 
            file = paste0(directory_output, "tab_number_norm_cells_clusters.csv"), 
-           row.names = FALSE)
-write.csv2(x = tab_number_merge_norm, 
-           file = paste0(directory_output, "tab_number_norm_cells_clusters_mergectrl.csv"), 
-           row.names = FALSE)
-
-write.csv2(x = tab_percent_cond_merge, 
-           file = paste0(directory_output, "tab_norm_percent_cells_conditions_mergectrl.csv"), 
-           row.names = FALSE)
-write.csv2(x = tab_percent_clust_merge, 
-           file = paste0(directory_output, "tab_norm_percent_cells_clusters_mergectrl.csv"), 
            row.names = FALSE)
 
 ggsave(plot = bp_clust, filename = paste0(directory_output, "bp_clust.svg"))
 ggsave(plot = bp_cond, filename = paste0(directory_output, "bp_cond.svg"))
-ggsave(plot = bp_clust_merge, filename = paste0(directory_output, "bp_clust_mergectrl.svg"))
-ggsave(plot = bp_cond_merge, filename = paste0(directory_output, "bp_cond_merge_ctrl.svg"))
+ggsave(plot = bp_number, filename = paste0(directory_output, "bp_number.svg"))
 
 ggsave(plot = do.call("grid.arrange", c(list_cond_pie, ncol = 3)),
        filename = paste0(directory_output, "pie_cond.svg"),
        height = 18, width = 20)
 ggsave(plot = do.call("grid.arrange", c(list_clust_pie, ncol = 3)),
        filename = paste0(directory_output, "pie_clust.svg"),
-       height = 18, width = 20)
-ggsave(plot = do.call("grid.arrange", c(list_cond_merge_pie, ncol = 3)),
-       filename = paste0(directory_output, "pie_cond_mergectrl.svg"),
-       height = 18, width = 20)
-ggsave(plot = do.call("grid.arrange", c(list_clust_merge_pie, ncol = 3)),
-       filename = paste0(directory_output, "pie_clust_mergectrl.svg"),
        height = 18, width = 20)
 
 ```
