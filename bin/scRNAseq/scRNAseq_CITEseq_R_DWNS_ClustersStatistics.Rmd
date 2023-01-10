@@ -364,11 +364,21 @@ temp$cluster =  factor(temp$cluster,
                                   "cluster_12", "cluster_13", "cluster_14",
                                   "cluster_15", "cluster_16", "cluster_17"))
 
+# All conditions
 bp_number = ggplot(temp, aes(x=cluster, y=cell_number, fill=condition))+
   geom_bar(width = 0.8, stat = "identity") +
   scale_fill_manual(values = color_code, limits = force) +
   coord_flip()
 bp_number
+
+# Drugs conditions only
+temp_drug = temp %>% dplyr::filter(condition %in% c("CTRL", "2DG", "DON", "AOA"))
+
+bp_number_drugs = ggplot(temp_drug, aes(x=cluster, y=cell_number, fill=condition))+
+  geom_bar(width = 0.8, stat = "identity") +
+  scale_fill_manual(values = color_code, limits = force) +
+  coord_flip()
+bp_number_drugs
 
 ```
   
