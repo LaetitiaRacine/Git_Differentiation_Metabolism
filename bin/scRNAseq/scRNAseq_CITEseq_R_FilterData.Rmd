@@ -52,13 +52,12 @@ Based on documentations :
 - https://satijalab.org/seurat/articles/pbmc3k_tutorial.html       
 - https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html         
         
-We obtain as **output documents** : a list of filtered seurat objects (one per condition) with all the cumulative filters applied, a list of lists (one list per condition) with seurat objects after each filter, multiple summary dataframes. Careful, the filters are cumulative which means that the code has to be launch manually to apply only one filter without the others.  
+We obtain as **output documents** : a list of filtered seurat objects (one per condition) with all the cumulative filters applied, a list of lists (one list per condition) with seurat objects after each filter and multiple summary dataframes. Careful, the filters are cumulative which means that the code has to be launched manually to apply only one filter at a time without the others.  
   
 ```{r, Working directories and external script}
 
 # Load working directories
 directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
-directory_data = paste0(directory, "data/scRNAseq/")
 start_time = Sys.time()
 
 # Create a unique folder for output corresponding to the date of the day
@@ -124,7 +123,7 @@ names(filtered_list_seurat_obj) = names(list_seurat_obj)
 
 ```
 
-## Filter_nbG : cells with **1000 to 6500 detected genes**
+## Cells - Filter_nbG : keep cells with **1000 to 6500 detected genes**
 
 Cells in which few genes were detected could be the result of a technical bias. We decided to apply a filter targeting a minimal number of genes to allow them to be considered as “true cells”. With the same logic, the opposite problem could arise when too many genes are detected giving the cells the appearance of doublet. It exists a percentage of error relative to the cells encapsulated compared to the number inserted in the chip. It is therefore possible for two cells to be encapsulated in the same GEM bead; in this case their transcripts will have the same barcode and will be considered as belonging to the same one cell. All this considered, it is advised to clean the data set by applying filters to remove any doublets. We can use tools before to merge the different data set to do it (https://www.youtube.com/watch?v=NqvAS4HgmrE) but we can also just apply filters relative to the number of genes detected per cell (https://kb.10xgenomics.com/hc/en-us/articles/360001074271-Does-Cell-Ranger-automatically-exclude-doublets-). It’s what we do here. We can therefore apply those two filters in order to keep the most interesting cells from a qualitative point of view. To know where to apply the filters, we consider the number of genes detected per cell according to the different conditions.
 
@@ -175,7 +174,7 @@ for (i in 1:number_conditions) {
 
 ```
 
-## Filter_pMT & Filter_pRB : cells with **less than 25% of mRNA** and **more than 5% of rRNA**
+## Cells - Filter_pMT & Filter_pRB : keep cells with **less than 25% of mRNA** and **more than 5% of rRNA**
 
 Cells presenting a high percentage of mitochondrial RNA and a lower percentage of ribosomal RNA are either dead or dying. When we trace the scatter plot percent.ribo vs percent.mt, we can see two distinct populations: a first one on the left with a low percentage of of mitochondrial RNA and a percentage of ribosomal RNA between 10 and 50% indicating living cells, and a second population on the right characterized by a high percentage of mitochondrial RNA and a lower percentage of ribosomal RNA. In order to remove most of the dead cells and still maintain a sufficient amount of data we apply a filter with the following parameters: keep the cells **less than 25% of mitochondrial RNA** and **more than 5% of ribosomal RNA**. 
 
@@ -247,7 +246,7 @@ for (i in 1:number_conditions) {
 
 ```
 
-## Filter_rmMT : **mitochondrial** genes are removed
+## Genes - Filter_rmMT : **mitochondrial** genes are removed
 
 To avoid cells clustering on the basis of mitochondrial genes we decide to disregard them from our data set. 
 
@@ -277,6 +276,26 @@ for (i in 1:number_conditions) {
   # Save seurat object with nbG, pMT, pRB and rmMT filters
   list_seurat_obj_filter[[i]]["seurat_obj_nbG_pMT_pRB_rmMT"] = filtered_list_seurat_obj[[i]] 
 }
+
+```
+
+```{r, Save outputs part1, fig.show='hide'}
+
+ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5, 
+                           nrow = 2, top = textGrob("nFeature_RNA")),
+       filename = paste0(directory_output, "plot_feature_filter.png"),
+       width = 16, height = 12)
+
+ggsave(plot = grid.arrange(
+  grobs = unlist(plot_percentage_graphs, recursive=F),
+  ncol = 6, top = textGrob("Mitochondrial and ribosomal RNA percentages")),
+  filename = paste0(directory_output, "plot_percentMTRB_filter.png"),
+  width = 24, height = 24)
+
+rm(plot_feature_graphs, plot_percentage_graphs)
+rm(rm_mito_list, ARN_percentage_fun, pic_last_dir, loadRData)
+rm(p1, p2, p3, dir, directory, plot_feature)
+gc()
 
 ```
 
@@ -362,6 +381,20 @@ filter_tab %>%
 
 Other filters can be applied on the data set. For example, we can apply a filter considering a minimal number of UMI per genes in order to separate them from simple background noise. Another example would be a filter that considers the number of cells that should express a certain gene. A final example applies a filter to disregard any gene that monopolizes the reads. Before venturing further, we continue with our analysis which would let us decide which filters would be more pertinent to apply. This avoids the mistake of disregarding too much information from the start only to have to go back and consider them later on. 
 
+```{r, Save outputs part2}
+
+write.csv2(x = filter_tab, row.names = FALSE,
+           file = paste0(directory_output, "filter_tab_seurat_obj.csv"))
+
+saveRDS(object = list_seurat_obj_filter, 
+        file = paste0(directory_output, "list_seurat_obj_qc_each_filter.rds"))
+
+rm(filter_tab, list_seurat_obj_filter, extract_nbgene_detected)
+rm(temp, temp_cell, temp_gene, list_seurat_obj)
+gc()
+
+```
+
 
 # Data structure visualization
 
@@ -402,21 +435,32 @@ summary_cell_tab %>%
   kable() %>%
   kable_styling()
 
+
 ```
 
-```{r, Matrix per condition}
+```{r, Extract matrix per condition}
+
+# Save matrix protein per cell - raw data 
+list_protein = lapply(filtered_list_seurat_obj, function(x) { 
+  as.data.frame(x@assays$ADT@counts) }) 
+saveRDS(object = list_protein, file = paste0(directory_output, "list_mat_raw_proteins.rds"))
+rm(list_protein)
 
 # extract raw count matrix for each condition
-list_mat = lapply(filtered_list_seurat_obj, function(x) { 
+list_mat_raw = lapply(filtered_list_seurat_obj, function(x) { 
   as.data.frame(x@assays$RNA@counts) }) 
 
 # filter matrix to keep only genes detected in at least one cell
-list_mat_filter = lapply(list_mat, function(x) {
+list_mat_detected = lapply(list_mat_raw, function(x) {
   detected_genes = rowSums(x) !=0
   detected_genes = detected_genes[detected_genes == TRUE]
   detected_genes = names(detected_genes)
   x = x %>% dplyr::filter(rownames(x) %in% detected_genes)
 })
+
+# Save matrix gene UMI per cell - raw data (with undetected genes as well)
+saveRDS(object = list_mat_raw, file = paste0(directory_output, "list_mat_raw_genes.rds"))
+rm(list_mat_raw)
 
 ```
 
@@ -431,10 +475,10 @@ this calculation so we have the mean UMI of the cells that expressed the gene st
 
 # Extract statistic information
 list_ind_genes = list()
-for (i in 1:length(list_mat_filter)) {
+for (i in 1:length(list_mat_detected)) {
   
     # Extract matrix 
-    temp = list_mat_filter[[i]]
+    temp = list_mat_detected[[i]]
     # Transform into matrix
     temp_mat = as.matrix(temp)
     # Transform into binary matrix (detected/non detected)
@@ -460,7 +504,7 @@ for (i in 1:length(list_mat_filter)) {
 }
 
 # Join tabs from different conditions
-names(list_ind_genes) = names(list_mat_filter)
+names(list_ind_genes) = names(list_mat_detected)
 ind_genes_tab = dplyr::bind_rows(list_ind_genes, .id = "condition")
 
 # Show tab
@@ -474,10 +518,15 @@ ind_genes_tab[1:100,] %>%
 ```{r, Matrix info}
 
 list_summary_cond = list()
-for (i in 1:length(list_mat_filter)) {
+list_genes_detected_1cell = list()
+list_genes_detected_inf_equal_3cells = list()
+list_histo_cells = list()
+list_histo_genes = list()
+
+for (i in 1:length(list_mat_detected)) {
   
     # Extract matrix 
-    temp = list_mat_filter[[i]]
+    temp = list_mat_detected[[i]]
     # Transform into matrix
     temp_mat = as.matrix(temp)
     # Transform into binary matrix (detected/non detected)
@@ -485,7 +534,7 @@ for (i in 1:length(list_mat_filter)) {
 
     # Tab summary per condition
     summary_condition = data.frame(
-      condition = names(list_mat_filter[i]),
+      condition = names(list_mat_detected[i]),
       nbtot_gene = nrow(temp_mat),
       nbtot_cell = ncol(temp_mat),
       # minimum/median/max nb cells expressing simultaneously a gene
@@ -506,23 +555,42 @@ for (i in 1:length(list_mat_filter)) {
       max_sumUMI_per_cell = max(colSums(temp_mat)),
       # details
       nbgenes_1UMI_total = sum((rowSums(temp_mat) == 1), na.rm = TRUE),
-      nbgenes_detected_1cell = sum((rowSums(temp_mat) == 1), na.rm = TRUE),
+      nbgenes_detected_1cell = sum((rowSums(temp_binary) == 1), na.rm = TRUE),
+      nbgenes_detected_inf_equal_3cells = sum((rowSums(temp_binary) <= 3), na.rm = TRUE),
       nbcells_1UMI_total = sum((colSums(temp_mat) == 1), na.rm = TRUE),
       nbcells_expressing_only1gene = sum((colSums(temp_binary) == 1), na.rm = TRUE)
     )
     
     list_summary_cond[[i]] = summary_condition
     
+    # Extract list of noteworthy genes (maybe to remove later)
+    list_genes_detected_1cell[[i]] = rownames(temp_binary[rowSums(temp_binary) == 1,])
+    list_genes_detected_inf_equal_3cells[[i]] = rownames(temp_binary[rowSums(temp_binary) <= 3,])
+    
+    # Visualize distribution
+    nbcells_expressing_same_gene = data.frame(nbcells_expressing_same_gene = rowSums(temp_binary))
+    nbgenes_detected_per_cell = data.frame(nbgenes_detected_per_cell = colSums(temp_binary))
+    
+    histo_cells = ggplot(data = nbcells_expressing_same_gene, aes(x=nbcells_expressing_same_gene)) +
+      geom_histogram(binwidth = 20, fill = "#FF7A7A", col = "#A11313") +
+      ggtitle(names(list_mat_detected[i]))
+    histo_genes = ggplot(data = nbgenes_detected_per_cell, aes(x=nbgenes_detected_per_cell)) +
+      geom_histogram(binwidth = 20, fill = "#7AB5FF", col = "#1351A1") +
+      ggtitle(names(list_mat_detected[i]))
+
+    list_histo_cells[[i]] = histo_cells
+    list_histo_genes[[i]] = histo_genes
+    
 }
 
-names(list_summary_cond) = names(list_mat)
+names(list_summary_cond) = names(list_mat_detected)
 summary_cond_tab = dplyr::bind_rows(list_summary_cond, .id = "condition")
 
 ```
 
 ![](/home/rparmentier/Bureau/Git_Differentiation_Metabolism/data/matrix4.png)
 
-```{r}
+```{r, fig.width=18, fig.height=18}
 
 summary_cond_tab[ ,1:9] %>%
   kable() %>%
@@ -530,6 +598,9 @@ summary_cond_tab[ ,1:9] %>%
   column_spec(4:6, color = "black", background = "#FF8A8A") %>%
   column_spec(7:9, color = "black", background = "#8AAFFF") %>%
   scroll_box(width = "900px")
+
+do.call("grid.arrange", c(list_histo_cells, ncol=3))
+do.call("grid.arrange", c(list_histo_genes, ncol=3))
 
 ```
 
@@ -544,67 +615,95 @@ summary_cond_tab[ ,c(1:3, 10:15)] %>%
   column_spec(7:9, color = "black", background = "#8AAFFF") %>%
   scroll_box(width = "900px") 
 
-summary_cond_tab[ ,c(1:3, 16,19)] %>%
+summary_cond_tab[ ,c(1:3, 16:20)] %>%
   kable() %>%
   kable_styling(bootstrap_options = c("condensed")) %>% 
   scroll_box(width = "900px")
 
 ```
 
+```{r}
+
+write.csv2(x = summary_cell_tab, row.names = FALSE,
+           file = paste0(directory_output, "summary_cell_tab.csv"))
+write.csv2(x = summary_cond_tab, row.names = FALSE,
+           file = paste0(directory_output, "summary_cond_tab.csv"))
+write.csv2(x = ind_genes_tab, row.names = FALSE,
+           file = paste0(directory_output, "individual_gene_tab.csv"))
+
+# Save Seurat object with all filters
+saveRDS(object = filtered_list_seurat_obj, 
+        file = paste0(directory_output, "list_seurat_obj_qc.rds"))
+
+# Save list of genes (possible to filter out them)
+saveRDS(list_genes_detected_1cell, file = paste0(directory_output, "list_genes_detected_1cell.rds"))
+saveRDS(list_genes_detected_inf_equal_3cells, file = paste0(directory_output, "list_genes_detected_inf_equal_3cells.rds"))
+
+
+rm(summary_cell_tab, summary_cond_tab, ind_genes_tab)
+rm(filtered_list_seurat_obj, list_genes_detected_1cell)
+rm(list_genes_detected_inf_equal_3cells, list_histo_cells)
+rm(histo_cells, histo_genes, ind_genes, list_histo_genes)
+rm(nbcells_expressing_same_gene, nbgenes_detected_per_cell)
+rm(summary_condition, temp_binary, temp, temp_mat, temp_mean)
+rm(list_ind_genes, list_summary_cond)
+
+```
+
 ## UMI distribution
 
-```{r, UMI}
+```{r}
 
 tab_UMI = data.frame(condition = character(),
                      category = character(),
-                     equal_1UMI = integer(),
-                     equal_2UMI = integer(),
-                     between_2_10_UMI = integer(),
-                     between_10_100_UMI = integer(),
-                     between_100_1000_UMI = integer(),
-                     between_1000_2000_UMI = integer(),
-                     between_2000_5000_UMI = integer(),
-                     between_5000_10000_UMI = integer(),
-                     between_10000_20000_UMI = integer(),
-                     sup_20000UMI = integer())
+                     sumUMI_equal_1 = integer(),
+                     sumUMI_equal_2 = integer(),
+                     sumUMI_between_2_10 = integer(),
+                     sumUMI_between_10_100 = integer(),
+                     sumUMI_between_100_1000 = integer(),
+                     sumUMI_between_1000_2000 = integer(),
+                     sumUMI_between_2000_5000 = integer(),
+                     sumUMI_between_5000_10000 = integer(),
+                     sumUMI_between_10000_20000 = integer(),
+                     sumUMI_sup_20000 = integer())
 
-for (i in 1:length(list_mat)) {
+for (i in 1:length(list_mat_detected)) {
   
-  x = list_mat[[i]]
+  x = list_mat_detected[[i]]
   
   cell_sum = data.frame(sum_UMI = colSums(x)) %>%
-    dplyr::mutate(category = case_when(sum_UMI==1 ~ "equal_1UMI",
-                                       sum_UMI==2 ~ "equal_2UMI",
-                                       (2<=sum_UMI & sum_UMI<10) ~ "between_2_10_UMI",
-                                       (10<=sum_UMI & sum_UMI<100) ~ "between_10_100_UMI",
-                                       (100<=sum_UMI  & sum_UMI<1000) ~ "between_100_1000_UMI",
-                                       (1000<=sum_UMI  & sum_UMI<2000) ~ "between_1000_2000_UMI",
-                                       (2000<=sum_UMI  & sum_UMI<5000) ~ "between_2000_5000_UMI",
-                                       (5000<=sum_UMI  & sum_UMI<10000) ~ "between_5000_10000_UMI",
-                                       (10000<=sum_UMI  & sum_UMI<20000) ~ "between_10000_20000_UMI",
-                                       sum_UMI>20000 ~ "sup_20000UMI"))
+    dplyr::mutate(category = case_when(sum_UMI==1 ~ "sumUMI_equal_1",
+                                       sum_UMI==2 ~ "sumUMI_equal_2",
+                                       (2<=sum_UMI & sum_UMI<10) ~ "sumUMI_between_2_10",
+                                       (10<=sum_UMI & sum_UMI<100) ~ "sumUMI_between_10_100",
+                                       (100<=sum_UMI  & sum_UMI<1000) ~ "sumUMI_between_100_1000",
+                                       (1000<=sum_UMI  & sum_UMI<2000) ~ "sumUMI_between_1000_2000",
+                                       (2000<=sum_UMI  & sum_UMI<5000) ~ "sumUMI_between_2000_5000",
+                                       (5000<=sum_UMI  & sum_UMI<10000) ~ "sumUMI_between_5000_10000",
+                                       (10000<=sum_UMI  & sum_UMI<20000) ~ "sumUMI_between_10000_20000",
+                                       sum_UMI>20000 ~ "sumUMI_sup_20000"))
   
   recap_cell = data.frame(table(cell_sum$category))
   recap_cell = tidyr::pivot_wider(recap_cell, names_from = "Var1", values_from = "Freq")
-  recap_cell = recap_cell %>% dplyr::mutate(condition = names(list_mat[i]), category = "cells")
+  recap_cell = recap_cell %>% dplyr::mutate(condition = names(list_mat_detected[i]), category = "cells")
   
   tab_UMI = bind_rows(tab_UMI, recap_cell)
   
   gene_sum = data.frame(sum_UMI = rowSums(x)) %>%
-    dplyr::mutate(category = case_when(sum_UMI==1 ~ "equal_1UMI",
-                                       sum_UMI==2 ~ "equal_2UMI",
-                                       (2<=sum_UMI & sum_UMI<10) ~ "between_2_10_UMI",
-                                       (10<=sum_UMI & sum_UMI<100) ~ "between_10_100_UMI",
-                                       (100<=sum_UMI  & sum_UMI<1000) ~ "between_100_1000_UMI",
-                                       (1000<=sum_UMI  & sum_UMI<2000) ~ "between_1000_2000_UMI",
-                                       (2000<=sum_UMI  & sum_UMI<5000) ~ "between_2000_5000_UMI",
-                                       (5000<=sum_UMI  & sum_UMI<10000) ~ "between_5000_10000_UMI",
-                                       (10000<=sum_UMI  & sum_UMI<20000) ~ "between_10000_20000_UMI",
-                                       sum_UMI>20000 ~ "sup_20000UMI"))
+    dplyr::mutate(category = case_when(sum_UMI==1 ~ "sumUMI_equal_1",
+                                       sum_UMI==2 ~ "sumUMI_equal_2",
+                                       (2<=sum_UMI & sum_UMI<10) ~ "sumUMI_between_2_10",
+                                       (10<=sum_UMI & sum_UMI<100) ~ "sumUMI_between_10_100",
+                                       (100<=sum_UMI  & sum_UMI<1000) ~ "sumUMI_between_100_1000",
+                                       (1000<=sum_UMI  & sum_UMI<2000) ~ "sumUMI_between_1000_2000",
+                                       (2000<=sum_UMI  & sum_UMI<5000) ~ "sumUMI_between_2000_5000",
+                                       (5000<=sum_UMI  & sum_UMI<10000) ~ "sumUMI_between_5000_10000",
+                                       (10000<=sum_UMI  & sum_UMI<20000) ~ "sumUMI_between_10000_20000",
+                                       sum_UMI>20000 ~ "sumUMI_sup_20000"))
   
   recap_gene = data.frame(table(gene_sum$category))
   recap_gene = tidyr::pivot_wider(recap_gene, names_from = "Var1", values_from = "Freq")
-  recap_gene = recap_gene %>% dplyr::mutate(condition = names(list_mat[i]), category = "genes")
+  recap_gene = recap_gene %>% dplyr::mutate(condition = names(list_mat_detected[i]), category = "genes")
   
   tab_UMI = bind_rows(tab_UMI, recap_gene)
   
@@ -626,55 +725,14 @@ tab_UMI %>% dplyr::filter(category == "cells") %>%
 
 ```
 
-
 ```{r, Save outputs, fig.show='hide'}
 
-# Save plots
-ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5, 
-                           nrow = 2, top = textGrob("nFeature_RNA")),
-       filename = paste0(directory_output, "plot_feature_filter.png"),
-       width = 16, height = 12)
-
-ggsave(plot= grid.arrange(
-  grobs = unlist(plot_percentage_graphs, recursive=F),
-  ncol = 6, top = textGrob("Mitochondrial and ribosomal RNA percentages")),
-  filename = paste0(directory_output, "plot_percentMTRB_filter.png"),
-  width = 24, height = 24)
-
-# Save tabs
-write.csv2(x = filter_tab,
-           row.names = FALSE,
-           file = paste0(directory_output, "filter_tab_seurat_obj.csv"))
-write.csv2(x = summary_cell_tab,
-           row.names = FALSE,
-           file = paste0(directory_output, "summary_cell_tab.csv"))
-write.csv2(x = summary_cond_tab,
-           row.names = FALSE,
-           file = paste0(directory_output, "summary_cond_tab.csv"))
-write.csv2(x = ind_genes_tab,
-           row.names = FALSE,
-           file = paste0(directory_output, "individual_gene_tab.csv"))
-write.csv2(x = tab_UMI,
-           row.names = FALSE,
+write.csv2(x = tab_UMI, row.names = FALSE,
            file = paste0(directory_output, "tab_UMI.csv"))
 rm(filter_tab, summary_cell_tab, summary_cond_tab, ind_genes_tab, tab_UMI)
 
-# Save matrix gene UMI per cell - raw data (with undetected genes as well)
-saveRDS(object = list_mat, file = paste0(directory_output, "list_mat_raw_genes.rds"))
 # Save matrix gene UMI per cell - filtered data, only detected genes 
-saveRDS(object = list_mat_filter, file = paste0(directory_output, "list_mat_detected_genes.rds"))
-rm(list_mat, list_mat_filter)
-# Save matrix protein per cell - raw data 
-list_protein = lapply(filtered_list_seurat_obj, function(x) { 
-  as.data.frame(x@assays$ADT@counts) }) 
-saveRDS(object = list_protein, file = paste0(directory_output, "list_mat_raw_proteins.rds"))
-rm(list_protein)
-
-# Save Seurat object with all filters
-saveRDS(object = filtered_list_seurat_obj, 
-        file = paste0(directory_output, "list_seurat_obj_qc.rds"))
-saveRDS(object = list_seurat_obj_filter, 
-        file = paste0(directory_output, "list_seurat_obj_qc_each_filter.rds"))
+saveRDS(object = list_mat_detected, file = paste0(directory_output, "list_mat_detected_genes.rds"))
 
 ```
 
@@ -691,4 +749,3 @@ gc()
 sessionInfo()
 
 ```
-

@@ -29,21 +29,28 @@ library(Seurat)
 library(dplyr)
 library(stringr)
 library(knitr)
+library(kableExtra)
 
 ```
 
 <br> 
 
-This code aims to :  
-- create count matrix from CellRanger output files  
-- store count matrix into a Seurat Object for each culture condition  
-- save seurat object for further analyzes
+This code aims at :  
+- creating a count matrix from CellRanger output files  
+- storing a count matrix into a Seurat Object for each culture condition  
+- saving seurat objects for further analyses  
 
-Based on documentations : 
-- https://satijalab.org/seurat/articles/multimodal_vignette.html    
-- https://github.com/satijalab/seurat/issues/2362
-    
-As output file, we obtain a list of seurat object (one object per condition). A seurat object is a container gathering data (as raw count matrix) but also analyzes (as PCA or clustering) of a *single-cell dataset*. It as several *Assays* depending the data type : RNA, Protein (ADT), Normalization SCT... Each assay contains its own *count matrix* with features (= genes from GRCh38 database) as rows and cells identified by a unique barcode as column. Principal command lines to handle seurat object are presented in the vignette : https://satijalab.org/seurat/articles/essential_commands.html.  
+<br>
+
+Based on documentations :     
+- https://satijalab.org/seurat/articles/multimodal_vignette.html      
+- https://github.com/satijalab/seurat/issues/2362  
+
+<br>
+
+As output file, we obtain a list of seurat objects (one object per condition). A seurat object is a container of data (as raw count matrix) but also analyses (as PCA or clustering) of a *single-cell dataset*. It has several *assays* depending on the data type : RNA, Protein (ADT), Normalization SCT... Each assay contains its own *count matrix* with features (= genes from GRCh38 database) as rows and cells identified by a unique barcode as column. Principal command lines to handle seurat object are presented in the vignette : https://satijalab.org/seurat/articles/essential_commands.html.  
+
+<br>
   
 ```{r, Working directories and external script}
 
@@ -85,8 +92,8 @@ list_seurat_obj = list()
 
 <br> 
 
-We work here from the folder we received from Cochin platform, with all output files from CellRanger software. For each multiplexing sample, we have a folder with all needed files for *count matrix* creation, which are stored in : [sample name]/outs/per_sample_outs/sample[1ou2]/count. For each simple sample obtained with updated CellRanger software, files are stored in folders named as : [sample name]/outs/filtered_feature_bc_matrix. To simplify, the files we use in this code were moved and renammed to follow the same nomenclature.  
-To easily distinguish the gene (assay = RNA) from the protein (assay = ADT) for the CD34 marker, protein detection is indicated under CD34.1. FOR CD133 marker, there is no problem as the associated gene as a different name known as PROM1.  
+We work here from the folder we received from Cochin platform, with all output files from CellRanger software. For each multiplexing sample, we have a folder with all needed files for *count matrix* creation, which are stored in : [sample name]/outs/per_sample_outs/sample[1ou2]/count. For each simple sample obtained with updated CellRanger software, files are stored in folders named as : [sample name]/outs/filtered_feature_bc_matrix. To simplify, the files we use in this code were moved and renamed to follow the same nomenclature.  
+To easily distinguish the gene (assay = RNA) from the protein (assay = ADT) for the CD34 marker, protein detection is indicated under CD34.1. For CD133 marker, there is no problem because the associated gene has a different name known as PROM1.  
 
 ```{r, Create Individual Seurat Object - function definition}
 
@@ -146,6 +153,10 @@ for (i in 1:number_condition) {
 
 ```
 
+<br>
+
+A verification of the objects we just created was made. As we can see, each one has two assays. The ADT assay contains two features : CD34.1 and CD133. The RNA assays contains 36601 features (or genes), it corresponds to the total number of genes in the GRCh38 database. Caution, the created matrix contain a row for each gene of the database but it doesn't mean that all those genes are detected in the corresponding sample. Some genes may have zero UMI for all the cells. It's up to us to remove them during the filtering steps. There is a different number of cells depending on the condition we study. This means we sometimes may need to normalize the number of cells to allow comparison between conditions.  
+
 ```{r, Create Individual Seurat Object - check outputs}
 
 # Check each objects : number of assays and CITEseq antibody detected
@@ -159,23 +170,39 @@ for (i in 1:number_condition) {
       "- Nb features ADT :", nrow(list_seurat_obj[[i]][["ADT"]]), "\n")
 }
 
-# Visualize first object of the list to see the structure
-## global structure
-list_seurat_obj["CTRL"]
-## meta.data 
-data.frame(list_seurat_obj[["CTRL"]]@meta.data[1:10,]) %>% kable()
-## RNA assay with the genes
-list_seurat_obj[["CTRL"]]@assays$RNA
-## raw count matrix store in counts.slot (first 10 rows and column)
-data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@counts[1:10, 1:5]) %>% kable()
-## normalized count matrix store in data.slot (first 10 rows and column)
-# => same as the raw matrix because the normalization is not done yet
-data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@data[1:10, 1:5]) %>% kable()
-
 ```
+
+<br>
+
+As an example, we extract CTRL seurat objet of the list and describe its structure :  
   
-When creating seurat objects, the raw counts are stored in both the counts and data slot at the beginning. 
-Then, the NormalizeData() function will work off of the counts slots and overwrite the data slot when the counts slot will still contain the raw data.
+**Global structure**  
+```{r}
+list_seurat_obj["CTRL"]
+```
+**Meta.data table**  
+```{r}
+data.frame(list_seurat_obj[["CTRL"]]@meta.data[1:10,]) %>% 
+  kable() %>%
+  kable_styling()
+```
+**RNA assay with the genes**  
+```{r}
+list_seurat_obj[["CTRL"]]@assays$RNA
+```
+**Raw count matrix store in counts.slot (first 10 rows and column)**  
+```{r}
+data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@counts[1:10, 1:5]) %>% 
+  kable() %>%
+  kable_styling()
+```
+**Normalized count matrix store in data.slot (first 10 rows and column)**  
+```{r}
+data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@data[1:10, 1:5]) %>% 
+  kable() %>%
+  kable_styling()
+```
+When creating seurat objects, the raw counts are stored in both the counts and data slot at the beginning. Then, the NormalizeData() function will work off of the counts slots and overwrite the data slot when the counts slot will still contain the raw data.  
 
 ```{r, Save outputs}
 
