@@ -42,31 +42,34 @@ library(stringr)
 
 # Overview 
 
-This code aims to :        
+This code aims at :        
 
-- I : normalize seurat objects with basic functions from Seurat package (assay : "RNA")  
+- I : normalizing seurat objects with basic functions from Seurat package (assay : "RNA")  
 https://satijalab.org/seurat/articles/pbmc3k_tutorial.html    
 https://satijalab.org/seurat/reference/normalizedata      
 https://satijalab.org/seurat/reference/findvariablefeatures      
 https://satijalab.org/seurat/reference/scaledata      
   
-- II : visualize cell cycle influence and apply regression if needed  
+- II : visualizing cell cycle influence and applying regression if needed  
 https://satijalab.org/seurat/articles/cell_cycle_vignette.html  
 https://hbctraining.github.io/scRNA-seq/lessons/06_SC_SCT_and_integration.html  
 https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html#Calculate_cell-cycle_scores  
 https://satijalab.org/seurat/archive/v3.1/cell_cycle_vignette.html    
   
-- III : normalize seurat objects with SCTransform (assay : "SCT")  
+- III : normalizing seurat objects with SCTransform (assay : "SCT")  
 https://chipster.csc.fi/manual/single-cell-seurat-sctransform.html  
 https://satijalab.org/seurat/articles/sctransform_vignette.html  
 https://www.biostars.org/p/446554/  
 https://cran.r-project.org/web/packages/sctransform/sctransform.pdf  
 https://rdrr.io/cran/sctransform/man/vst.html  
+https://hbctraining.github.io/scRNA-seq_online/lessons/06_SC_SCT_normalization.html  
   
-- IV : normalize data from CITEseq (assay : "ADT)  
+- IV : normalizing data from CITEseq (assay : "ADT)  
 https://satijalab.org/seurat/articles/multimodal_vignette.html    
-   
-It's important to respect the order here. As mentionned in the issue : https://github.com/satijalab/seurat/issues/1679, the standard normalization as to be done first, then the CellCycleScoring and finally the SCT normalization with cell cycle score as vars.to.regress. We obtain as **output documents** a list of seurat objects (one per condition) with or without cell cycle regression and with two normalizations available dependint the assay we work with. For *downstream analysis*, we will mainly work with the "SCT" assay.   
+https://github.com/satijalab/seurat/issues/3605    
+https://github.com/satijalab/seurat/issues/3550  
+  
+It's important to respect the order here. As mentionned in the issue : https://github.com/satijalab/seurat/issues/1679, the standard normalization has to be done first, then the CellCycleScoring and finally the SCT normalization with cell cycle score as vars.to.regress. We obtain as **output documents** a list of seurat objects (one per condition) with or without cell cycle regression and with two normalizations available depending on the assay we work with. For *downstream analyses*, we will mainly work with the "SCT" assay.   
   
 ```{r, Working directories and external script}
 
@@ -100,9 +103,9 @@ number_conditions = length(list_seurat_obj)
 
 ## NormalizeData()
 
-NormalizeData() with “LogNormalize” method : x is the number of UMI detected for a specific gene in a single cell. To normalize, x is divided by the sum of detected UMI of all the genes in this cell. Then, it's multiplied by the *scaling factor* which default value is 10 000. 1 is added to the result and the neperian logarithm (ln) is calculated (https://github.com/satijalab/seurat/issues/3630).    
-"LogNormalize scales the data by library size so it eliminates the confounding effect of different read depth across the cells."  
-
+NormalizeData() with “LogNormalize” method : x is the number of UMI detected for a specific gene in a single cell. To normalize, x is divided by the sum of detected UMI of all the genes in this cell. Then, it's multiplied by the *scaling factor* which default value is 10 000. 1 is added to the result and the neperian logarithm (ln) is calculated (https://github.com/satijalab/seurat/issues/3630).      
+"LogNormalize scales the data by library size so it eliminates the confounding effect of different read depth across the cells."    
+  
 ```{r, NormalizeData}
 
 list_seurat_obj = lapply(list_seurat_obj, function(x) { 
@@ -118,8 +121,8 @@ list_seurat_obj = lapply(list_seurat_obj, function(x) {
 
 ## FindVariableFeatures()
 
-FindVariableFeatures() select a subset of interesting genes to keep for downstream analysis. 2000 genes are chosen (default value) among the most variable genes between the cells, i.e. those strongly expressed in some cells but sparsely in others. To extract this genes list, the "vst" method is used : "first, fits a line to the relationship of log(variance) and log(mean) using local polynomial regression. Then standardizes the feature values using the observed mean and expected variance (given by the fitted line). Feature variance is then calculated on the standardized values after clipping to a maximum (see clip.max parameter)".
-*Next analysis as UMAP or PCA are based on those 2000 most variable genes.*
+FindVariableFeatures() selects a subset of interesting genes to keep for downstream analysis. 2000 genes are chosen (default value) among the most variable genes between the cells, i.e. those strongly expressed in some cells but sparsely in others. To extract this genes' list, the "vst" method is used : "first, fits a line to the relationship of log(variance) and log(mean) using local polynomial regression. Then standardizes the feature values using the observed mean and expected variance (given by the fitted line). Feature variance is then calculated on the standardized values after clipping to a maximum (see clip.max parameter)".  
+*Next analysis as UMAP or PCA are based on those 2000 most variable genes.*  
 
 ```{r, FindVariableFeatures}
 
@@ -165,11 +168,10 @@ names(features_gene_list) = names(list_seurat_obj)
 
 ## ScaleData()
 
-"Since highly expressed genes exhibit the highest amount of variation and we don’t want our ‘highly variable genes’ only to reflect high expression, we need to scale the data to scale variation with expression level." Therefore, the ScaleData() step gives equal weight in downstream analyses, so that highly-expressed genes do not dominate. It's a linear transformation that shifts the expression of each gene, so that the mean expression across cells is 0 and scales the expression of each gene, so that the variance across cells is 1.   
-(https://hbctraining.github.io/scRNA-seq_online/lessons/06_SC_SCT_normalization.html)  
-By default, do.center and do.scale are defined as TRUE. "Setting center to TRUE will center the expression for each feature by subtracting the average expression for that feature. Setting scale to TRUE will scale the expression level for each feature by dividing the centered feature expression levels by their standard deviations if center is TRUE and by their root mean square otherwise."     
+"Since highly expressed genes exhibit the highest amount of variation and we don’t want our ‘highly variable genes’ to only reflect high expression, we need to scale the data to scale variation with expression level." Therefore, the ScaleData() step gives equal weight in downstream analyses, so that highly-expressed genes do not dominate. It's a linear transformation that shifts the expression of each gene, so that the mean expression across cells is 0 and scales the expression of each gene, so that the variance across cells is 1.  
+By default, do.center and do.scale are defined as TRUE. "Setting center to TRUE will center the expression for each feature by subtracting the average expression for that feature. Setting scale to TRUE will scale the expression level for each feature by dividing the centered feature expression levels by their standard deviations if center is TRUE and by their root mean square otherwise."       
 It is possible to scale the data with a regression (for example, nUMI, or percent.mito....). The first scaling that we apply is without regression but we can do another one latter with regression that will therefore overwrite the output of ScaleData().    
-Here we do an individual scaling per condition (split.by = orig.ident). It can potentially highlight genes with great disparity between conditions for the PCA which is what we want to study.   
+Here we do an individual scaling per condition (split.by = orig.ident). It can potentially highlight genes with great disparity between conditions for the PCA which is what we want to study.     
 
 ```{r, ScaleData}
 
@@ -383,12 +385,12 @@ We can decide to regress the data based on the cell cycle score : this regressio
 
 # Normalize "RNA assay" with SCTransform (new assay "SCT")
 
-SCTransform function gathers filters on data, a normalization, the extraction of the 3000 most variable genes and the scaling. To improve computing speed, the "glmGamPoi" method is used in the SCTransform function. New data are stored in a different assay "SCT". "Compared to basic Seurat normalisation + scaling + variable gene finding, the SCTransform workflow performs more effective normalization, strongly removing technical effects from the data. This allows more PCs to be selected in the PCA step, as the higher PCs are more likely to represent subtle, but biologically relevant, sources of heterogeneity instead of variation in sequencing depth."    
+SCTransform function gathers filters on data, a normalization, the extraction of the 3000 most variable genes and a scaling. To improve computing speed, the "glmGamPoi" method is used in the SCTransform function. New data are stored in a different assay "SCT". "Compared to basic Seurat normalization + scaling + variable gene finding, the SCTransform workflow performs more effective normalization, strongly removing technical effects from the data. This allows more PCs to be selected in the PCA step, as the higher PCs are more likely to represent subtle, but biologically relevant, sources of heterogeneity instead of variation in sequencing depth."    
 <br>
 *Filters*: Careful ! Default filters parameters are "hiden" in the function.   
-- Filter out cells which have less than this many genes expressed [200] => our own filter is more restrictive (1000 genes) so no impact  
-- **Filter out cells which have higher unique gene count [2500] => much more restritif than ours but I don't know how to remove it**  
-- Filter out cells which have higher mitochondrial transcript percentage [5]     
+- Filter out cells which have less than this many genes expressed [200] => our own filter is more restrictive (1000 genes) so no impact    
+- **Filter out cells which have higher unique gene count [2500] => much more restrictive than ours but I don't know how to remove it**    
+- Filter out cells which have higher mitochondrial transcript percentage [5]       
 By putting min_cells = 1, we remove the min_cells	filter that only uses genes that have been detected in at least this many cells; default is 5.  
 As we already have a bunch of filters applied during preprocessing step, we try to remove as possible the default filters of the function. 
 We consulted the parameters of vst function (included in SCTransform) and added them in the parameters of the SCTransform function to control the filters as much as possible : https://rdrr.io/cran/sctransform/man/vst.html   
@@ -436,7 +438,7 @@ list_seurat_obj = lapply(list_seurat_obj, function(x) {
 
 # Normalize "ADT assay" with Seurat package
 
-Normalization method CLR applies a centered log ratio transformation, with parameter margin = 2 the normalisation is performing across cells.
+Normalization method CLR applies a centered log ratio transformation. With parameter margin = 2, the normalization is performing across cells.
 
 ```{r, Normalize ADT}
 

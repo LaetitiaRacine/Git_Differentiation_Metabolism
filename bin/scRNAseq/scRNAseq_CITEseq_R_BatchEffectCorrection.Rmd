@@ -35,25 +35,23 @@ library(knitr)
 
 # Overview
 
-This code aims at determining if dataset need to be correcting for batch effect bias.
-
-Documentation on the subject : 
-- https://satijalab.org/seurat/articles/integration_introduction.html
-- https://satijalab.org/seurat/articles/integration_large_datasets.html  
-- https://github.com/satijalab/seurat/issues/4753  
-- https://github.com/satijalab/seurat/issues/4372  
-- https://github.com/satijalab/seurat/discussions/3998  
-- https://satijalab.org/seurat/archive/v3.1/integration.html  
-- https://blog.bioturing.com/2022/03/24/batch-effect-in-single-cell-rna-seq-frequently-asked-questions-and-answers/  
-
-Question ask on the github forum : https://github.com/satijalab/seurat/issues/6616
-
-It's better to normalize on individual object before merging or integrating.
-
-Multiple possibilities :  
-- there is no batch effect, we can just merge the data  
-- there is a batch effect, we need to integrate both batches in one object
-
+This code aims at determining if the dataset needs to be corrected for batch effect bias before applying the clustering algorithm.  
+Depending on the results, the following steps are different :    
+- if there is no batch effect, we can just merge the data  
+- if there is a batch effect, we need to integrate both batches in one object  
+As it's better to normalize on individual object before merging or integrating, we work here with the output objects of NormalizeData script.  
+We decided here to work with the normalized object without cell cycle regression.  
+    
+Based on documentations :       
+- https://satijalab.org/seurat/articles/integration_introduction.html    
+- https://satijalab.org/seurat/articles/integration_large_datasets.html      
+- https://github.com/satijalab/seurat/issues/4753      
+- https://github.com/satijalab/seurat/issues/4372      
+- https://github.com/satijalab/seurat/discussions/3998      
+- https://satijalab.org/seurat/archive/v3.1/integration.html      
+- https://blog.bioturing.com/2022/03/24/batch-effect-in-single-cell-rna-seq-frequently-asked-questions-and-answers/      
+Question ask on the github forum : https://github.com/satijalab/seurat/issues/6616    
+    
 ```{r, Working directories and external script}
 
 # Load working directories
@@ -95,11 +93,12 @@ list_seurat_norm[["AOAaK"]]$batch = "batch2"
 
 ```
 
+
 # Process two experiments separately and visualize
 
-Merge data from the same batch.
-Make UMAP plots where you can see how different samples group.
-https://github.com/satijalab/seurat/issues/5761
+Merge data from the same batch.    
+Make UMAP plots where you can see how different samples group.    
+https://github.com/satijalab/seurat/issues/5761    
 
 ```{r, Merge same batch}
 
@@ -187,25 +186,6 @@ batch2_sct_umap_plot / batch2_sct_umap_split_plot
 
 ```
 
-```{r, Focus on CTRL - Ind batch sct, fig.width = 10, fig.height = 6}
-
-ctrl_batch1 = subset(merged_sct_batch1, orig.ident == "CTRL")
-ctrl_batch2 = subset(merged_sct_batch2, orig.ident == "CTRL2")
-
-# Show all conditions independently
-ctrl_batch1_sct_umap_plot = DimPlot(object = ctrl_batch1, 
-                                    reduction = "umap",
-                                    group.by = "orig.ident",
-                                    cols = color_code)
-ctrl_batch2_sct_umap_plot = DimPlot(object = ctrl_batch2, 
-                                    reduction = "umap",
-                                    group.by = "orig.ident",
-                                    cols = color_code)
-
-ctrl_batch1_sct_umap_plot | ctrl_batch2_sct_umap_plot
-
-```
-
 ```{r, Save outputs - Ind batch sct}
 
 ggsave(batch1_sct_umap_plot / batch1_sct_umap_split_plot,
@@ -214,17 +194,16 @@ ggsave(batch1_sct_umap_plot / batch1_sct_umap_split_plot,
 ggsave(batch2_sct_umap_plot / batch2_sct_umap_split_plot,
        file = paste0(directory_output, "umap_sct_batch2.png"),
        width = 20, height = 14)
-ggsave(ctrl_batch1_sct_umap_plot | ctrl_batch2_sct_umap_plot,
-       file = paste0(directory_output, "umap_ctrl_sct.png"),
-       width = 20, height = 14)
 
 rm(batch1, batch2, list_batch1, list_batch2)
 rm(merged_sct_batch1, merged_sct_batch2)
 rm(batch1_sct_umap_plot, batch1_sct_umap_split_plot, batch2_sct_umap_plot, batch2_sct_umap_split_plot)
-rm(ctrl_batch1, ctrl_batch2, ctrl_batch1_sct_umap_plot, ctrl_batch2_sct_umap_plot)
 gc()
 
 ```
+
+We observe on the global UMAP of SCT normalized data that all the conditions overlapped correctly for batch1. For batch2, as expected the conditions are less similar. The global shape of the population are similar between CTRL2 and AOAaK but AOA is very distinct.  
+
 
 ## Based on Log normalization
 
@@ -290,25 +269,6 @@ batch2_log_umap_plot / batch2_log_umap_split_plot
 
 ```
 
-```{r, Focus on CTRL - Ind batch log, fig.width = 10, fig.height = 7}
-
-ctrl_batch1 = subset(merged_log_batch1, orig.ident == "CTRL")
-ctrl_batch2 = subset(merged_log_batch2, orig.ident == "CTRL2")
-
-# Show all conditions independently
-ctrl_batch1_log_umap_plot = DimPlot(object = ctrl_batch1, 
-                                    reduction = "umap",
-                                    group.by = "orig.ident",
-                                    cols = color_code)
-ctrl_batch2_log_umap_plot = DimPlot(object = ctrl_batch2, 
-                                    reduction = "umap",
-                                    group.by = "orig.ident",
-                                    cols = color_code)
-
-ctrl_batch1_log_umap_plot | ctrl_batch2_log_umap_plot
-
-```
-
 ```{r, Save outputs - Ind batch log}
 
 ggsave(batch1_log_umap_plot / batch1_log_umap_split_plot,
@@ -317,24 +277,21 @@ ggsave(batch1_log_umap_plot / batch1_log_umap_split_plot,
 ggsave(batch2_log_umap_plot / batch2_log_umap_split_plot,
        file = paste0(directory_output, "umap_log_batch2.png"),
        width = 20, height = 14)
-ggsave(ctrl_batch1_log_umap_plot | ctrl_batch2_log_umap_plot,
-       file = paste0(directory_output, "umap_ctrl_log.png"),
-       width = 20, height = 14)
 
 rm(merged_batch1, merged_batch2, features_batch1, features_batch2)
 rm(merged_log_batch1, merged_log_batch2)
 rm(batch1_log_umap_plot, batch1_log_umap_split_plot, batch2_log_umap_plot, batch2_log_umap_split_plot)
-rm(ctrl_batch1, ctrl_batch2, ctrl_batch1_log_umap_plot, ctrl_batch2_log_umap_plot)
 gc()
 
 ```
 
+The conditions from the same batch overlap less with the log normalization. 
 
 # Process two experiments together and visualize
 
-Merge all the data.
-Make same UMAP plots where you can see individual samples and experiment groups.
-
+Merge all the data without regard to the batch.        
+Make same UMAP plots where you can see individual samples and experiment groups.    
+  
 ```{r, Merge all conditions}
 
 # Merged all the conditions from the two experiments and select variable features
@@ -426,6 +383,9 @@ gc()
 
 ```
 
+Cells from batch1 and batch2 overlap very well except for AOA cells (expected) for the SCT normalization.
+
+
 ## Based on Log normalization
 
 ```{r, All conditions - All batches log, fig.width = 20, fig.height = 14, results = 'hold'}
@@ -501,6 +461,10 @@ rm(umap_log_plot_batch, umap_log_split_plot)
 gc()
 
 ```
+
+The batches overlap less with log normalization. We will preferentially work with SCT normalization for latter analyses.   
+
+# Conclusion 
 
 => No need for batch effect correction (=integration) if we work with sct normalization after the merge for downstream analysis.
 
