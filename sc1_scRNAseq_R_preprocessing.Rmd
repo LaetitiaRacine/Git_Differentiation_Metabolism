@@ -21,13 +21,14 @@ output:
 - visualize CTRL object
 
 *INPUTS*   
-(samples from batch1 are sample_ feature and those from batch2 are filtered_feature)     
+(samples from batch1 are sample_feature and those from batch2 are filtered_feature)     
 - scRNAseq_[DRUG]_sample_feature_bc_matrix_barcodes.tsv.gz  
 - scRNAseq_[DRUG]_sample_feature_bc_matrix_features.tsv.gz  
 - scRNAseq_[DRUG]_sample_feature_bc_matrix_matrix.mtx.gz  
 - scRNAseq_[DRUG]_filtered_feature_bc_matrix_barcodes.tsv.gz  
 - scRNAseq_[DRUG]_filtered_feature_bc_matrix_features.tsv.gz    
-- scRNAseq_[DRUG]_filtered_feature_bc_matrix_matrix.mtx.gz    
+- scRNAseq_[DRUG]_filtered_feature_bc_matrix_matrix.mtx.gz  
+- functions_constants.R  
   
 *OUTPUTS*  
 - list_seurat_obj.rds  
@@ -46,17 +47,18 @@ rmarkdown::render(input = paste0(directory, "/bin/scRNAseq/", "scRNAseq_CITEseq_
 # scRNAseq_CITEseq_R_FilterData.Rmd
 
 *OBJECTIVES*  
-Apply qualityt control filters on the dataset : 
+Apply quality control filters on the dataset : 
 - calculate mitochondrial and ribosomal RNA percentage 
--  filter cells based on number of genes detected (between 1000 and 6500)
+- filter cells based on number of genes detected (between 1000 and 6500)
 - filter cells based on mitochondrial and ribosomal RNA percentage (<25% and >5%)
 - remove mitochondrial genes 
-- create a summary tab on filters (number cells/genes after each filter)
+- create a summary tab on filters (number cells and genes after each filter)
 - create QC plots
 - create tabs describing the filtered dataset
 
 *INPUTS*        
 - list_seurat_obj.rds  
+- functions_constants.R  
   
 *OUTPUTS*      
 - plot_feature_filter.png  
@@ -68,8 +70,11 @@ Apply qualityt control filters on the dataset :
 - tab_UMI.csv  
 - list_mat_raw_genes.rds
 - list_mat_raw_proteins.rds 
+- list_mat_detected_genes.rds
 - list_seurat_obj_qc.rds  
 - list_seurat_obj_qc_each_filter.rds  
+- list_genes_detected_1cell.rds  
+- list_genes_detected_inf_equal_3cells.rds  
   
 ```{r}
 
@@ -91,11 +96,12 @@ rmarkdown::render(input = paste0(directory, "/bin/scRNAseq/", "scRNAseq_CITEseq_
 - visualize cell cycle influence   
 - create cell cycle plots  
 - normalize RNA assay with SCT : create a new assay  
-- create a new object with cell cycle regression if needed for later   
-- normalize ADT assay with CLR method  
+- create a new object with cell cycle regression if needed for later    
+- normalize ADT assay with CLR method    
   
-*INPUT*    
-- list_seurat_obj_qc.rds    
+*INPUTS*    
+- list_seurat_obj_qc.rds  
+- functions_constants.R  
     
 *OUTPUTS*    
 - plot_2000variablesfeatures.svg  
@@ -126,17 +132,16 @@ rmarkdown::render(input = paste0(directory, "/bin/scRNAseq/", "scRNAseq_CITEseq_
 - merge seurat objects of all batches into one object
 - visualize the data (PCA, UMAP) based on sct normalization
 - visualize the data (PCA, UMAP) based on log normalization
-
-*INPUT*  
-- list_seurat_obj_qc_norm.rds
+- determine if batch correction is needed  
+  
+*INPUTS*  
+- list_seurat_obj_qc_norm.rds  
 
 *OUTPUTS*
-- umap_log_batch1.png
-- umap_log_batch2.png
-- umap_ctrl_log.png
 - umap_sct_batch1.png
 - umap_sct_batch2.png
-- umap_ctrl_sct.png
+- umap_log_batch1.png
+- umap_log_batch2.png
 - umap_sct_bothbatch.png
 - umap_sct_bothbatch_split.png
 - umap_sct_bothbatch_ctrl.png
@@ -159,13 +164,15 @@ rmarkdown::render(input = paste0(directory, "/bin/scRNAseq/", "scRNAseq_CITEseq_
 # scRNAseq_CITEseq_R_ReductionDimension.Rmd
 
 *OBJECTIVES*
-- perform PCA and determine the optimal dimensionality
-- perform UMAP 
-
-*INPUT*
+- perform PCA and determine the optimal dimensionality  
+- perform UMAP    
+- perform clusterisation and determine the best resolution    
+  
+*INPUTS*
 - list_seurat_obj_qc_norm.rds
 - list_seurat_obj_qc_norm_ccr.rds  
-  
+- functions_constants.R  
+    
 *OUTPUTS*
 - dimension_choice_elb_pca.svg
 - dimension_choice_pca_genes.svg  
@@ -175,6 +182,7 @@ rmarkdown::render(input = paste0(directory, "/bin/scRNAseq/", "scRNAseq_CITEseq_
 - umap_clusters_resolution.svg
 - umap_clusters_res_choice.svg
 - merged_all_1-40dim.rds
+- merged_all_prep_1-40dim.rds    
 - dimension_choice_elb_pca_cc.svg
 - dimension_choice_pca_genes_cc.svg
 - umap_1-40dim_cc.svg
@@ -182,7 +190,8 @@ rmarkdown::render(input = paste0(directory, "/bin/scRNAseq/", "scRNAseq_CITEseq_
 - umap_1-40dim_split_highlight_cc.svg
 - umap_clusters_resolution_cc.svg
 - umap_clusters_res_choice_cc.svg
-- merged_cc_1-40dim.rds
+- merged_cc_1-40dim.rds  
+- merged_cc_prep_1-40dim.rds  
 
 ```{r}
 

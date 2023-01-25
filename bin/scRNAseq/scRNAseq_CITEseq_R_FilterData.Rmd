@@ -279,7 +279,7 @@ for (i in 1:number_conditions) {
 
 ```
 
-```{r, Save outputs part1, fig.show='hide'}
+```{r, Save outputs part1, fig.show='hide', results ='hide'}
 
 ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5, 
                            nrow = 2, top = textGrob("nFeature_RNA")),
@@ -381,7 +381,7 @@ filter_tab %>%
 
 Other filters can be applied on the data set. For example, we can apply a filter considering a minimal number of UMI per genes in order to separate them from simple background noise. Another example would be a filter that considers the number of cells that should express a certain gene. A final example applies a filter to disregard any gene that monopolizes the reads. Before venturing further, we continue with our analysis which would let us decide which filters would be more pertinent to apply. This avoids the mistake of disregarding too much information from the start only to have to go back and consider them later on. 
 
-```{r, Save outputs part2}
+```{r, Save outputs part2, results ='hide'}
 
 write.csv2(x = filter_tab, row.names = FALSE,
            file = paste0(directory_output, "filter_tab_seurat_obj.csv"))

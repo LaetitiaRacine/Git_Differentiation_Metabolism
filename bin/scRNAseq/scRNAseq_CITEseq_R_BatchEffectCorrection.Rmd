@@ -186,7 +186,7 @@ batch2_sct_umap_plot / batch2_sct_umap_split_plot
 
 ```
 
-```{r, Save outputs - Ind batch sct}
+```{r, Save outputs - Ind batch sct, results ='hide'}
 
 ggsave(batch1_sct_umap_plot / batch1_sct_umap_split_plot,
        file = paste0(directory_output, "umap_sct_batch1.png"),
@@ -269,7 +269,7 @@ batch2_log_umap_plot / batch2_log_umap_split_plot
 
 ```
 
-```{r, Save outputs - Ind batch log}
+```{r, Save outputs - Ind batch log, results ='hide'}
 
 ggsave(batch1_log_umap_plot / batch1_log_umap_split_plot,
        file = paste0(directory_output, "umap_log_batch1.png"),
@@ -365,7 +365,7 @@ umap_sct_ctrl / umap_sct_split_ctrl
 
 ```
 
-```{r, Save outputs - All batches sct}
+```{r, Save outputs - All batches sct, results ='hide'}
 
 ggsave(umap_sct_plot / umap_sct_plot_batch, 
        file = paste0(directory_output, "umap_sct_bothbatch.png"),
@@ -443,7 +443,7 @@ umap_log_ctrl / umap_log_split_ctrl
 
 ```
 
-```{r, Save outputs - All batches log}
+```{r, Save outputs - All batches log, results ='hide'}
 
 ggsave(umap_log_plot / umap_log_plot_batch, 
        file = paste0(directory_output, "umap_log_bothbatch.png"),

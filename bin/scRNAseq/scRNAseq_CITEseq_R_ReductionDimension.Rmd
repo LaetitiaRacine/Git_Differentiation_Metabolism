@@ -597,6 +597,14 @@ print(res_choice_cc)
 
 ```
 
+```{r}
+
+merged_cc = SetIdent(merged_cc, value = "clusters")
+DefaultAssay(merged_cc) = "SCT"
+merged_cc_prep = PrepSCTFindMarkers(merged_cc)
+
+```
+
 ```{r, fig.show='hide'}
 
 ggsave(plot = (dim_seurat_obj_cc$elb_plot | dim_seurat_obj_cc$pca_plot) / dim_seurat_obj_cc$pca_split_plot,
@@ -622,6 +630,7 @@ ggsave(plot = res_choice_cc,
        height = 8, width = 24)
 
 saveRDS(merged_cc, paste0(directory_output, "merged_cc_1-40dim.rds"))
+saveRDS(merged_cc_prep, paste0(directory_output, "merged_cc_prep_1-40dim.rds"))
 
 ```
 
