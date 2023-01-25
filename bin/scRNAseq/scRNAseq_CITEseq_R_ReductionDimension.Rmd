@@ -83,7 +83,9 @@ merged_all = merge(x = list_seurat[["CTRL"]],
                          list_seurat[["DONaK"]], list_seurat[["2DG"]], 
                          list_seurat[["2DGaK"]], list_seurat[["VPA"]], 
                          list_seurat[["CTRL2"]], list_seurat[["AOA"]], 
-                         list_seurat[["AOAaK"]]))
+                         list_seurat[["AOAaK"]]),
+                   add.cell.ids = c("CTRL", "CTRLaK", "DON", "DONaK", "DDG", 
+                                    "2DGaK", "VPA", "CTRL2", "AOA", "AOAaK"))
 features_all = SelectIntegrationFeatures(object.list = list_seurat, nfeatures = 3000)
 VariableFeatures(merged_all, assay = "SCT") = features_all
 rm(list_seurat, features_all)
