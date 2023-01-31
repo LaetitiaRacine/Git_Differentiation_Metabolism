@@ -438,21 +438,21 @@ list_seurat_obj = lapply(list_seurat_obj, function(x) {
 
 # Normalize "ADT assay" with Seurat package
 
-Normalization method CLR applies a centered log ratio transformation. With parameter margin = 2, the normalization is performing across cells.
+In the vignette, the normalization method CLR (centered log ratio) with parameter margin = 2 (the normalization is performing across cells) is applied for ADT normalization. However, we noticed a problem with this normalization for CD133 protein : the cells with higher detection in the raw data (slot counts) turned lower in the normalized data (slot data). This problem can be fixed by setting the margin parameter to 1. Indeed, with small antibody panel, it can be better as explained in the issue **3605** on github.  
 
 ```{r, Normalize ADT}
 
 list_seurat_obj = lapply(list_seurat_obj, function(x) {
   NormalizeData(object = x, 
                 normalization.method = "CLR",
-                margin = 2,
+                margin = 1,
                 assay = "ADT")
 })
 
 list_seurat_obj_cc = lapply(list_seurat_obj_cc, function(x) {
   NormalizeData(object = x, 
                 normalization.method = "CLR",
-                margin = 2,
+                margin = 1,
                 assay = "ADT")
 })
 

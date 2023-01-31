@@ -65,7 +65,6 @@ Based on :
 - https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1    
 - https://satijalab.org/seurat/articles/dim_reduction_vignette.html    
 - https://sib-swiss.github.io/single-cell-training/2022.7/day2/clustering/    
-  
 
 # Analysis on the SCT normalized object WITHOUT cell cycle regression
 
@@ -85,7 +84,8 @@ merged_all = merge(x = list_seurat[["CTRL"]],
                          list_seurat[["CTRL2"]], list_seurat[["AOA"]], 
                          list_seurat[["AOAaK"]]),
                    add.cell.ids = c("CTRL", "CTRLaK", "DON", "DONaK", "DDG", 
-                                    "2DGaK", "VPA", "CTRL2", "AOA", "AOAaK"))
+                                    "2DGaK", "VPA", "CTRL2", "AOA", "AOAaK"),
+                   merge.data = TRUE)
 features_all = SelectIntegrationFeatures(object.list = list_seurat, nfeatures = 3000)
 VariableFeatures(merged_all, assay = "SCT") = features_all
 rm(list_seurat, features_all)
@@ -484,7 +484,10 @@ merged_cc = merge(x = list_seurat_cc[["CTRL"]],
                         list_seurat_cc[["DONaK"]], list_seurat_cc[["2DG"]],
                         list_seurat_cc[["2DGaK"]], list_seurat_cc[["VPA"]],
                         list_seurat_cc[["CTRL2"]], list_seurat_cc[["AOA"]],
-                        list_seurat_cc[["AOAaK"]]))
+                        list_seurat_cc[["AOAaK"]]),
+                  add.cell.ids = c("CTRL", "CTRLaK", "DON", "DONaK", "DDG", 
+                                    "2DGaK", "VPA", "CTRL2", "AOA", "AOAaK"),
+                  merge.data = TRUE)
 VariableFeatures(merged_cc, assay = "SCT") = features_all_cc
 rm(list_seurat_cc, features_all_cc)
 
