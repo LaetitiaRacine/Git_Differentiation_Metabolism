@@ -38,11 +38,13 @@ library(ggrepel)
 
 # Overview 
 
-This code aims to analyze cell clusters' composition (which drug condition in which cluster and in which proportion) and to identify interesting clusters for further investigation. 
-  
-Based on documentations for plots :         
-- http://www.sthda.com/english/wiki/ggplot2-pie-chart-quick-start-guide-r-software-and-data-visualization  
-- https://r-charts.com/part-whole/pie-chart-labels-outside-ggplot2/       
+This code aims at : 
+- analyzing cell clusters' composition (which drug condition in which cluster and in which proportion)  
+- identifying interesting clusters for further investigation   
+    
+Based on documentations for plots :           
+- http://www.sthda.com/english/wiki/ggplot2-pie-chart-quick-start-guide-r-software-and-data-visualization    
+- https://r-charts.com/part-whole/pie-chart-labels-outside-ggplot2/         
         
 ```{r, Working directories and external script}
 
