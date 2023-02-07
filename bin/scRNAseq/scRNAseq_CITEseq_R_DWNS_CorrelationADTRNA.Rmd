@@ -34,6 +34,7 @@ library(tidyr)
 library(tidyverse)
 library(scCustomize) # function Split_FeatureScatter
 library(kableExtra)
+library(viridis)
 
 ```
 
@@ -63,39 +64,131 @@ merged_all = readRDS(file = paste0(dir, "/", "merged_all_1-40dim.rds"))
 
 # Overview 
 
-https://satijalab.org/seurat/articles/multimodal_vignette.html 
+This code aims at :    
+- seing the correlation between RNA and protein for CD34 and CD133    
+- identifying groups of cells with different protein expression if they exist    
+- observing protein expression among cells clusters    
+    
+It is based on :    
+https://satijalab.org/seurat/articles/multimodal_vignette.html    
+https://github.com/satijalab/seurat/issues/1080    
+  
+We work from the count matrix from seurat object. The **"count"** slot contains raw data whereas the **"data"** slot contains normalized data with CLR algorithm. 
+```{r}
+
+cd34_expr = full_join(x = data.frame(merged_all@assays$ADT@counts[1,]) %>%
+                        rownames_to_column(var = "cell"),
+                      y = data.frame(merged_all@assays$ADT@data[1,]) %>%
+                        rownames_to_column(var = "cell"),
+                      by = "cell")
+colnames(cd34_expr) = c("cell", "cd34_raw_value", "cd34_normalized_value")
+
+cd133_expr = full_join(x = data.frame(merged_all@assays$ADT@counts[2,]) %>%
+                        rownames_to_column(var = "cell"),
+                      y = data.frame(merged_all@assays$ADT@data[2,]) %>%
+                        rownames_to_column(var = "cell"),
+                      by = "cell")
+colnames(cd133_expr) = c("cell", "cd133_raw_value", "cd133_normalized_value")
+
+prot_expr = full_join(cd34_expr, cd133_expr, by = "cell")
+
+prot_expr %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+<br>
+
+We depicted the data on plots to visualize the proteins' distribution in the population. We can identified outliers.
+```{r, fig.height = 5, fig.width = 12}
+
+print("Statistical distribution of CD34 protein expression : ")
+summary(prot_expr$cd34_normalized_value)
+print("Statistical distribution of CD133 protein expression : ")
+summary(prot_expr$cd133_normalized_value)
+
+cd34_expr_distri = ggplot(prot_expr, aes(x=cd34_normalized_value, y=0)) +
+  geom_jitter(height = 10, width = 0, size = 1, color = "black") +
+  ggplot2::annotate("segment", x=0, xend=5, y=0, yend=0, size=2, color = "grey") +
+  ggplot2::annotate("segment", x=0, xend=0, y=-4,yend=4, size=2,  color = "grey") +
+  ggplot2::annotate("segment", x=5, xend=5, y=-4,yend=4, size=2,  color = "grey") +
+  ggplot2::annotate("segment", x=0.4539, xend=0.4539, y=-10,yend=10, size=1,  color = "red", linetype = "longdash") +
+  ggplot2::annotate(geom="text", x=0.4539, y=11, label="Q1", color="red", angle = 90) +
+  ggplot2::annotate("segment", x=0.7093, xend=0.7093,y=-10,yend=10, size=1,  color = "red", linetype = "longdash") +
+  ggplot2::annotate(geom="text", x=0.7093, y=11, label="Med", color="red", angle = 90) +
+  ggplot2::annotate("segment", x=1.0123, xend=1.0123, y=-10,yend=10, size=1,  color = "red", linetype = "longdash") +
+  ggplot2::annotate(geom="text", x=1.0123, y=11, label="Q3", color="red", angle = 90) +
+  ggplot2::annotate("segment", x=1.75, xend=1.75, y=-10,yend=10, size=1,  color = "blue", linetype = "longdash") +
+  ggplot2::annotate(geom="text", x=1.75, y=11, label="1.75", color="blue", angle = 90) +
+  ggplot2::annotate("segment", x=2.6, xend=2.6, y=-10,yend=10, size=1,  color = "blue", linetype = "longdash") +
+  ggplot2::annotate(geom="text", x=2.6, y=11, label="2.6", color="blue", angle = 90) +
+  scale_y_continuous(limits = c(-11,11)) +
+  theme(legend.title = element_blank(), 
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+cd133_expr_distri = ggplot(prot_expr, aes(x=cd133_normalized_value, y=0)) +
+  geom_jitter(height = 10, width = 0, size = 1, color = "black") +
+  ggplot2::annotate("segment", x=0, xend=8, y=0, yend=0, size=2, color = "grey") +
+  ggplot2::annotate("segment", x=0, xend=0, y=-4,yend=4, size=2,  color = "grey") +
+  ggplot2::annotate("segment", x=8, xend=8, y=-4,yend=4, size=2,  color = "grey") +
+  ggplot2::annotate("segment", x=0.5031, xend=0.5031, y=-10,yend=10, size=1,  color = "red", linetype = "longdash") +
+  ggplot2::annotate(geom="text", x=0.5031, y=11, label="Q1", color="red", angle = 90) +
+  ggplot2::annotate("segment", x=0.6649, xend=0.6649, y=-10,yend=10, size=1,  color = "red", linetype = "longdash") +
+  ggplot2::annotate(geom="text", x=0.6649, y=11, label="Med", color="red", angle = 90) +
+  ggplot2::annotate("segment", x=0.8652, xend=0.8652, y=-10,yend=10, size=1,  color = "red", linetype = "longdash") +
+  ggplot2::annotate(geom="text", x=0.8652, y=11, label="Q3", color="red", angle = 90) +
+  ggplot2::annotate("segment", x=1.75, xend=1.75, y=-10,yend=10, size=1,  color = "blue", linetype = "longdash") +
+  ggplot2::annotate(geom="text", x=1.75, y=11, label="1.75", color="blue", angle = 90) +
+  ggplot2::annotate("segment", x=2.2, xend=2.2, y=-10,yend=10, size=1,  color = "blue", linetype = "longdash") +
+  ggplot2::annotate(geom="text", x=2.2, y=11, label="2.2", color="blue", angle = 90) +
+  scale_y_continuous(limits = c(-11,11)) +
+  theme(legend.title = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+cd34_expr_distri | cd133_expr_distri
+
+```
 
 
 
 # Membrane protein vs RNA in each culture condition
 
+For UMAP representation of protein expression (ADT), we set a max cutoff at 2.6 for CD34 and 2.2 for CD133 to have a more readable scale. This means that all values above those cutoffs have the same color on the scale. For RNA expression, we use the predefined max and min cutoff (95% and 5%) because we don't have precise value to provide.
 ```{r, UMAP ADT RNA}
-
-col_scale = c("lightgrey","#CC00FFFF","#3300FFFF",
-              "#0066FFFF", "#00FFFFFF", "#33FF00FF",
-              "#FFFF00FF","#FF8800FF","#CC0000FF")
 
 DefaultAssay(merged_all) = "ADT"
 p1 = FeaturePlot(object = merged_all,
                  features = "cite_CD34.1",
-                 cols = col_scale,
+                 cols = viridis_magma_dark_high,
+                 max.cutoff = "2.6",
                  split.by = "orig.ident",
-                 combine = FALSE)
+                 combine = FALSE)                   
 p2 = FeaturePlot(object = merged_all,
                  features = "cite_CD133",
-                 cols = col_scale,
+                  cols = viridis_magma_dark_high,
+                 max.cutoff = "2.2",
                  split.by = "orig.ident",
                  combine = FALSE)
 
 DefaultAssay(merged_all) = "SCT"
 p3 = FeaturePlot(object = merged_all,
                  features = "sct_CD34",
-                 cols = col_scale,
+                  cols = viridis_magma_dark_high,
+                 max.cutoff = "q95",
+                 min.cutoff = "q05",
                  split.by = "orig.ident",
                  combine = FALSE)
 p4 = FeaturePlot(object = merged_all,
                  features = "sct_PROM1",
-                 cols = col_scale,
+                  cols = viridis_magma_dark_high,
+                 max.cutoff = "q95",
+                 min.cutoff = "q05",
                  split.by = "orig.ident",
                  combine = FALSE)
 
@@ -123,8 +216,6 @@ do.call("grid.arrange", c(p4, ncol=3))
 
 ```{r, Scatter ADT RNA, results='hold', fig.width=18, fig.height=16, fig.fullwidth=TRUE}
 
-# https://github.com/satijalab/seurat/issues/1080
-
 Idents(merged_all) = "orig.ident"
 
 DefaultAssay(merged_all) = "SCT"
@@ -151,18 +242,19 @@ sc1/sc2
 
 # Membrane protein groups in each culture condition
 
-```{r}
+We work with the normalized matrix stored in the *data* slot of ADT assay.   
+We decided to use the *kmean algorithm* to define groups of expression in the cells. We tried with two groups (high/low) and three groups (high/medium/low).  
+
+```{r, Choose assay}
 DefaultAssay(merged_all) = "ADT"
 ```
 
-<br>
-We tried to depict the data on an histogram but the scale is too large to be able to see something. So we decided to use the *kmean algorithm* to define two groups of expression (high/low) of CD34 and CD133 proteins and study the distribution of the proteins in the cells between the conditions.
-<br>
+**Two groups : high/low**
 
-```{r, CD34 groups, fig.width=12, fig.height=8}
+```{r, CD34 two groups, fig.width=12, fig.height=8}
 
-# Organize tab to calcul kmean
-protein_tab_cd34 = as.data.frame(merged_all@assays$ADT@counts)["CD34.1",]
+# # Organize tab to calcul kmean
+protein_tab_cd34 = as.data.frame(merged_all@assays$ADT@data)["CD34.1",]
 protein_tab_cd34 = tidyr::pivot_longer(data = protein_tab_cd34,
                                   cols = 1:ncol(protein_tab_cd34),
                                   names_to = "cell",
@@ -170,7 +262,7 @@ protein_tab_cd34 = tidyr::pivot_longer(data = protein_tab_cd34,
 protein_tab_cd34 = protein_tab_cd34 %>% tibble::column_to_rownames(var="cell")
 
 # Kmean calcul for two clusters
-set.seed(42) # !!! important
+set.seed(42) # !!! important for repeatability
 fit = kmeans(protein_tab_cd34, 2)
 protein_tab_cd34 = data.frame(protein_tab_cd34, fit$cluster)
 table(protein_tab_cd34$fit.cluster)
@@ -181,17 +273,18 @@ lim_clust2 = c(min(protein_tab_cd34[protein_tab_cd34$fit.cluster==2,1]),
                max(protein_tab_cd34[protein_tab_cd34$fit.cluster==2,1]))
 # Ascending order
 limits = sort(c(lim_clust1, lim_clust2))
+
 # Threshold between the two clusters (use max of first cluster and min of second one)
 var_kmean = mean(limits[2:3])
 # Add the new groups into metadata of seurat object
-cat("Limits cluster 1 :", lim_clust1, "=>high", "\n",
-    "Limits cluster 2 :", lim_clust2, "=>low", "\n",
+cat("Limits cluster 1 :", lim_clust1, "=> high", "\n",
+    "Limits cluster 2 :", lim_clust2, "=> low", "\n",
     "Kmean value = ", var_kmean)
 # Add kmean information in the tab
 protein_tab_cd34 = protein_tab_cd34 %>%
-  dplyr::mutate(CD34_group = ifelse(fit.cluster==1, "CD34_high", "CD34_low")) %>%
+  dplyr::mutate(CD34_two_groups = ifelse(fit.cluster==1, "CD34_high", "CD34_low")) %>%
   tibble::rownames_to_column(var = "cell") %>%
-  dplyr::select(cell, CD34_group)
+  dplyr::select(cell, CD34_two_groups)
 
 # Add the new groups into metadata of seurat object
 meta_tab = as.data.frame(merged_all@meta.data) %>% rownames_to_column(var = "cell")
@@ -200,25 +293,22 @@ meta_tab = meta_tab %>% column_to_rownames(var = "cell")
 merged_all@meta.data = meta_tab
 
 # Show the groups
-DefaultAssay(merged_all) = "ADT"
-p5 = DimPlot(object = merged_all,
+cd34_umap_two = DimPlot(object = merged_all,
              split.by = "orig.ident",
-             group.by = "CD34_group",
+             group.by = "CD34_two_groups",
              reduction = "umap",
              ncol = 3)
-p5
+cd34_umap_two
 
-table(merged_all$CD34_group)
-table(merged_all$orig.ident, merged_all$CD34_group)
+table(merged_all$CD34_two_groups)
+table(merged_all$orig.ident, merged_all$CD34_two_groups)
 
 ```
 
-For CD133, the kmean with two groups is not very consistent because the *high group* contains a tiny number of cells. We decided to look for three groups with the kmean algorithm (high/medium/low). As we can see in the table, we only have 3 outliers in the *high* group. 
-
-```{r, CD133 groups, fig.width=12, fig.height=8}
+```{r, CD133 two groups, fig.width=12, fig.height=8}
 
 # Organize tab to calcul kmean
-protein_tab_cd133 = as.data.frame(merged_all@assays$ADT@counts)["CD133",]
+protein_tab_cd133 = as.data.frame(merged_all@assays$ADT@data)["CD133",]
 protein_tab_cd133 = tidyr::pivot_longer(data = protein_tab_cd133,
                                   cols = 1:ncol(protein_tab_cd133),
                                   names_to = "cell",
@@ -226,8 +316,8 @@ protein_tab_cd133 = tidyr::pivot_longer(data = protein_tab_cd133,
 protein_tab_cd133 = protein_tab_cd133 %>% tibble::column_to_rownames(var="cell")
 
 # Kmean calcul for two clusters
-set.seed(42) # important !!!
-fit = kmeans(protein_tab_cd133, 3)
+set.seed(42) # !!! important
+fit = kmeans(protein_tab_cd133, 2)
 protein_tab_cd133 = data.frame(protein_tab_cd133, fit$cluster)
 table(protein_tab_cd133$fit.cluster)
 # Limits of each cluster
@@ -235,24 +325,19 @@ lim_clust1 = c(min(protein_tab_cd133[protein_tab_cd133$fit.cluster==1,1]),
                max(protein_tab_cd133[protein_tab_cd133$fit.cluster==1,1]))
 lim_clust2 = c(min(protein_tab_cd133[protein_tab_cd133$fit.cluster==2,1]),
                max(protein_tab_cd133[protein_tab_cd133$fit.cluster==2,1]))
-lim_clust3 = c(min(protein_tab_cd133[protein_tab_cd133$fit.cluster==3,1]),
-               max(protein_tab_cd133[protein_tab_cd133$fit.cluster==3,1]))
 # Ascending order
-limits = sort(c(lim_clust1, lim_clust2, lim_clust3))
+limits = sort(c(lim_clust1, lim_clust2))
 # Threshold between the two clusters (use max of first cluster and min of second one)
-var_kmean_1 = mean(limits[2:3])
-var_kmean_2 = mean(limits[4:5])
+var_kmean = mean(limits[2:3])
+# Add the new groups into metadata of seurat object
 cat("Limits cluster 1 :", lim_clust1, "=> low", "\n",
-    "Limits cluster 2 :", lim_clust2, "=> medium", "\n",
-    "Limits cluster 3 :", lim_clust3, "=> high", "\n",
-    "Kmean value 1 = ", var_kmean_1, "\n",
-    "Kmean value 2 = ", var_kmean_2)
+    "Limits cluster 2 :", lim_clust2, "=> high", "\n",
+    "Kmean value = ", var_kmean)
 # Add kmean information in the tab
 protein_tab_cd133 = protein_tab_cd133 %>%
-  dplyr::mutate(CD133_group = ifelse(fit.cluster == 1, "CD133_low",
-                                     ifelse(fit.cluster == 2, "CD133_medium", "CD133_high")))  %>%
+  dplyr::mutate(CD133_two_groups = ifelse(fit.cluster==1, "CD133_low", "CD133_high")) %>%
   tibble::rownames_to_column(var = "cell") %>%
-  dplyr::select(cell, CD133_group)
+  dplyr::select(cell, CD133_two_groups)
 
 # Add the new groups into metadata of seurat object
 meta_tab = as.data.frame(merged_all@meta.data) %>% rownames_to_column(var = "cell")
@@ -261,53 +346,27 @@ meta_tab = meta_tab %>% column_to_rownames(var = "cell")
 merged_all@meta.data = meta_tab
 
 # Show the groups
-DefaultAssay(merged_all) = "ADT"
-p6 = DimPlot(object = merged_all,
+cd133_umap_two = DimPlot(object = merged_all,
              split.by = "orig.ident",
-             group.by = "CD133_group",
+             group.by = "CD133_two_groups",
              reduction = "umap",
              ncol = 3)
-p6
+cd133_umap_two
 
-table(merged_all$CD133_group)
-table(merged_all$orig.ident, merged_all$CD133_group)
+table(merged_all$CD133_two_groups)
+table(merged_all$orig.ident, merged_all$CD133_two_groups)
 
 ```
 
-To simplify the comparison with CD34, we merge *high* and *medium* groups into a *high-medium* group.
-
-```{r, CD133 groups corrected, fig.width=12, fig.height=8}
-
-protein_tab_cd133 = protein_tab_cd133 %>%
-  dplyr::mutate(CD133_group_correct = ifelse(CD133_group == "CD133_low", "CD133_low", "CD133_high-medium"))
-
-merged_all@meta.data$CD133_group_correct = protein_tab_cd133$CD133_group_correct
-
-# Show the groups
-DefaultAssay(merged_all) = "ADT"
-p7 = DimPlot(object = merged_all,
-             split.by = "orig.ident",
-             group.by = "CD133_group_correct",
-             reduction = "umap",
-             ncol = 3)
-p7
-
-table(merged_all$CD133_group_correct)
-table(merged_all$orig.ident, merged_all$CD133_group_correct)
-
-```
-
-**Results synthetize in tables.**
-
-```{r, CD34 CD133 tab}
+```{r, CD34 CD133 two groups tab}
 
 # Tab number
-tab_34 = data.frame(table(merged_all@meta.data$CD34_group, 
+tab_34 = data.frame(table(merged_all@meta.data$CD34_two_groups, 
                           merged_all@meta.data$orig.ident)) %>%
   tidyr::pivot_wider(names_from = Var2, values_from = Freq) %>%
   dplyr::rename("Surface_Protein" = "Var1")
 
-tab_133 = data.frame(table(merged_all@meta.data$CD133_group, 
+tab_133 = data.frame(table(merged_all@meta.data$CD133_two_groups, 
                            merged_all@meta.data$orig.ident)) %>%
   tidyr::pivot_wider(names_from = Var2, values_from = Freq) %>%
   dplyr::rename("Surface_Protein" = "Var1")
@@ -325,7 +384,7 @@ tab_norm_cond$Surface_Protein = tab_raw_cond$Surface_Protein
 tab_norm_cond = tab_norm_cond %>% dplyr::relocate(Surface_Protein, .before = "2DG")
 
 tab_norm_cond %>%
-  kable(caption = "Normalized cell distribution in conditions") %>%
+  kable(caption = "Normalized cell distribution in conditions per number of cell per condition.") %>%
   kable_styling()
 
 # Tab percent 
@@ -333,12 +392,332 @@ tab_percent_cond = as.data.frame(mapply('/', tab_norm_cond[,-1], 10))
 tab_percent_cond$Surface_Protein = tab_norm_cond$Surface_Protein
 tab_percent_cond = tab_percent_cond %>% dplyr::relocate(Surface_Protein, .before = "2DG")
 tab_percent_cond %>%
-  kable(caption = "Percentage of cells with high/low surface protein for each condition.") %>%
+  kable(caption = "Percentage of cells with high/low surface protein for each condition (from normalized per number of cells per condition numbers).") %>%
   kable_styling()
+
+# save tables  
+write.csv2(x = tab_raw_cond, row.names = FALSE,
+           file = paste0(directory_output, "tab_raw_cond_two_groups.csv"))
+write.csv2(x = tab_norm_cond, row.names = FALSE,
+           file = paste0(directory_output, "tab_norm_cond_two_groups.csv"))
+write.csv2(x = tab_percent_cond, row.names = FALSE,
+           file = paste0(directory_output, "tab_percent_cond_two_groups.csv"))
 
 ```
 
-We tried heatmaps but as downsampling is a mandatory step for those, it's not very good representation of all the cells from the condition.
+**Three groups : high/medium/low** 
+
+```{r, CD34 three groups, fig.width=12, fig.height=8}
+
+# Organize tab to calcul kmean
+protein_tab_cd34 = as.data.frame(merged_all@assays$ADT@data)["CD34.1",]
+protein_tab_cd34 = tidyr::pivot_longer(data = protein_tab_cd34,
+                                  cols = 1:ncol(protein_tab_cd34),
+                                  names_to = "cell",
+                                  values_to = "protein")
+protein_tab_cd34 = protein_tab_cd34 %>% tibble::column_to_rownames(var="cell")
+
+# Kmean calcul for three clusters
+set.seed(42) # !!! important for repeatability
+fit = kmeans(protein_tab_cd34, 3)
+protein_tab_cd34 = data.frame(protein_tab_cd34, fit$cluster)
+table(protein_tab_cd34$fit.cluster)
+# Limits of each cluster
+lim_clust1 = c(min(protein_tab_cd34[protein_tab_cd34$fit.cluster==1,1]),
+               max(protein_tab_cd34[protein_tab_cd34$fit.cluster==1,1]))
+lim_clust2 = c(min(protein_tab_cd34[protein_tab_cd34$fit.cluster==2,1]),
+               max(protein_tab_cd34[protein_tab_cd34$fit.cluster==2,1]))
+lim_clust3 = c(min(protein_tab_cd34[protein_tab_cd34$fit.cluster==3,1]),
+               max(protein_tab_cd34[protein_tab_cd34$fit.cluster==3,1]))
+# Ascending order
+limits = sort(c(lim_clust1, lim_clust2, lim_clust3))
+# Threshold between the clusters (use max of first cluster and min of second one)
+var_kmean = c(mean(limits[2:3]), mean(limits[4:5]))
+# Add the new groups into metadata of seurat object
+cat("Limits cluster 1 :", lim_clust1, "=> high", "\n",
+    "Limits cluster 2 :", lim_clust2, "=> low", "\n",
+    "Limits cluster 3 :", lim_clust3, "=> medium", "\n",
+    "Kmean values = ", var_kmean)
+# Add kmean information in the tab
+protein_tab_cd34 = protein_tab_cd34 %>%
+  dplyr::mutate(CD34_three_groups = ifelse(fit.cluster==1, "CD34_high", 
+                                           ifelse(fit.cluster==2, "CD34_low", "CD34_medium"))) %>%
+  tibble::rownames_to_column(var = "cell") %>%
+  dplyr::select(cell, CD34_three_groups)
+
+# Add the new groups into metadata of seurat object
+meta_tab = as.data.frame(merged_all@meta.data) %>% rownames_to_column(var = "cell")
+meta_tab = full_join(x = meta_tab, y = protein_tab_cd34, by = "cell")
+meta_tab = meta_tab %>% column_to_rownames(var = "cell")
+merged_all@meta.data = meta_tab
+
+# Show the groups
+cd34_umap_three = DimPlot(object = merged_all,
+             split.by = "orig.ident",
+             group.by = "CD34_three_groups",
+             reduction = "umap",
+             ncol = 3)
+cd34_umap_three
+
+table(merged_all$CD34_three_groups)
+table(merged_all$orig.ident, merged_all$CD34_three_groups)
+
+```
+
+```{r, CD133 three groups, fig.width=12, fig.height=8}
+
+# Organize tab to calcul kmean
+protein_tab_cd133 = as.data.frame(merged_all@assays$ADT@data)["CD133",]
+protein_tab_cd133 = tidyr::pivot_longer(data = protein_tab_cd133,
+                                  cols = 1:ncol(protein_tab_cd133),
+                                  names_to = "cell",
+                                  values_to = "protein")
+protein_tab_cd133 = protein_tab_cd133 %>% tibble::column_to_rownames(var="cell")
+
+# Kmean calcul for three clusters
+set.seed(42) # !!! important
+fit = kmeans(protein_tab_cd133, 3)
+protein_tab_cd133 = data.frame(protein_tab_cd133, fit$cluster)
+table(protein_tab_cd133$fit.cluster)
+# Limits of each cluster
+lim_clust1 = c(min(protein_tab_cd133[protein_tab_cd133$fit.cluster==1,1]),
+               max(protein_tab_cd133[protein_tab_cd133$fit.cluster==1,1]))
+lim_clust2 = c(min(protein_tab_cd133[protein_tab_cd133$fit.cluster==2,1]),
+               max(protein_tab_cd133[protein_tab_cd133$fit.cluster==2,1]))
+lim_clust3 = c(min(protein_tab_cd133[protein_tab_cd133$fit.cluster==3,1]),
+               max(protein_tab_cd133[protein_tab_cd133$fit.cluster==3,1]))
+# Ascending order
+limits = sort(c(lim_clust1, lim_clust2, lim_clust3))
+# Threshold between the  clusters (use max of first cluster and min of second one)
+var_kmean = c(mean(limits[2:3]), mean(limits[4:5]))
+# Add the new groups into metadata of seurat object
+cat("Limits cluster 1 :", lim_clust1, "=> low", "\n",
+    "Limits cluster 2 :", lim_clust2, "=> high", "\n",
+    "Limits cluster 3 :", lim_clust3, "=> medium", "\n",
+    "Kmean values = ", var_kmean)
+# Add kmean information in the tab
+protein_tab_cd133 = protein_tab_cd133 %>%
+  dplyr::mutate(CD133_three_groups = ifelse(fit.cluster==1, "CD133_low", 
+                                           ifelse(fit.cluster==2, "CD34_high", "CD34_medium"))) %>%
+  tibble::rownames_to_column(var = "cell") %>%
+  dplyr::select(cell, CD133_three_groups)
+
+# Add the new groups into metadata of seurat object
+meta_tab = as.data.frame(merged_all@meta.data) %>% rownames_to_column(var = "cell")
+meta_tab = full_join(x = meta_tab, y = protein_tab_cd133, by = "cell")
+meta_tab = meta_tab %>% column_to_rownames(var = "cell")
+merged_all@meta.data = meta_tab
+
+# Show the groups
+cd133_umap_three = DimPlot(object = merged_all,
+             split.by = "orig.ident",
+             group.by = "CD133_three_groups",
+             reduction = "umap",
+             ncol = 3)
+cd133_umap_three
+
+table(merged_all$CD133_three_groups)
+table(merged_all$orig.ident, merged_all$CD133_three_groups)
+
+```
+
+```{r, CD34 CD133 three groups tab}
+
+# Tab number
+tab_three_34 = data.frame(table(merged_all@meta.data$CD34_three_groups, 
+                          merged_all@meta.data$orig.ident)) %>%
+  tidyr::pivot_wider(names_from = Var2, values_from = Freq) %>%
+  dplyr::rename("Surface_Protein" = "Var1")
+
+tab_three_133 = data.frame(table(merged_all@meta.data$CD133_three_groups, 
+                           merged_all@meta.data$orig.ident)) %>%
+  tidyr::pivot_wider(names_from = Var2, values_from = Freq) %>%
+  dplyr::rename("Surface_Protein" = "Var1")
+
+tab_raw_cond = rbind(tab_three_34, tab_three_133)
+
+tab_raw_cond %>%
+  kable(caption = "Raw cell distribution in conditions") %>%
+  kable_styling()
+
+# Tab number normalized
+tot_nb_cells = tab_raw_cond[1,-1]+tab_raw_cond[2,-1]
+tab_norm_cond = as.data.frame(round(mapply('/', tab_raw_cond[,-1] , tot_nb_cells)*1000))
+tab_norm_cond$Surface_Protein = tab_raw_cond$Surface_Protein
+tab_norm_cond = tab_norm_cond %>% dplyr::relocate(Surface_Protein, .before = "2DG")
+
+tab_norm_cond %>%
+  kable(caption = "Normalized cell distribution in conditions per number of cell per condition.") %>%
+  kable_styling()
+
+# Tab percent 
+tab_percent_cond = as.data.frame(mapply('/', tab_norm_cond[,-1], 10))
+tab_percent_cond$Surface_Protein = tab_norm_cond$Surface_Protein
+tab_percent_cond = tab_percent_cond %>% dplyr::relocate(Surface_Protein, .before = "2DG")
+tab_percent_cond %>%
+  kable(caption = "Percentage of cells with high/low surface protein for each condition (from normalized per number of cells per condition numbers).") %>%
+  kable_styling()
+
+# save tables  
+write.csv2(x = tab_raw_cond, row.names = FALSE,
+           file = paste0(directory_output, "tab_raw_cond_three_groups.csv"))
+write.csv2(x = tab_norm_cond, row.names = FALSE,
+           file = paste0(directory_output, "tab_norm_cond_three_groups.csv"))
+write.csv2(x = tab_percent_cond, row.names = FALSE,
+           file = paste0(directory_output, "tab_percent_cond_three_groups.csv"))
+
+```
+
+
+
+# Membrane protein groups repartition in clusters
+
+By now, we do not look at the data in terms of conditions but in terms of clusters.
+
+```{r, ADT default}
+DefaultAssay(merged_all) = "ADT"
+```
+
+```{r, UMAP, fig.width = 24, fig.height = 6}
+
+umap_cluster = DimPlot(merged_all, 
+                       label = TRUE, 
+                       reduction = "umap", 
+                       group.by = "clusters")
+
+umap_two_cd34 = DimPlot(merged_all,
+                    reduction = "umap", 
+                    group.by = "CD34_two_groups")
+
+umap_two_cd133 = DimPlot(merged_all,
+                     reduction = "umap", 
+                     group.by = "CD133_two_groups")
+
+umap_cluster|umap_two_cd34|umap_two_cd133
+
+
+umap_three_cd34 = DimPlot(merged_all,
+                    reduction = "umap", 
+                    group.by = "CD34_three_groups")
+
+umap_three_cd133 = DimPlot(merged_all,
+                     reduction = "umap", 
+                     group.by = "CD133_three_groups")
+
+umap_cluster|umap_three_cd34|umap_three_cd133
+
+```
+
+```{r, Vln, fig.width = 15, fig.height = 8}
+
+vln_cd34 = VlnPlot(merged_all, features = "CD34.1",
+                   pt.size = 0, group.by = "clusters") + 
+  theme(legend.position = "top")
+
+vln_cd133 = VlnPlot(merged_all, features = "CD133",
+                    pt.size = 0, group.by = "clusters") + 
+  theme(legend.position = "none")
+
+vln_cd34/vln_cd133
+
+```
+
+```{r, tab two groups}
+
+tab_34 = data.frame(table(merged_all@meta.data$CD34_two_groups, 
+                          merged_all@meta.data$clusters)) %>%
+  tidyr::pivot_wider(names_from = Var2, values_from = Freq) %>%
+  dplyr::rename("Surface_Protein" = "Var1")
+
+tab_133 = data.frame(table(merged_all@meta.data$CD133_two_groups, 
+                           merged_all@meta.data$clusters)) %>%
+  tidyr::pivot_wider(names_from = Var2, values_from = Freq) %>%
+  dplyr::rename("Surface_Protein" = "Var1")
+
+tab_raw_clusters = rbind(tab_34, tab_133)
+
+tab_raw_clusters %>%
+  kable(caption = "Raw cell distribution in clusters") %>%
+  kable_styling()
+
+# Tab number normalized
+tot_nb_cells = tab_raw_clusters[1,-1]+tab_raw_clusters[2,-1]
+tab_norm_clusters = as.data.frame(round(mapply('/', tab_raw_clusters[,-1] , tot_nb_cells)*1000))
+tab_norm_clusters$Surface_Protein = tab_raw_clusters$Surface_Protein
+tab_norm_clusters = tab_norm_clusters %>% dplyr::relocate(Surface_Protein, .before = "0")
+
+tab_norm_clusters %>%
+  kable(caption = "Normalized cell distribution in clusters") %>%
+  kable_styling()
+
+# Tab percent
+tab_percent_clusters = as.data.frame(mapply('/', tab_norm_clusters[,-1], 10))
+tab_percent_clusters$Surface_Protein = tab_norm_clusters$Surface_Protein
+tab_percent_clusters = tab_percent_clusters %>% dplyr::relocate(Surface_Protein, .before = "0")
+tab_percent_clusters %>%
+  kable(caption = "Percentage of cells with high/low surface protein for each cluster.") %>%
+  kable_styling()
+
+# save tables
+write.csv2(x = tab_raw_clusters, row.names = FALSE,
+           file = paste0(directory_output, "tab_raw_clusters_two_groups.csv"))
+write.csv2(x = tab_norm_clusters, row.names = FALSE,
+           file = paste0(directory_output, "tab_norm_clusters_two_groups.csv"))
+write.csv2(x = tab_percent_clusters, row.names = FALSE,
+           file = paste0(directory_output, "tab_percent_clusters_two_groups.csv"))
+
+```
+
+```{r, tab three groups}
+
+tab_34 = data.frame(table(merged_all@meta.data$CD34_three_groups, 
+                          merged_all@meta.data$clusters)) %>%
+  tidyr::pivot_wider(names_from = Var2, values_from = Freq) %>%
+  dplyr::rename("Surface_Protein" = "Var1")
+
+tab_133 = data.frame(table(merged_all@meta.data$CD133_three_groups, 
+                           merged_all@meta.data$clusters)) %>%
+  tidyr::pivot_wider(names_from = Var2, values_from = Freq) %>%
+  dplyr::rename("Surface_Protein" = "Var1")
+
+tab_raw_clusters = rbind(tab_34, tab_133)
+
+tab_raw_clusters %>%
+  kable(caption = "Raw cell distribution in clusters") %>%
+  kable_styling()
+
+# Tab number normalized
+tot_nb_cells = tab_raw_clusters[1,-1]+tab_raw_clusters[2,-1]
+tab_norm_clusters = as.data.frame(round(mapply('/', tab_raw_clusters[,-1] , tot_nb_cells)*1000))
+tab_norm_clusters$Surface_Protein = tab_raw_clusters$Surface_Protein
+tab_norm_clusters = tab_norm_clusters %>% dplyr::relocate(Surface_Protein, .before = "0")
+
+tab_norm_clusters %>%
+  kable(caption = "Normalized cell distribution in clusters") %>%
+  kable_styling()
+
+# Tab percent
+tab_percent_clusters = as.data.frame(mapply('/', tab_norm_clusters[,-1], 10))
+tab_percent_clusters$Surface_Protein = tab_norm_clusters$Surface_Protein
+tab_percent_clusters = tab_percent_clusters %>% dplyr::relocate(Surface_Protein, .before = "0")
+tab_percent_clusters %>%
+  kable(caption = "Percentage of cells with high/low surface protein for each cluster.") %>%
+  kable_styling()
+
+# save tables
+write.csv2(x = tab_raw_clusters, row.names = FALSE,
+           file = paste0(directory_output, "tab_raw_clusters_three_groups.csv"))
+write.csv2(x = tab_norm_clusters, row.names = FALSE,
+           file = paste0(directory_output, "tab_norm_clusters_three_groups.csv"))
+write.csv2(x = tab_percent_clusters, row.names = FALSE,
+           file = paste0(directory_output, "tab_percent_clusters_three_groups.csv"))
+
+```
+
+
+# Conclusion
+
+We tried heatmaps but as downsampling is a mandatory step for those, it's not very good representation of all the cells from the condition.   
 
 ```{r, CD34 and CD133 heatmaps, fig.height = 26, eval = FALSE}
 
@@ -377,92 +756,20 @@ for (i in 1:length(conditions)) {
 
 ```
 
+<br>
 
-# Membrane protein groups repartition in clusters
+Further possible analysis :   
+- choose a groups resolution (two groups or three groups)  
+- extract cells for each group  
+- perform a GO on gene expressed in the cells of each group  
+- see if some interesting categories are linked to the groups  
 
-For now, we do not look at the data in terms of conditions but in clusters.
-
-```{r, ADT default}
-
-DefaultAssay(merged_all) = "ADT"
-
-```
-
-```{r, UMAP, fig.width = 24, fig.height = 6}
-
-umap_cluster = DimPlot(merged_all, 
-                       label = TRUE, 
-                       reduction = "umap", 
-                       group.by = "clusters")
-
-umap_cd34 = DimPlot(merged_all,
-                    reduction = "umap", 
-                    group.by = "CD34_group")
-
-umap_cd133 = DimPlot(merged_all,
-                     reduction = "umap", 
-                     group.by = "CD133_group_correct")
-
-umap_cluster|umap_cd34|umap_cd133
-
-```
-
-```{r, Vln, fig.width = 15, fig.height = 8}
-
-vln_cd34 = VlnPlot(merged_all, features = "CD34.1",
-                   pt.size = 0, group.by = "clusters") + 
-  theme(legend.position = "top")
-
-vln_cd133 = VlnPlot(merged_all, features = "CD133",
-                    pt.size = 0, group.by = "clusters") + 
-  theme(legend.position = "none")
-
-vln_cd34/vln_cd133
-
-```
-
-```{r, tab}
-
-tab_34 = data.frame(table(merged_all@meta.data$CD34_group, 
-                          merged_all@meta.data$clusters)) %>%
-  tidyr::pivot_wider(names_from = Var2, values_from = Freq) %>%
-  dplyr::rename("Surface_Protein" = "Var1")
-
-tab_133 = data.frame(table(merged_all@meta.data$CD133_group, 
-                           merged_all@meta.data$clusters)) %>%
-  tidyr::pivot_wider(names_from = Var2, values_from = Freq) %>%
-  dplyr::rename("Surface_Protein" = "Var1")
-
-tab_raw_clusters = rbind(tab_34, tab_133)
-
-tab_raw_clusters %>%
-  kable(caption = "Raw cell distribution in clusters") %>%
-  kable_styling()
-
-# Tab number normalized
-tot_nb_cells = tab_raw_clusters[1,-1]+tab_raw_clusters[2,-1]
-tab_norm_clusters = as.data.frame(round(mapply('/', tab_raw_clusters[,-1] , tot_nb_cells)*1000))
-tab_norm_clusters$Surface_Protein = tab_raw_clusters$Surface_Protein
-tab_norm_clusters = tab_norm_clusters %>% dplyr::relocate(Surface_Protein, .before = "0")
-
-tab_norm_clusters %>%
-  kable(caption = "Normalized cell distribution in clusters") %>%
-  kable_styling()
-
-# Tab percent
-tab_percent_clusters = as.data.frame(mapply('/', tab_norm_clusters[,-1], 10))
-tab_percent_clusters$Surface_Protein = tab_norm_clusters$Surface_Protein
-tab_percent_clusters = tab_percent_clusters %>% dplyr::relocate(Surface_Protein, .before = "0")
-tab_percent_clusters %>%
-  kable(caption = "Percentage of cells with high/low surface protein for each cluster.") %>%
-  kable_styling()
-
-```
-
-
-```{r, Save outputs, fig.show='hide'}
+```{r, Save graphs, fig.show='hide'}
 
 # save plots
+ggsave(plot = cd34_expr_distri | cd133_expr_distri, width = 14, height = 6,
+       filename = paste0(directory_output, "adt_distri_expr.svg"))
+
 ggsave(plot = do.call("grid.arrange", c(p1, ncol=3)),
        filename = paste0(directory_output, "umap_adt_cd34.svg"),
         width = 2, height = 16)
@@ -476,33 +783,25 @@ ggsave(plot = do.call("grid.arrange", c(p4, ncol=3)),
        filename = paste0(directory_output, "umap_rna_cd133.svg"),
        width = 20, height = 16)
 
-ggsave(plot = p5, width = 20, height = 16,
-       filename = paste0(directory_output, "umap_adt_cd34groups.svg"))
-ggsave(plot = p6, width = 20, height = 16,
-       filename = paste0(directory_output, "umap_adt_cd133groups.svg"))
-ggsave(plot = p7, width = 20, height = 16,
-       filename = paste0(directory_output, "umap_adt_cd133groups_correct.svg"))
+ggsave(plot = cd34_umap_two, width = 20, height = 16,
+       filename = paste0(directory_output, "umap_adt_cd34_twogroups.svg"))
+ggsave(plot = cd133_umap_two, width = 20, height = 16,
+       filename = paste0(directory_output, "umap_adt_cd133_twogroups.svg"))
+ggsave(plot = cd34_umap_three, width = 20, height = 16,
+       filename = paste0(directory_output, "umap_adt_cd34_threegroups.svg"))
+ggsave(plot = cd133_umap_three, width = 20, height = 16,
+       filename = paste0(directory_output, "umap_adt_cd133_threegroups.svg"))
 
 ggsave(plot = sc1/sc2, width = 12, height = 16,
        filename = paste0(directory_output, "scatter_plot_adt.svg"))
-ggsave(plot = umap_cluster|umap_cd34|umap_cd133, width = 24, height = 6,
-       filename = paste0(directory_output, "umap_adt_clusters.svg"))
+ggsave(plot = umap_cluster|umap_two_cd34|umap_two_cd133, width = 24, height = 6,
+       filename = paste0(directory_output, "umap_adt_clusters_twogroups.svg"))
+ggsave(plot = umap_cluster|umap_three_cd34|umap_three_cd133, width = 24, height = 6,
+       filename = paste0(directory_output, "umap_adt_clusters_threegroups.svg"))
 ggsave(plot = vln_cd34/vln_cd133, width = 12, height = 8,
        filename = paste0(directory_output, "vln_adt_clusters.svg"))
 
-# save tables  
-write.csv2(x = tab_raw_cond, row.names = FALSE,
-           file = paste0(directory_output, "tab_raw_cond.csv"))
-write.csv2(x = tab_norm_cond, row.names = FALSE,
-           file = paste0(directory_output, "tab_norm_cond"))
-write.csv2(x = tab_percent_cond, row.names = FALSE,
-           file = paste0(directory_output, "tab_percent_cond"))
-write.csv2(x = tab_raw_clusters, row.names = FALSE,
-           file = paste0(directory_output, "tab_raw_clusters"))
-write.csv2(x = tab_norm_clusters, row.names = FALSE,
-           file = paste0(directory_output, "tab_norm_clusters"))
-write.csv2(x = tab_percent_clusters, row.names = FALSE,
-           file = paste0(directory_output, "tab_percent_clusters"))
+
 
 ```
 
