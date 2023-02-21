@@ -38,6 +38,7 @@ library(stringr)
 ```
 
 
+
 # Overview 
 
 This code aims at :        
@@ -89,7 +90,13 @@ names(list_seurat_obj_filter) = names(list_seurat_obj)
 ```
 
 
+
+<br><br><br>
+
+
+
 # Apply CUMULATIVE quality control filters on the dataset 
+
 
 ## Computation of mitochondrial and ribosomal RNA percentage
 
@@ -122,6 +129,7 @@ for (i in 1:number_conditions) {
 names(filtered_list_seurat_obj) = names(list_seurat_obj)
 
 ```
+
 
 ## Cells - Filter_nbG : keep cells with **1000 to 6500 detected genes**
 
@@ -173,6 +181,7 @@ for (i in 1:number_conditions) {
 }
 
 ```
+
 
 ## Cells - Filter_pMT & Filter_pRB : keep cells with **less than 25% of mRNA** and **more than 5% of rRNA**
 
@@ -246,6 +255,7 @@ for (i in 1:number_conditions) {
 
 ```
 
+
 ## Genes - Filter_rmMT : **mitochondrial** genes are removed
 
 To avoid cells clustering on the basis of mitochondrial genes we decide to disregard them from our data set. 
@@ -279,7 +289,42 @@ for (i in 1:number_conditions) {
 
 ```
 
-```{r, Save outputs part1, fig.show='hide', results ='hide'}
+## Genes - Filter_nbCG : keep genes detected in more than 3 cells
+
+As we are not searching for rare population, we decided to remove genes expressed in less than 3 cells. 
+
+```{r, Filter_rmCG}
+
+rm_undetected_genes= function(obj) {
+  # Extract features "ADT" names
+  DefaultAssay(obj) = "ADT"
+  feature_adt_list = rownames(obj)
+  # Extract features "RNA gene" names and identify genes detected in less than 3 cells
+  DefaultAssay(obj) = "RNA"
+  features_genes_list = rownames(obj)
+  features_genes_tab = as.data.frame(obj@assays$RNA@counts) %>% dplyr::mutate_all(as.logical) 
+  features_genes_tab = features_genes_tab %>% dplyr::mutate(rowSums = rowSums(features_genes_tab))
+  undetected_genes = features_genes_tab %>% dplyr::filter(rowSums < 3)
+  undetected_genes_list = rownames(undetected_genes)
+  # The elements of setdiff(x,y) are those in x but not in y.
+  features_keep = setdiff(features_genes_list, undetected_genes_list) 
+  # Keep ADT too
+  features_keep = c(features_keep, feature_adt_list)
+  return(features_keep)
+}
+
+for (i in 1:number_conditions) {
+  # Apply filter on genes to remove mitochondrial ones
+  filtered_list_seurat_obj[[i]] = subset(filtered_list_seurat_obj[[i]], 
+                                         features = rm_undetected_genes(filtered_list_seurat_obj[[i]]))
+  filtered_list_seurat_obj[[i]][["filter_rmMT"]] = "rm genes detected in <= 3 cells" 
+  # Save seurat object with nbG, pMT, pRB and rmMT filters
+  list_seurat_obj_filter[[i]]["seurat_obj_nbG_pMT_pRB_rmMT_rmCG"] = filtered_list_seurat_obj[[i]] 
+}
+
+```
+
+```{r, Save outputs part1, fig.show='hide', results='hide'}
 
 ggsave(plot = grid.arrange(grobs = plot_feature_graphs, ncol = 5, 
                            nrow = 2, top = textGrob("nFeature_RNA")),
@@ -300,19 +345,31 @@ gc()
 ```
 
 
+
+<br><br><br>
+
+
 # Summarize the number of cells/genes rejected by each filter    
+
+```{r}
+
+# Check each objects : number of assays and CITEseq antibody detected
+for (i in 1:number_conditions) {
+  
+  cat(names(filtered_list_seurat_obj)[i], " : \n",
+      "- Assays :", Assays(filtered_list_seurat_obj[[i]]), "\n",
+      "- CITEseq :", rownames(filtered_list_seurat_obj[[i]][["ADT"]]), "\n",
+      "- Nb cells :", ncol(filtered_list_seurat_obj[[i]]), "\n",
+      "- Nb features RNA :", nrow(filtered_list_seurat_obj[[i]][["RNA"]]), "\n",
+      "- Nb features ADT :", nrow(filtered_list_seurat_obj[[i]][["ADT"]]), "\n")
+}
+
+```
+
 
 ![](/home/rparmentier/Bureau/Git_Differentiation_Metabolism/data/matrix1.png)
 
 ```{r, Filter_summary}
-
-extract_nbgene_detected = function(obj) {
-  # work on raw data stored in counts slot
-  matrix = as.data.frame(obj@assays$RNA@counts) 
-  sum_UMI = as.data.frame(rowSums(matrix))
-  detected_genes = sum_UMI %>% dplyr::filter(`rowSums(matrix)` != 0)
-  return(nrow(detected_genes))
-}
 
 # Initialize
 filter_tab = data_frame(condition = character(),
@@ -321,22 +378,25 @@ filter_tab = data_frame(condition = character(),
                         filter_nbG_keep = integer(),
                         filter_nbG_pMT_keep = integer(),
                         filter_nbG_pMT_pRB_keep = integer(),
-                        filter_nbG_pMT_pRB_rmMT_keep = integer())
-  
-for(i in 1:number_conditions) {  # très long
+                        filter_nbG_pMT_pRB_rmMT_keep = integer(),
+                        filter_nbG_pMT_pRB_rmMT_rmCG_keep = integer())
+ 
+for(i in 1:number_conditions) {
 
   temp_gene = data.frame(condition = names(list_seurat_obj[i]),
                          category = "genes",
-                         no_filter = extract_nbgene_detected(
-                           list_seurat_obj_filter[[i]][["seurat_obj"]]),
-                         filter_nbG_keep = extract_nbgene_detected(
-                           list_seurat_obj_filter[[i]][["seurat_obj_nbG"]]),
-                         filter_nbG_pMT_keep = extract_nbgene_detected(
-                           list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT"]]),
-                         filter_nbG_pMT_pRB_keep = extract_nbgene_detected(
-                           list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB"]]),
-                         filter_nbG_pMT_pRB_rmMT_keep = extract_nbgene_detected(
-                           list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT"]]))
+                         no_filter = nrow(
+                           list_seurat_obj_filter[[i]][["seurat_obj"]]@assays$RNA@counts),
+                         filter_nbG_keep = nrow(
+                           list_seurat_obj_filter[[i]][["seurat_obj_nbG"]]@assays$RNA@counts),
+                         filter_nbG_pMT_keep = nrow(
+                           list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT"]]@assays$RNA@counts),
+                         filter_nbG_pMT_pRB_keep = nrow(
+                           list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB"]]@assays$RNA@counts),
+                         filter_nbG_pMT_pRB_rmMT_keep = nrow(
+                           list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT"]]@assays$RNA@counts),
+                         filter_nbG_pMT_pRB_rmMT_rmCG_keep = nrow(
+                           list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT_rmCG"]]@assays$RNA@counts))
   
   temp_cell = data.frame(condition = names(list_seurat_obj[i]),
                          category = "cells",
@@ -348,7 +408,9 @@ for(i in 1:number_conditions) {  # très long
                          filter_nbG_pMT_pRB_keep = ncol(
                            list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB"]]),
                          filter_nbG_pMT_pRB_rmMT_keep = ncol(
-                           list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT"]]))
+                           list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT"]]),
+                         filter_nbG_pMT_pRB_rmMT_rmCG_keep = ncol(
+                           list_seurat_obj_filter[[i]][["seurat_obj_nbG_pMT_pRB_rmMT_rmCG"]]))
   
    temp = rbind(temp_gene, temp_cell)
    filter_tab = rbind(filter_tab, temp)
@@ -359,7 +421,8 @@ filter_tab = filter_tab %>%
   dplyr::mutate(filter_nbG_remove = no_filter - filter_nbG_keep) %>%
   dplyr::mutate(filter_pMT_remove = filter_nbG_keep - filter_nbG_pMT_keep) %>%
   dplyr::mutate(filter_pRB_remove = filter_nbG_pMT_keep - filter_nbG_pMT_pRB_keep) %>%
-  dplyr::mutate(filter_rmMT_remove = filter_nbG_pMT_pRB_keep - filter_nbG_pMT_pRB_rmMT_keep)
+  dplyr::mutate(filter_rmMT_remove = filter_nbG_pMT_pRB_keep - filter_nbG_pMT_pRB_rmMT_keep) %>%
+  dplyr::mutate(filter_rmCG_remove = filter_nbG_pMT_pRB_rmMT_keep - filter_nbG_pMT_pRB_rmMT_rmCG_keep)
 
 filter_tab %>% 
   dplyr::filter(category=="genes") %>%
@@ -379,7 +442,7 @@ filter_tab %>%
 
 <br>
 
-Other filters can be applied on the data set. For example, we can apply a filter considering a minimal number of UMI per genes in order to separate them from simple background noise. Another example would be a filter that considers the number of cells that should express a certain gene. A final example applies a filter to disregard any gene that monopolizes the reads. Before venturing further, we continue with our analysis which would let us decide which filters would be more pertinent to apply. This avoids the mistake of disregarding too much information from the start only to have to go back and consider them later on. 
+Other filters could be applied on the data set. For example, we could apply a filter considering a minimal number of UMI per genes in order to separate them from simple background noise. Another example applies a filter to disregard any gene that monopolizes the reads. Before venturing further, we continue with our analysis which would let us decide which filters would be more pertinent to apply. This avoids the mistake of disregarding too much information from the start only to have to go back and consider them later on. 
 
 ```{r, Save outputs part2, results ='hide'}
 
@@ -554,6 +617,7 @@ for (i in 1:length(list_mat_detected)) {
       median_sumUMI_per_cell = median(colSums(temp_mat)),
       max_sumUMI_per_cell = max(colSums(temp_mat)),
       # details
+      nbgenes_expressed_in_allcells = sum((rowSums(temp_binary) == ncol(temp_mat)), na.rm = TRUE),
       nbgenes_1UMI_total = sum((rowSums(temp_mat) == 1), na.rm = TRUE),
       nbgenes_detected_1cell = sum((rowSums(temp_binary) == 1), na.rm = TRUE),
       nbgenes_detected_inf_equal_3cells = sum((rowSums(temp_binary) <= 3), na.rm = TRUE),
@@ -615,7 +679,7 @@ summary_cond_tab[ ,c(1:3, 10:15)] %>%
   column_spec(7:9, color = "black", background = "#8AAFFF") %>%
   scroll_box(width = "900px") 
 
-summary_cond_tab[ ,c(1:3, 16:20)] %>%
+summary_cond_tab[ ,c(1:3, 16:ncol(summary_cond_tab))] %>%
   kable() %>%
   kable_styling(bootstrap_options = c("condensed")) %>% 
   scroll_box(width = "900px")
@@ -729,7 +793,6 @@ tab_UMI %>% dplyr::filter(category == "cells") %>%
 
 write.csv2(x = tab_UMI, row.names = FALSE,
            file = paste0(directory_output, "tab_UMI.csv"))
-rm(filter_tab, summary_cell_tab, summary_cond_tab, ind_genes_tab, tab_UMI)
 
 # Save matrix gene UMI per cell - filtered data, only detected genes 
 saveRDS(object = list_mat_detected, file = paste0(directory_output, "list_mat_detected_genes.rds"))
@@ -741,11 +804,15 @@ saveRDS(object = list_mat_detected, file = paste0(directory_output, "list_mat_de
 end_time = Sys.time()
 cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
 
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results='hide'}
+
 # Clean working space and memory 
 rm(list = ls())
 gc()
-
-# Show package version
-sessionInfo()
 
 ```

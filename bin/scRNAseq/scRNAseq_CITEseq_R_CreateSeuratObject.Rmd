@@ -92,8 +92,12 @@ list_seurat_obj = list()
 
 <br> 
 
-We work here from the folder we received from Cochin platform, with all output files from CellRanger software. For each multiplexing sample, we have a folder with all needed files for *count matrix* creation, which are stored in : [sample name]/outs/per_sample_outs/sample[1ou2]/count. For each simple sample obtained with updated CellRanger software, files are stored in folders named as : [sample name]/outs/filtered_feature_bc_matrix. To simplify, the files we use in this code were moved and renamed to follow the same nomenclature.  
-To easily distinguish the gene (assay = RNA) from the protein (assay = ADT) for the CD34 marker, protein detection is indicated under CD34.1. For CD133 marker, there is no problem because the associated gene has a different name known as PROM1.  
+We work here from the folder we received from Cochin platform, with all output files from CellRanger software. For each multiplexing sample, we have a folder with all needed files for *count matrix* creation, which are stored in : [sample name]/outs/per_sample_outs/sample[1ou2]/count. For each simple sample obtained with updated CellRanger software, files are stored in folders named as : [sample name]/outs/filtered_feature_bc_matrix. To simplify, the files used in this code were moved and renamed to follow the same nomenclature.  
+The CellRanger output folder contains three files needed to create the count matrix :  
+- matrix.mtx file : contains a matrix of the UMI counts but without row/col names    
+- barcodes.tsv file : contains a list of the cells of the analysis (one barcode = one cell)    
+- features.tsv file : contains a table with three columns with the "features" of the analysis = Ensembl_Id, Gene/Antibody_Name, Feature_Category (Gene Expression / Antibody Capture / Multiplexing Capture)    
+To create the count matrix, we gather the three files to put cell barcodes as colnames of the matrix and features name or Ensembl_ID as rownames. **Please note : it is worth mentioning that multiple rows can have the same gene_name in the features files (see : https://www.biostars.org/p/327922/). Indeed, some genes have the same name but different Ensembl_ID (usually when they overlap). To avoid problem with duplicates, R add .1 in the name of the duplicate gene (parameter unique.features). A correspondance tab between Ensembl_ID and Gene_Name is available on the Git folder. Example : to easily distinguish the gene (assay = RNA) from the protein (assay = ADT) for the CD34 marker, protein detection is indicated under CD34.1. For CD133 marker, there is no problem because the associated gene has a different name known as PROM1.**     
 
 ```{r, Create Individual Seurat Object - function definition}
 
@@ -103,15 +107,19 @@ create_seurat_ADT_RNA = function(matrix_file, barcode_file, feature_file) {
   matrix = as.sparse(ReadMtx(
     mtx = paste0(directory_data, matrix_file), # detected RNA
     cells = paste0(directory_data, barcode_file), # detected cells list
-    features = paste0(directory_data, feature_file) # detected genes or antibody list
+    features = paste0(directory_data, feature_file), # detected genes or antibody list
+    feature.column = 2, # to use gene name
+    strip.suffix = TRUE # remove trailing "-1" suffix present in all cell barcodes
     )) 
   
   # Separate matrix into one gene matrix and one ADT matrix
   tab_matrix = as.data.frame(matrix)
+  # only antibody capture (ADT) : Ensembl_ID are the name of antibody
   tab_antibody = tab_matrix %>%
-    dplyr::filter(row.names(tab_matrix) %in% c("CD34.1", "CD133"))
+    dplyr::filter(row.names(tab_matrix) %in% c("CD34.1", "CD133")) 
+  # remove antibody capture (ADT) and multiplexing ones (CMO)
   tab_genes = tab_matrix %>%
-    dplyr::filter(!row.names(tab_matrix) %in% c("CD34.1", "CD133", "CMO301", "CMO302"))
+    dplyr::filter(!row.names(tab_matrix) %in% c("CD34.1", "CD133", "CMO301", "CMO302")) 
 
   # Create seurat object with gene matrix count in assay RNA
   seurat_obj = CreateSeuratObject(counts = tab_genes, assay = "RNA")
@@ -155,7 +163,7 @@ for (i in 1:number_condition) {
 
 <br>
 
-A verification of the objects we just created was made. As we can see, each one has two assays. The ADT assay contains two features : CD34.1 and CD133. The RNA assays contains 36601 features (or genes), it corresponds to the total number of genes in the GRCh38 database. Caution, the created matrix contain a row for each gene of the database but it doesn't mean that all those genes are detected in the corresponding sample. Some genes may have zero UMI for all the cells. It's up to us to remove them during the filtering steps. There is a different number of cells depending on the condition we study. This means we sometimes may need to normalize the number of cells to allow comparison between conditions.  
+A verification of the objects we just created was made. As we can see, each one has two assays. The ADT assay contains two features : CD34.1 and CD133. The RNA assay contains 36601 features (or genes), it corresponds to the total number of genes in the GRCh38 database. Caution, the created matrix contain a row for each gene of the database but it doesn't mean that all those genes are detected in the corresponding sample. Some genes may have zero UMI for all the cells. It's up to us to remove them during the filtering steps. There is a different number of cells depending on the condition we study. This means we sometimes may need to normalize the number of cells to allow comparison between conditions.  
 
 ```{r, Create Individual Seurat Object - check outputs}
 
@@ -215,12 +223,15 @@ saveRDS(list_seurat_obj, file = paste0(directory_output, "list_seurat_obj.rds"))
 end_time = Sys.time()
 cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
 
-# Clean working space and memory 
-rm(list = ls())
-gc()
-
 # Show package version
 sessionInfo()
 
 ```
 
+```{r, results='hide'}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
