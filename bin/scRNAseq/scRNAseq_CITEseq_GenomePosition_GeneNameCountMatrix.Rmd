@@ -1,0 +1,154 @@
+---
+title: "scRNAseq_CITEseq_GenomePosition_GeneNameCountMatrix"
+author: "Laëtitia Racine"
+date: "2023-02-20"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(dplyr)
+library(biomaRt)
+library(stringr)
+library(tidyr)
+library(tibble)
+
+```
+
+```{r, Working directory}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_GenomePosition/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_GenomePosition/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_GenomePosition/", current_date, "/")
+
+```
+
+<br>
+
+**Create a correspondence tab between Ensembl ID and Gene Symbol**  
+```{r}
+
+# We open a features.tsv.gz file to have the list of the features of the experiment.
+
+features_tab = read.delim(paste0(directory, "data/scRNAseq/", 
+                          "scRNAseq_CTRL_sample_feature_bc_matrix_features.tsv.gz"),
+                          header = FALSE, col.names=c("ensembl_gene_id", 
+                                                      "gene_symbol", "category"))
+
+features_tab = features_tab %>% 
+  dplyr::filter(category == "Gene Expression") %>%
+  dplyr::select(-category) %>%
+  dplyr::group_by(gene_symbol) %>%
+  dplyr::mutate(dup = if_else(duplicated(gene_symbol) == TRUE, TRUE, FALSE)) %>%
+  dplyr::ungroup() %>% 
+  tibble::rownames_to_column("pos") %>%
+  dplyr::mutate(gene_symbol_dupl = if_else(dup == FALSE, gene_symbol, paste0(gene_symbol, ".1")))
+
+```
+
+<br>
+
+**Add Gene position (molecular information) to the correspondence tab**    
+https://www.ensembl.org/info/data/biomart/biomart_r_package.html  
+```{r} 
+
+ensembl = useEnsembl(biomart="ensembl", dataset="hsapiens_gene_ensembl") # GRCh38
+head(listAttributes(ensembl), 10)
+
+chr_genes <- getBM(attributes=c('ensembl_gene_id',
+                                'hgnc_id',
+                                'chromosome_name',
+                                'start_position',
+                                'end_position'), 
+                   mart = ensembl)
+
+features_tab = left_join(features_tab, chr_genes, by = "ensembl_gene_id")
+
+```
+
+<br>
+
+**Add Gene position (cytogenetic information) to the correspondence tab**  
+https://support.bioconductor.org/p/9142452/     
+ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz    
+https://medlineplus.gov/genetics/understanding/howgeneswork/genelocation/    
+```{r}
+
+db_list = read.delim(paste0(directory, "data/Homo_sapiens.gene_info.gz"))
+
+db_list = db_list %>% 
+   dplyr::mutate(mim_id = str_extract(dbXrefs, "(?<=MIM:)[:digit:]+")) %>%
+   dplyr::mutate(hgnc_id = str_extract(dbXrefs, "(?<=HGNC:)HGNC:[:digit:]+")) %>%
+   dplyr::mutate(ensembl_gene_id = str_extract(dbXrefs, "(?<=Ensembl:)ENSG[:digit:]+")) %>%
+   dplyr::select(Symbol, Synonyms, chromosome, map_location, mim_id, hgnc_id, ensembl_gene_id) %>%
+   dplyr::rename("gene_symbol" = Symbol,
+                 "gene_symbol_synonyms" = Synonyms,
+                 "chromosome_name" = chromosome)
+
+features_tab = left_join(features_tab, db_list, 
+                         by = c("chromosome_name", "hgnc_id", 
+                                "gene_symbol", "ensembl_gene_id"))
+
+```
+
+```{r}
+
+features_tab = features_tab %>%
+  dplyr::select(gene_symbol, gene_symbol_dupl, gene_symbol_synonyms,
+                ensembl_gene_id, hgnc_id, mim_id,
+                chromosome_name, start_position, end_position, map_location)
+
+write.csv2(x = features_tab, 
+           file = paste0(directory_output, "scRNAseq_correspondence_tab_EnsemblID_geneName_genomePos.csv"),
+           row.names = FALSE)
+
+```
+
+<br>
+
+200 genes don't have the position information (chromosome_name, start, end) when we use biomaRt and org.Hs.eg.db.    
+We can find those genes with a manual research on ensembl.org website. It's GRcH37 information but we can also see the corresponding GRcH38 coordinates in the description (ex : ENSG00000271895 => This gene maps to 20,184,242-20,186,486 in GRCh38 coordinates). To complete the tab, a manual research has to be done.   
+http://grch37.ensembl.org/Homo_sapiens/Gene/Summary?g=ENSG00000271895;r=1:11089716-11090585;t=ENST00000607145  
+http://grch37.ensembl.org/Homo_sapiens/Gene/Summary?g=ENSG00000225986;r=1:20510735-20512979;t=ENST00000442226  
+  
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results='hide'}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
