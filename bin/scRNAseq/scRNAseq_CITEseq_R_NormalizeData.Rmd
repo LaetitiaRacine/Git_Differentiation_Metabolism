@@ -34,7 +34,7 @@ library(sctransform)
 library(matrixStats) # function rowMedians()
 library(kableExtra)
 library(stringr)
-
+library(tidyverse)
 # BiocManager::install("glmGamPoi")
 
 ```
@@ -56,7 +56,8 @@ https://hbctraining.github.io/scRNA-seq/lessons/06_SC_SCT_and_integration.html
 https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html#Calculate_cell-cycle_scores  
 https://satijalab.org/seurat/archive/v3.1/cell_cycle_vignette.html    
   
-- III : normalizing seurat objects with SCTransform (assay : "SCT")  
+- III : normalizing seurat objects with SCTransform (assay : "SCT") 
+https://satijalab.org/seurat/reference/sctransform  
 https://chipster.csc.fi/manual/single-cell-seurat-sctransform.html  
 https://satijalab.org/seurat/articles/sctransform_vignette.html  
 https://www.biostars.org/p/446554/  
@@ -395,50 +396,64 @@ By putting min_cells = 1, we remove the min_cells	filter that only uses genes th
 As we already have a bunch of filters applied during preprocessing step, we try to remove as possible the default filters of the function. 
 We consulted the parameters of vst function (included in SCTransform) and added them in the parameters of the SCTransform function to control the filters as much as possible : https://rdrr.io/cran/sctransform/man/vst.html   
 <br>
-*Normalization* : Expression values are normalized using the SCTransform normalization method, which uses Pearson residuals from “regularized negative binomial regression,” where cellular sequencing depth is utilized as a covariate in a generalized linear model (GLM). The parameters for the model are estimated by pooling information across genes that are expressing at similar levels. This should remove the technical characteristics but preserve the biological heterogeneity, and avoid overfitting the model to the data. 
+*Normalization* : Expression values are normalized using the SCTransform normalization method, which uses Pearson residuals from “regularized negative binomial regression,” where cellular sequencing depth is used as a covariate in a generalized linear model (GLM). The parameters for the model are estimated by pooling information across genes that are expressing at similar levels. This should remove the technical characteristics but preserve the biological heterogeneity, and avoid overfitting the model to the data. 
 
 ```{r, Normalize RNA SCT}
 
 # Be careful, we can't do both normalization in the same object 
 # because the second one erases the first one
 
-# SCT normalization with cell cycle regression
+# SCT normalization with cell cycle regression 
 list_seurat_obj_cc = lapply(list_seurat_obj, function(x) { 
   SCTransform(object = x, 
               assay = "RNA", 
               new.assay.name = "SCT",
-              method = "glmGamPoi", 
+              residual.features = NULL, # all genes
+              variable.features.n = NULL,
+              variable.features.rv.th = 1.3, # threshold for residual variance
+              vars.to.regress = c("S.Score", "G2M.Score"),
               do.center = TRUE, 
               do.scale = FALSE,
-              variable.features.n = 3000,
-              vars.to.regress = c("S.Score", "G2M.Score"),
               min_cells = 1,
-              ncells = NULL,
-              verbose = FALSE) 
+              ncells = NULL, # no subsampling
+              return.only.var.genes = TRUE, # only variable genes in scale.data slot
+              verbose = FALSE,
+              # vst additional parameter
+              method = "glmGamPoi",
+              n_genes = NULL) 
 })
+
+
 
 # SCT normalization without cell cycle regression
 list_seurat_obj = lapply(list_seurat_obj, function(x) { 
-  SCTransform(object = x, 
+  SCTransform(object = x,
               assay = "RNA", 
               new.assay.name = "SCT",
-              method = "glmGamPoi", 
+              residual.features = NULL, # all genes
+              variable.features.n = NULL,
+              variable.features.rv.th = 1.3, # threshold for residual variance
+              vars.to.regress = NULL,
               do.center = TRUE, 
               do.scale = FALSE,
-              variable.features.n = 3000,
-              vars.to.regress = NULL,
               min_cells = 1,
-              ncells = NULL,
-              verbose = FALSE)
-  
+              ncells = NULL, # no subsampling
+              return.only.var.genes = TRUE, # only variable genes in scale.data slot
+              verbose = FALSE,
+              # vst additional parameter
+              method = "glmGamPoi",
+              n_genes = NULL) 
 })
 
 ```
 
+Not a fixed number of variable features because we decided to use a threshold on residual variance to do the selection.   
+
+<br>
 
 # Normalize "ADT assay" with Seurat package
 
-In the vignette, the normalization method CLR (centered log ratio) with parameter margin = 2 (the normalization is performing across cells) is applied for ADT normalization. However, we noticed a problem with this normalization for CD133 protein : the cells with higher detection in the raw data (slot counts) turned lower in the normalized data (slot data). This problem can be fixed by setting the margin parameter to 1. Indeed, with small antibody panel, it can be better as explained in the issue **3605** on github.  
+In the vignette, the normalization method CLR (centered log ratio) with parameter margin = 2 (the normalization is performing across cells) is applied for ADT normalization. However, we noticed a problem with this normalization for CD133 protein : the cells with higher detection in the raw data (slot counts) turned lower in the normalized data (slot data). This problem can be fixed by setting the margin parameter to 1. Indeed, with small antibody panel, it can be better as explained in the issue **3605** on github (see link in the overview).  
 
 ```{r, Normalize ADT}
 
@@ -457,6 +472,81 @@ list_seurat_obj_cc = lapply(list_seurat_obj_cc, function(x) {
 })
 
 ```
+
+
+
+# Conclusion
+
+Let's have a look at seurat objects without cell cycle regression : 
+
+```{r}
+
+for (i in 1:number_conditions) {
+  
+  cat(names(list_seurat_obj)[i], " : \n",
+      "- Assays :", Assays(list_seurat_obj[[i]]), "\n",
+      "- CITEseq :", rownames(list_seurat_obj[[i]][["ADT"]]), "\n",
+      "- Nb cells :", ncol(list_seurat_obj[[i]]), "\n",
+      "- Nb features raw 'counts' RNA :", nrow(list_seurat_obj[[i]][["RNA"]]@counts), "\n",
+      "- Nb features norm 'data' RNA :", nrow(list_seurat_obj[[i]][["RNA"]]@data), "\n",
+      "- Nb features raw 'SCT :", nrow(list_seurat_obj[[i]][["SCT"]]@counts), "\n",
+      "- Nb features norm 'SCT :", nrow(list_seurat_obj[[i]][["SCT"]]@data), "\n",
+      "- Nb features ADT :", nrow(list_seurat_obj[[i]][["ADT"]]), "\n")
+
+}
+
+```
+
+We can also compare LogNormalization and SCT Normalization for CTRL condition for few genes : 
+
+```{r, compare normalizations}
+
+
+RNA_mat_raw = as.data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@counts) %>% 
+  rownames_to_column(var = "gene")
+RNA_mat_raw = RNA_mat_raw %>%
+  pivot_longer(cols = 2:ncol(RNA_mat_raw),
+               names_to = "cell", 
+               values_to = "RNA_raw_UMI") %>% 
+  dplyr::filter(gene %in% c(list_genes_metabo, "CD34", "PROM1"))
+
+RNA_mat_norm = as.data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@data)  %>% 
+  rownames_to_column(var = "gene")
+RNA_mat_norm = RNA_mat_norm %>%
+  pivot_longer(cols = 2:ncol(RNA_mat_norm),
+               names_to = "cell", 
+               values_to = "RNA_norm_UMI") %>% 
+  dplyr::filter(gene %in% c(list_genes_metabo, "CD34", "PROM1"))
+
+comp_tab = full_join(x = RNA_mat_raw, y = RNA_mat_norm, by = c("gene", "cell"))
+
+SCT_mat_raw = as.data.frame(list_seurat_obj[["CTRL"]]@assays$SCT@counts) %>% 
+  rownames_to_column(var = "gene")
+SCT_mat_raw = SCT_mat_raw %>%
+  pivot_longer(cols = 2:ncol(SCT_mat_raw),
+               names_to = "cell", 
+               values_to = "SCT_raw_UMI") %>% 
+  dplyr::filter(gene %in% c(list_genes_metabo, "CD34", "PROM1"))
+
+SCT_mat_norm = as.data.frame(list_seurat_obj[["CTRL"]]@assays$SCT@data) %>% 
+  rownames_to_column(var = "gene")
+SCT_mat_norm = SCT_mat_norm %>%
+  pivot_longer(cols = 2:ncol(SCT_mat_norm),
+               names_to = "cell", 
+               values_to = "SCT_norm_UMI") %>% 
+  dplyr::filter(gene %in% c(list_genes_metabo, "CD34", "PROM1"))
+
+comp_tab = full_join(x = comp_tab, y = SCT_mat_raw, by = c("gene", "cell"))
+comp_tab = full_join(x = comp_tab, y = SCT_mat_norm, by = c("gene", "cell"))
+
+comp_tab %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "250px")
+
+```
+
+
 
 ```{r, Save outputs, fig.show='hide'}
 
@@ -486,11 +576,15 @@ saveRDS(list_seurat_obj, file = paste0(directory_output, "list_seurat_obj_qc_nor
 end_time = Sys.time()
 cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
 
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results='hide'}
+
 # Clean working space and memory 
 rm(list = ls())
 gc()
-
-# Show package version
-sessionInfo()
 
 ```
