@@ -65,7 +65,11 @@ Based on :
 - https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#perform-linear-dimensional-reduction-1    
 - https://satijalab.org/seurat/articles/dim_reduction_vignette.html    
 - https://sib-swiss.github.io/single-cell-training/2022.7/day2/clustering/    
-
+- https://github.com/satijalab/seurat/issues/1676  
+- https://github.com/satijalab/seurat/issues/2814  
+- https://github.com/satijalab/seurat/issues/5135 
+- https://github.com/satijalab/seurat/issues/5761  
+  
 # Analysis on the SCT normalized object WITHOUT cell cycle regression
 
 This part includes function definition of the analysis and the application on the normalized object without cell cycle regression.  
@@ -86,9 +90,10 @@ merged_all = merge(x = list_seurat[["CTRL"]],
                    add.cell.ids = c("CTRL", "CTRLaK", "DON", "DONaK", "DDG", 
                                     "2DGaK", "VPA", "CTRL2", "AOA", "AOAaK"),
                    merge.data = TRUE)
-features_all = SelectIntegrationFeatures(object.list = list_seurat, nfeatures = 3000)
-VariableFeatures(merged_all, assay = "SCT") = features_all
-rm(list_seurat, features_all)
+
+features_scale = rownames(merged_all[["SCT"]]@scale.data)
+VariableFeatures(merged_all, assay = "SCT") = features_scale
+rm(list_seurat, features_scale)
 
 ```
 
@@ -108,6 +113,9 @@ merged_all@meta.data = metadata
 
 Jackstraw method is time consuming for large dataset. We choose to use only the heuristic elbow plot method to determine the dimensionality. Dimensions are ordered according to their implication in the global variance. To keep only the dimensions that explain the most the variance, we identify the bend on the elbow plot.  
 
+https://github.com/satijalab/seurat/issues/2295  
+https://satijalab.org/seurat/reference/runpca  
+RunPCA uses the variable features only with features = NULL (default).   
 ```{r, PCA and dimensionality, fig.width = 20}
 
 dim_choice_fun = function(obj, name_assay) {
@@ -118,10 +126,11 @@ dim_choice_fun = function(obj, name_assay) {
   # PCA calculation
   obj = RunPCA(object = obj,
                assay = name_assay,
-               npcs = 100,
+               npcs = 100, # default 50
                reduction.name = "pca",
+               features = NULL,
                seed.use = 42,
-               verbose = TRUE)
+               verbose = FALSE)
 
   # Plots
   pca_plot = DimPlot(object = obj, 
@@ -177,6 +186,8 @@ dim_choice = c(1:40)
 
 ## Perform non-linear dimensional reduction (UMAP)
 
+https://satijalab.org/seurat/reference/runumap
+
 ```{r, UMAP}
 
 umap_fun = function(obj, assay_name, dim_choice, color_code) {
@@ -187,7 +198,7 @@ umap_fun = function(obj, assay_name, dim_choice, color_code) {
                 reduction =  "pca", 
                 reduction.name = "umap",
                 set.seed = 42,
-                verbose = TRUE)
+                verbose = FALSE)
 
   umap_plot = DimPlot(object = obj, 
                       group.by = "orig.ident", 
@@ -269,7 +280,10 @@ do.call("grid.arrange", c(umap_hl, ncol = 3))
 
 ## Determine clusters resolution
 
-We are looking for the clustering resolution that describes the best the dataset and highlights the differences between conditions. 
+We are looking for the clustering resolution that describes the best the dataset and highlights the differences between conditions.  
+https://satijalab.org/seurat/reference/findneighbors  
+https://satijalab.org/seurat/reference/findclusters  
+
 <br>
 
 ```{r, Resolution Calcul}
@@ -277,8 +291,9 @@ We are looking for the clustering resolution that describes the best the dataset
 resolution_possibility = function(seurat_obj, dim_choice) {
 
   seurat_obj = FindNeighbors(object = seurat_obj, 
-                              assay = "SCT",
-                              dims = dim_choice)
+                             assay = "SCT",
+                             dims = dim_choice,
+                             verbose = FALSE)
   
   # Try different resolution to find the best granularity
   for (res in c(0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 
@@ -286,7 +301,8 @@ resolution_possibility = function(seurat_obj, dim_choice) {
     seurat_obj <- FindClusters(
       object = seurat_obj, 
       resolution = res, 
-      algorithm = 3)
+      algorithm = 3,
+      verbose = FALSE)
       # 1 = original Louvain algorithm
       # 2 = Louvain algorithm with multilevel refinement
       # 3 = SLM algorithm => SLM, Blondel et al., Journal of Statistical Mechanics
@@ -361,7 +377,7 @@ To help in the decision, we used the clustree package : https://cran.r-project.o
 
 clustree(merged_all@meta.data, prefix = "SCT_snn_res.")
 
-print("Based on the conditions we want to analyze and the confirmation of the tree, resolution 0.6 seems the best for our study. However, clusters 17 and 18 from resolutions 0.8 are also interesting  because they allow to separate conditions. We are going to add them manually to the clustering by extracting the cells from cluster 12 and do a reclustering.")
+print("Based on the conditions we want to analyze and the confirmation of the tree, resolution 0.6 seems the best for our study. However, clusters 15 and 17 from resolutions 0.7 are also interesting  because they allow to separate conditions. We are going to add them manually to the clustering by extracting the cells from cluster 11 and do a reclustering.")
 
 ```
 
@@ -369,16 +385,18 @@ print("Based on the conditions we want to analyze and the confirmation of the tr
 
 # extract cells from cluster 12
 merged_all = SetIdent(object = merged_all, value = "SCT_snn_res.0.6")
-obj = subset(merged_all, idents = "12")
+obj = subset(merged_all, idents = "11")
 obj = FindNeighbors(object = obj, 
                     assay = "SCT",
-                    dims = dim_choice)
+                    dims = dim_choice,
+                    verbose = FALSE)
 # reclusterise the cells in order to have two clusters
 for (res in c(0.01, 0.05, 0.1, 0.5, 1)) {
     obj <- FindClusters(
       object = obj, 
       resolution = res, 
-      algorithm = 3)
+      algorithm = 3,
+      verbose = FALSE)
   }
 
 # visualize the different resolutions to choose the best one
@@ -393,15 +411,15 @@ print("Resolution 0.05 is the best to reclusterize those cells.")
 
 ```
 
-NB : if the reclustering had failed, we would have worked with the raw data. Extract the cells we want to recluster, normalize and find their specific variable features and then apply a new clustering.  
+NB : if the reclustering had failed, we would have worked with the raw data => Extract the cells we want to recluster, normalize and find their specific variable features and then apply a new clustering.  
 
 ```{r, Add reclustering info to seurat object}
 
-# Create new column of clusterings
+# Create new column of clustering
 new_clust = obj@meta.data %>% 
   dplyr::select("SCT_snn_res.0.05") %>% 
   dplyr::rename("new_clusters" = "SCT_snn_res.0.05") %>%
-  dplyr::mutate(new_clusters = ifelse(new_clusters == 0, 12, 17))
+  dplyr::mutate(new_clusters = ifelse(new_clusters == 0, 11, 16))
 
 old_clust = merged_all@meta.data %>% dplyr::select(SCT_snn_res.0.6)
 old_clust$SCT_snn_res.0.6 = as.numeric(levels(old_clust$SCT_snn_res.0.6))[old_clust$SCT_snn_res.0.6]
@@ -478,7 +496,6 @@ The object *merged_all_prep_1-40dim.rds* is ready to use for further downstream 
 
 # Object with cc regression
 list_seurat_cc = readRDS(paste0(dir, "/", "list_seurat_obj_qc_norm_ccr.rds"))
-features_all_cc = SelectIntegrationFeatures(object.list = list_seurat_cc, nfeatures = 3000)
 merged_cc = merge(x = list_seurat_cc[["CTRL"]],
                   y = c(list_seurat_cc[["CTRLaK"]], list_seurat_cc[["DON"]],
                         list_seurat_cc[["DONaK"]], list_seurat_cc[["2DG"]],
@@ -488,6 +505,7 @@ merged_cc = merge(x = list_seurat_cc[["CTRL"]],
                   add.cell.ids = c("CTRL", "CTRLaK", "DON", "DONaK", "DDG", 
                                     "2DGaK", "VPA", "CTRL2", "AOA", "AOAaK"),
                   merge.data = TRUE)
+features_all_cc = rownames(merged_cc[["SCT"]]@scale.data)
 VariableFeatures(merged_cc, assay = "SCT") = features_all_cc
 rm(list_seurat_cc, features_all_cc)
 
@@ -535,7 +553,7 @@ print(resolution_merged_cc)
 
 clustree(merged_cc@meta.data, prefix = "SCT_snn_res.")
 
-print("Based on the conditions we want to analyze, resolution 0.6 seems the best. Clusters 16 and 17 from resolutions 1 are also interesting so we are going to add them manually to the clustering by extracting the cells from cluster 12 and do a reclustering.")
+print("Based on the conditions we want to analyze, resolution 0.6 seems the best. Clusters 14 and 15 from resolutions 0.7 are also interesting so we are going to add them manually to the clustering by extracting the cells from cluster 12 and do a reclustering.")
 
 ```
 
@@ -572,7 +590,7 @@ print("Resolution 0.05 is the best to reclusterize those cells.")
 new_clust = obj@meta.data %>% 
   dplyr::select("SCT_snn_res.0.05") %>% 
   dplyr::rename("new_clusters" = "SCT_snn_res.0.05") %>%
-  dplyr::mutate(new_clusters = ifelse(new_clusters == 0, 12, 15))
+  dplyr::mutate(new_clusters = ifelse(new_clusters == 0, 12, 16))
 
 old_clust = merged_cc@meta.data %>% dplyr::select(SCT_snn_res.0.6)
 old_clust$SCT_snn_res.0.6 = as.numeric(levels(old_clust$SCT_snn_res.0.6))[old_clust$SCT_snn_res.0.6]
@@ -645,11 +663,15 @@ saveRDS(merged_cc_prep, paste0(directory_output, "merged_cc_prep_1-40dim.rds"))
 end_time = Sys.time()
 cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
 
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results='hide'}
+
 # Clean working space and memory 
 rm(list = ls())
 gc()
-
-# Show package version
-sessionInfo()
 
 ```
