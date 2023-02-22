@@ -235,7 +235,7 @@ temp_clust$cluster =  factor(temp_clust$cluster,
                                         "cluster_6", "cluster_7", "cluster_8",
                                         "cluster_9", "cluster_10", "cluster_11", 
                                         "cluster_12", "cluster_13", "cluster_14",
-                                        "cluster_15", "cluster_16", "cluster_17"))
+                                        "cluster_15", "cluster_16"))
 
 bp_clust = ggplot(temp_clust, aes(x=cluster, y=percentage, fill=condition))+
   geom_bar(width = 0.8, stat = "identity") +
@@ -257,7 +257,7 @@ temp_cond$cluster =  factor(temp_cond$cluster,
                                        "cluster_6", "cluster_7", "cluster_8",
                                        "cluster_9", "cluster_10", "cluster_11", 
                                        "cluster_12", "cluster_13", "cluster_14",
-                                       "cluster_15", "cluster_16", "cluster_17"))
+                                       "cluster_15", "cluster_16"))
 
 bp_cond = ggplot(temp_cond, aes(x=condition, y=percentage, fill=cluster))+
   geom_bar(width = 0.8, stat = "identity", color="#737373") +
@@ -364,7 +364,7 @@ temp$cluster =  factor(temp$cluster,
                                   "cluster_6", "cluster_7", "cluster_8",
                                   "cluster_9", "cluster_10", "cluster_11", 
                                   "cluster_12", "cluster_13", "cluster_14",
-                                  "cluster_15", "cluster_16", "cluster_17"))
+                                  "cluster_15", "cluster_16"))
 
 # All conditions
 bp_number = ggplot(temp, aes(x=cluster, y=cell_number, fill=condition))+
@@ -385,8 +385,8 @@ bp_number_drugs
 ```
   
 Interesting clusters :  
-- AOA : 15,14, 8, 12, 16  
-- 2DG : 2, 11    
+- AOA : 15,14, 13, 11, 8
+- 2DG : 2, 10    
   
 ```{r, Save outputs, fig.show ='hide'}
 
@@ -415,11 +415,15 @@ ggsave(plot = do.call("grid.arrange", c(list_clust_pie, ncol = 3)),
 end_time = Sys.time()
 cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
 
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results='hide'}
+
 # Clean working space and memory 
 rm(list = ls())
 gc()
-
-# Show package version
-sessionInfo()
 
 ```

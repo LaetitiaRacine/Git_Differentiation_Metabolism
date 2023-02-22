@@ -73,7 +73,7 @@ It is based on :
 https://satijalab.org/seurat/articles/multimodal_vignette.html    
 https://github.com/satijalab/seurat/issues/1080    
   
-We work from the count matrix from seurat object. The **"count"** slot contains raw data whereas the **"data"** slot contains normalized data with CLR algorithm. 
+We work from the count matrix from seurat object. The **"count"** slot contains raw data whereas the **"data"** slot contains normalized data with CLR algorithm. We use here the normalized data. 
 ```{r}
 
 cd34_expr = full_join(x = data.frame(merged_all@assays$ADT@counts[1,]) %>%
@@ -759,7 +759,7 @@ for (i in 1:length(conditions)) {
 <br>
 
 Further possible analysis :   
-- choose a groups resolution (two groups or three groups)  
+- choose a group resolution (two groups or three groups)  
 - extract cells for each group  
 - perform a GO on gene expressed in the cells of each group  
 - see if some interesting categories are linked to the groups  

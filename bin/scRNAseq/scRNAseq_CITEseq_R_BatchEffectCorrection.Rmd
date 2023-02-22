@@ -36,7 +36,7 @@ library(knitr)
 # Overview
 
 This code aims at determining if the dataset needs to be corrected for batch effect bias before applying the clustering algorithm.  
-Depending on the results, the following steps are different :    
+Depending on the results, the next steps are different :    
 - if there is no batch effect, we can just merge the data  
 - if there is a batch effect, we need to integrate both batches in one object  
 As it's better to normalize on individual object before merging or integrating, we work here with the output objects of NormalizeData script.  
@@ -473,11 +473,15 @@ The batches overlap less with log normalization. We will preferentially work wit
 end_time = Sys.time()
 cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
 
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results='hide'}
+
 # Clean working space and memory 
 rm(list = ls())
 gc()
-
-# Show package version
-sessionInfo()
 
 ```
