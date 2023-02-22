@@ -1,0 +1,375 @@
+---
+title: "scRNAseq_CITEseq_DWNS_GO_IDProblem_Investigation"
+author: "Laëtitia Racine"
+date: "2023-02-08"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "show"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(Seurat)
+library(dplyr)
+library(stringr)
+library(org.Hs.eg.db) 
+library(clusterProfiler) 
+library(EnsDb.Hsapiens.v86) # Genome hg38 
+library(biomaRt)
+
+```
+
+```{r, Working directories and external script}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_DWNS_GO_IDProblem_Investigation/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_DWNS_GO_IDProblem_Investigation/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_DWNS_GO_IDProblem_Investigation/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
+merged_all = readRDS(file = paste0(dir, "/", "merged_all_1-40dim.rds"))
+
+```
+
+https://toppgene.cchmc.org/enrichment.jsp
+
+# GO function from previous script that we used with Romuald
+
+## Description of the function 
+  
+Database used : org.Hs.eg.db  
+Packages : library(org.Hs.eg.db) and library(clusterProfiler)  
+Limitation : we need a correspondence between list_gene and entrezid (function bitr) to run enrichGO  
+  
+```{r}
+
+GO_fun = function(list_gene, output_suffix, directory_output) {
+  
+  # Chercher la correspondance entre les gènes de notre liste et la BDD
+  name_correspondance = bitr(list_gene$gene, 
+                             fromType = "SYMBOL", 
+                             toType = "ENTREZID", 
+                             OrgDb = "org.Hs.eg.db")
+  colnames(name_correspondance) = c("gene","entrezgene_id")
+  
+  unmap_genes = anti_join(x = list_gene, 
+                          y = name_correspondance, 
+                          by = "gene")
+  
+  # Garder seulement les gènes dont on a trouvé la correspondance du nom dans la BDD
+  list_gene = inner_join(list_gene, 
+                         name_correspondance, 
+                         by = "gene")
+  
+  # Rechercher les catégories de gene ontology
+  ego = enrichGO(gene = list_gene$entrezgene_id,
+                 OrgDb = org.Hs.eg.db,
+                 ont = "ALL", # toutes les catégories
+                 pAdjustMethod = "BH",
+                 pvalueCutoff = 0.05,
+                 qvalueCutoff = 0.2,
+                 readable = TRUE)
+  
+  # Enregistrement des objets R
+  save(ego, file = paste0(directory_output,"ego_", output_suffix, ".rda")) 
+  
+  # Enregistrement des listes de termes GO
+  write.csv2(ego@result,
+             file = paste0(directory_output,
+                           "Summary_ego_",output_suffix,".csv")) 
+  
+  if (nrow(ego@result) != 0) {
+
+    # Enregistrement des plots
+    pdf(file = paste0(directory_output,"plot_ego_50_", output_suffix,".pdf"), 
+        width = 12, height = 16)
+    print(dotplot(ego,showCategory = 50)) 
+    dev.off()
+    
+    pdf(file = paste0(directory_output,"plot_ego_10_", output_suffix,".pdf"), 
+        width = 12, height = 16)
+    print(dotplot(ego,showCategory = 10)) 
+    dev.off()
+    
+    # Possibilité de réduire la redondance des termes GO en les groupant par un score de similarité
+    ego_simplified = simplify(ego,
+                              cutoff = 0.7,
+                              by = "p.adjust",
+                              select_fun = min)
+    
+    save(ego_simplified, file = paste0(directory_output,"ego_", output_suffix,".rda"))
+    
+    write.csv2(ego_simplified@result, 
+               file = paste0(directory_output, "Summary_ego_", 
+                             output_suffix, ".csv")) 
+    
+    pdf(file = paste0(directory_output,"plot_ego_simplified_50_", output_suffix,".pdf"), 
+        width = 12, height = 16)
+    print(dotplot(ego_simplified,showCategory = 50)) 
+    dev.off() 
+    
+    pdf(file = paste0(directory_output,"plot_ego_simplified_10_", output_suffix,".pdf"), 
+        width = 12, height = 16)
+    print(dotplot(ego_simplified,showCategory = 10)) 
+    dev.off()
+    
+    # Sortie de fonction
+    output = list(ego = ego, 
+                  ego_simplified = ego_simplified,
+                  unmap_genes = unmap_genes)
+    return(output)
+    
+  } else {
+    
+    print("No enriched category found.")
+    # Sortie de fonction
+    output = list(ego = ego,
+                  unmap_genes = unmap_genes)
+    return(output)
+    
+  }
+ 
+}
+
+```
+
+## Problem with our dataset 
+
+Lots of genes are not referenced in the org.Hs.eg.db database used for Gene Ontology.  
+We loose near than 50% of our genes during this step, this is not acceptable.
+
+```{r}
+
+### Example from CompareConditions script
+
+gene_expr_fun = function(seurat_obj, condition) {
+  tab = subset(seurat_obj, subset = orig.ident %in% condition)
+  tab = as.data.frame(tab@assays$SCT@counts) %>% mutate_all(as.logical)
+  tab = data.frame(gene = rownames(tab), expression = rowSums(tab))
+  tab$expression = as.logical(tab$expression)
+  tab_exp = tab %>% dplyr::filter(expression == TRUE)
+  tab_noexp = tab %>% dplyr::filter(expression == FALSE)
+  return(list(tab_exp = tab_exp, tab_noexp = tab_noexp))
+}
+
+list_bin_mat = list("CTRL" = gene_expr_fun(merged_all, "CTRL"),
+                    "DON" = gene_expr_fun(merged_all, "DON"))
+expr_cond1 = list_bin_mat[["CTRL"]]$tab_exp
+expr_cond2 = list_bin_mat[["DON"]]$tab_exp
+cond1_cond2 = setdiff(expr_cond1$gene, expr_cond2$gene)
+
+cat("In this example, ", nrow(expr_cond1), 
+    "genes are detected as expressed in CTRL and ", 
+    nrow(expr_cond2), "in DON.", "\n",
+    length(cond1_cond2), "genes are detected in CTRL but not in DON.",
+    "We will try to perform a GO on those genes.")
+
+list_gene = data.frame(gene = cond1_cond2)   
+list_gene %>% kable() %>% kable_styling() %>% scroll_box(height = "250px")
+
+# GO test
+name_correspondance = bitr(list_gene$gene, 
+                           fromType = "SYMBOL", 
+                           toType = "ENTREZID", 
+                           OrgDb = "org.Hs.eg.db")
+colnames(name_correspondance) = c("gene","entrezgene_id")
+  
+unmapped_genes = anti_join(x = list_gene, 
+                           y = name_correspondance, 
+                           by = "gene")
+list_gene = inner_join(x = list_gene, 
+                       y = name_correspondance, 
+                       by = "gene")
+
+cat("Among the", length(cond1_cond2), 
+    "genes of our list, we only find", 
+    nrow(list_gene), "genes with a corresponding EntrezID in the database",
+    "with the bitr function. We have lost", nrow(unmapped_genes), 
+    "genes during this step so", (nrow(unmapped_genes)/length(cond1_cond2))*100,
+    "% of the information." )
+
+ego = enrichGO(gene = list_gene$entrezgene_id,
+               OrgDb = org.Hs.eg.db,
+               ont = "ALL", # toutes les catégories
+               pAdjustMethod = "BH",
+               pvalueCutoff = 0.05,
+               qvalueCutoff = 0.2,
+               readable = TRUE)
+
+```
+
+
+# Attempt to find missing ID
+
+We tried to find the EntrezID in multiple database for the genes of our dataset.
+
+**Create list of genes with ENTREZID to be completed**
+```{r}
+genes_entrez = data.frame(GENE = character(), ENTREZID = character())
+```
+
+**Extract gene list from seurat object count matrix**
+```{r}
+DefaultAssay(merged_all) = "RNA"
+list_genes = rownames(x = merged_all)
+cat(paste("Number of genes in the matrix :", length(list_genes)))
+```
+
+**Search corresponding EntrezID with org.Hs.eg.db**
+```{r}
+
+# search for entrezID based on the SYMBOL column of database
+list_entrez_symbol = bitr(geneID = list_genes, 
+                          fromType = "SYMBOL", 
+                          toType = "ENTREZID", 
+                          OrgDb = "org.Hs.eg.db")
+# remove duplicated entrezID
+list_entrez_symbol = list_entrez_symbol %>% dplyr::filter(duplicated(ENTREZID) == FALSE)
+cat(paste("Number of ENTREZID found with bitr from SYMBOL :", nrow(list_entrez_symbol)))
+
+# search for entrezID based on the ALIAS column of database
+list_entrez_alias = bitr(geneID = list_genes, 
+                          fromType = "ALIAS", 
+                          toType = "ENTREZID", 
+                          OrgDb = "org.Hs.eg.db")
+# remove duplicated entrezID
+b = list_entrez_alias %>% dplyr::filter(duplicated(ENTREZID) == TRUE)
+
+n_occur <- data.frame(table(list_entrez_alias$ENTREZID))
+a = n_occur[n_occur$Freq > 1,]
+
+cat("Number of ENTREZID found with bitr from SYMBOL :", nrow(list_entrez_symbol), "\n")
+
+cat("Number of ENTREZID found with bitr from ALIAS :", nrow(list_entrez_alias), "\n")
+
+setdiff(list_entrez_symbol$SYMBOL, list_entrez_alias$ALIAS)
+cat("All the ENTREZID found with SYMBOL are also in ALIAS : better use the ALIAS object.")
+
+# Add identified EntrezID in the final gene list
+colnames(list_entrez_alias) = c("GENE", "ENTREZID")
+list_entrez_alias = list_entrez_alias %>% dplyr::filter(duplicated(ENTREZID) == FALSE)
+genes_entrez = rbind(genes_entrez, list_entrez_alias)
+
+```
+
+**Extract list of unmapped genes without EntrezID and search missing EntrezID with EnsDb.Hsapiens.v86 (hg38 genome)** 
+```{r}
+
+unmapped_genes = setdiff(list_genes, genes_entrez$GENE)
+cat("Number of genes without ENTREZID :", length(unmapped_genes))
+
+list_entrez_EnsDb = select(EnsDb.Hsapiens.v86,  
+                           keys = unmapped_genes, 
+                           columns = c("SYMBOL", "ENTREZID"), 
+                           keytype = "SYMBOL")
+list_entrez_EnsDb$ENTREZID = as.character(list_entrez_EnsDb$ENTREZID)
+list_entrez_EnsDb = na.omit(list_entrez_EnsDb)
+
+# Add identified EntrezID in the final gene list
+colnames(list_entrez_EnsDb) =  c("GENE", "ENTREZID")
+genes_entrez = rbind(genes_entrez, list_entrez_EnsDb)
+
+```
+
+**Extract list of unmapped genes without EntrezID and search missing EntrezID with BiomartR** 
+```{r}
+
+unmapped_genes = setdiff(list_genes, genes_entrez$GENE)
+cat(paste("Number of genes without ENTREZID :", length(unmapped_genes)))
+
+hsmart = useMart(dataset = "hsapiens_gene_ensembl", biomart = "ensembl")
+
+mapping = getBM(attributes = c('ensembl_gene_id', 'entrezgene_id'), 
+                filters = 'hgnc_symbol',
+                values = unmapped_genes,
+                mart = hsmart)
+cat("12 more entrezID with biomartR but 1197 still mising.")
+
+```
+
+**=> Some genes have Ensembl_ID but don't have EntrezID. We should use Ensembl_ID to identify the genes with a unique id for GO.**
+
+# Test of the GO function (clusterprofiler) with ensembleID instead of entrezID
+
+https://support.bioconductor.org/p/115094/
+```{r}
+
+# Change gene name to corresponding Ensembl_ID 
+# We use the dataframe that we created with ... database
+dir_tab = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_GenomePosition/"))
+tab_corr = read.csv2(paste0(dir_tab, "/scRNAseq_correspondence_tab_EnsemblID_geneName_genomePos.csv"))
+
+list_gene = list_gene %>% dplyr::rename(gene_symbol_dupl = "gene")
+test = left_join(list_gene, tab_corr, by = "gene_symbol_dupl")
+test = test %>% dplyr::select(gene_symbol_dupl, ensembl_gene_id)
+
+# Rechercher les catégories de gene ontology
+ego = enrichGO(gene = test$ensembl_gene_id,
+               OrgDb = org.Hs.eg.db,
+               ont = "ALL", # toutes les catégories
+               pAdjustMethod = "BH",
+               pvalueCutoff = 0.05,
+               qvalueCutoff = 0.2,
+               readable = TRUE,
+               keyType = "ENSEMBL")
+
+dotplot(ego,showCategory = 50)
+  
+```
+
+No problem with EnsemblID, all the genes were mapped.
+We change the function GO_fun to use ensembl_id instead of entrez_id.
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results='hide'}
+
+# Clean working space and memory
+rm(list = ls())
+gc()
+
+```
+
+
+
+
+
+
+
