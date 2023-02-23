@@ -60,6 +60,9 @@ merged_all = readRDS(file = paste0(dir, "/", "merged_all_1-40dim.rds"))
 ```
 
 https://toppgene.cchmc.org/enrichment.jsp
+https://support.bioconductor.org/p/9142452/
+https://www.biostars.org/p/296321/
+https://github.com/jmw86069/genejam
 
 # GO function from previous script that we used with Romuald
 
