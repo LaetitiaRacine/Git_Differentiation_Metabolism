@@ -25,9 +25,12 @@ list_genes_metabo_glycolysis = c('G6PD', ' HK1', 'HK2', 'HK3', 'LDHA', 'LDHB', '
 list_genes_metabo_glut = c('GLS', 'SLC1A5', 'ASCT2')
 list_genes_metabo = c('ACACA', 'BCAT1', 'FASN',  'GOT1', 'GPAT1', 'MTOR')
 
+
+
 ###################
 #### Functions ####
 ###################
+
 
 # Finds last subfolder generated in the parent folder
 pic_last_dir = function(parent_folder){
@@ -36,83 +39,110 @@ pic_last_dir = function(parent_folder){
   return(paste0(parent_folder,dir))
 }
 
+
+
 # Loads an RData file and returns it
 loadRData <- function(fileName){
   load(fileName)
   get(ls()[ls() != "fileName"])
 }
 
-# Performs gene ontology
-GO_fun = function(list_gene, output_suffix, directory_output) {
+##########################
+#### Function for GO ####
+##########################
+
+# https://ycl6.github.io/GO-Enrichment-Analysis-Demo/
+# Ontology terms : BP -> Biological Process, MF -> Molecular Function, CC -> Cellular Component
+# https://www.researchgate.net/figure/The-GO-terms-of-the-BP-CC-and-MF-categories-enrichment-of-the-118-differentially_fig1_336970414
+
+### Perform gene ontology with clusterProfiler package (https://doi.org/10.1016/j.xinn.2021.100141)
+# https://yulab-smu.top/biomedical-knowledge-mining-book/enrichplot.html
+# https://yulab-smu.top/biomedical-knowledge-mining-book/clusterprofiler-go.html
+GO_clusterProfiler_fun = function(tab_corr, list_gene, directory_output, gene_universe) {
+  # gene_universe : list of background genes 
+  # tab_corr : tab with the correspondence between gene symbol and Ensembl_ID
   
-  # Chercher la correspondance entre les gènes de notre liste et la BDD
-  name_correspondance = bitr(list_gene$gene, 
-                             fromType = "SYMBOL", 
-                             toType = "ENTREZID", 
-                             OrgDb = "org.Hs.eg.db")
-  colnames(name_correspondance) = c("gene","entrezgene_id")
+   # Convert Gene Name (gene) into Ensembl ID (ensembl_gene_id)
+   ############################################################
+    if(colnames(list_gene) != "gene") { colnames(list_gene) = "gene"}
+    list_gene = left_join(x = list_gene,
+                          y = tab_corr,
+                          by = "gene")
+
+    # Extract gene classification
+    #############################
+    ggo_BP = groupGO(gene = list_gene$ensembl_gene_id,
+                  OrgDb = org.Hs.eg.db,
+                  ont = "BP",
+                  level = 3,
+                  keyType = "ENSEMBL",
+                  readable = TRUE)
+    ggo_CC = groupGO(gene = list_gene$ensembl_gene_id,
+                     OrgDb = org.Hs.eg.db,
+                     ont = "CC",
+                     level = 3,
+                     keyType = "ENSEMBL",
+                     readable = TRUE)
+    ggo_MF = groupGO(gene = list_gene$ensembl_gene_id,
+                     OrgDb = org.Hs.eg.db,
+                     ont = "MF",
+                     level = 3,
+                     keyType = "ENSEMBL",
+                     readable = TRUE)
+    ggo_BP = as.data.frame(ggo_BP@result) %>% dplyr::mutate(ontology = "BP")
+    ggo_CC = as.data.frame(ggo_CC@result) %>% dplyr::mutate(ontology = "CC")
+    ggo_MF = as.data.frame(ggo_MF@result) %>% dplyr::mutate(ontology = "MF")
+    df_ggo = rbind(ggo_BP, ggo_CC, ggo_MF)
+    print("ggo calculated")
+    
+    # GO over-representation analysis
+    #################################
+    ego = enrichGO(gene = list_gene$ensembl_gene_id,
+                   OrgDb = org.Hs.eg.db,
+                   universe = gene_universe,
+                   ont = "ALL", # toutes les catégories
+                   pAdjustMethod = "BH",
+                   pvalueCutoff = 0.05,
+                   qvalueCutoff = 0.2,
+                   readable = TRUE,
+                   keyType = "ENSEMBL")
+   
+    # Reduce term redundancy
+    if (nrow(ego@result) != 0) { ego = simplify(ego,
+                                                cutoff = 0.7,
+                                                by = "p.adjust",
+                                                select_fun = min,
+                                                measure = "Wang", 
+                                                semData = NULL) }
+    
+    df_ego = as.data.frame(ego@result)
+    print("ego calculated")
+
+    # Plot enrichment
+    #################
+    if (nrow(df_ego) != 0) {
+      
+      plot_dot = dotplot(ego, showCategory = 25) + 
+        ggtitle(names(list_genes[i])) + facet_grid(ONTOLOGY ~ ., scales="free")
+      
+      plot_bar = barplot(ego, showCategory = 25) + 
+        ggtitle(names(list_genes[i])) + facet_grid(ONTOLOGY ~ ., scales="free")
+     
+      output = list(ggo = df_ggo,
+                    ego_result = df_ego,
+                    dotplot_25 = plot_dot,
+                    barplot_25 =  plot_bar)
+      
+    } else {
+      
+      print("No enriched category found.")
+      
+      output = list(ggo = df_ggo,
+                    ego_result = df_ego)
+      
+    }
   
-  # Garder seulement les gènes dont on a trouvé la correspondance du nom dans la BDD
-  list_gene = inner_join(list_gene, 
-                         name_correspondance, 
-                         by = "gene")
-  
-  # Rechercher les catégories de gene ontology
-  ego = enrichGO(gene = list_gene$entrezgene_id,
-                 OrgDb = org.Hs.eg.db,
-                 ont = "ALL", # toutes les catégories
-                 pAdjustMethod = "BH",
-                 pvalueCutoff = 0.05,
-                 qvalueCutoff = 0.2,
-                 readable = TRUE)
-  
-  # Possibilité de réduire la redondance des termes GO en les groupant par un score de similarité
-  ego_simplified = simplify(ego,
-                            cutoff = 0.7,
-                            by = "p.adjust",
-                            select_fun = min)
-  
-  # Enregistrement des objets R
-  save(ego, file = paste0(directory_output,"ego_", output_suffix, ".rda")) 
-  save(ego_simplified, file = paste0(directory_output,"ego_", output_suffix,".rda"))  
-  
-  # Enregistrement des listes de termes GO
-  write.csv2(ego@result,
-             file = paste0(directory_output, 
-                           "Summary_ego_", 
-                           output_suffix, 
-                           ".csv")) 
-  
-  write.csv2(ego_simplified@result, 
-             file = paste0(directory_output, 
-                           "Summary_ego_", 
-                           output_suffix, 
-                           ".csv"))  
-  
-  # Enregistrement des plots
-  pdf(file = paste0(directory_output,"plot_ego_50_", output_suffix,".pdf"), 
-      width = 12, height = 18)
-  print(dotplot(ego,showCategory = 50)) 
-  dev.off()
-  
-  pdf(file = paste0(directory_output,"plot_ego_10_", output_suffix,".pdf"), 
-      width = 12, height = 18)
-  print(dotplot(ego,showCategory = 10)) 
-  dev.off()
-  
-  pdf(file = paste0(directory_output,"plot_ego_simplified_50_", output_suffix,".pdf"), 
-      width = 12, height = 18)
-  print(dotplot(ego_simplified,showCategory = 50)) 
-  dev.off() 
-  
-  pdf(file = paste0(directory_output,"plot_ego_simplified_10_", output_suffix,".pdf"), 
-      width = 12, height = 18)
-  print(dotplot(ego_simplified,showCategory = 10)) 
-  dev.off()
-  
-  # Sortie de fonction
-  output = list(ego = ego, 
-                ego_simplified = ego_simplified)
   return(output)
-  
+
 }
+
