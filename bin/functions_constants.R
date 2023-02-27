@@ -58,7 +58,7 @@ loadRData <- function(fileName){
 ### Perform gene ontology with clusterProfiler package (https://doi.org/10.1016/j.xinn.2021.100141)
 # https://yulab-smu.top/biomedical-knowledge-mining-book/enrichplot.html
 # https://yulab-smu.top/biomedical-knowledge-mining-book/clusterprofiler-go.html
-GO_clusterProfiler_fun = function(tab_corr, list_gene, directory_output, gene_universe) {
+GO_clusterProfiler_fun = function(tab_corr, list_gene, gene_universe, title_plot) {
   # gene_universe : list of background genes 
   # tab_corr : tab with the correspondence between gene symbol and Ensembl_ID
   
@@ -122,11 +122,13 @@ GO_clusterProfiler_fun = function(tab_corr, list_gene, directory_output, gene_un
     #################
     if (nrow(df_ego) != 0) {
       
-      plot_dot = dotplot(ego, showCategory = 25) + 
-        ggtitle(names(list_genes[i])) + facet_grid(ONTOLOGY ~ ., scales="free")
+      plot_dot = dotplot(ego, showCategory = 25) +
+        ggtitle(title_plot) +
+        facet_grid(ONTOLOGY ~ ., scales="free")
       
-      plot_bar = barplot(ego, showCategory = 25) + 
-        ggtitle(names(list_genes[i])) + facet_grid(ONTOLOGY ~ ., scales="free")
+      plot_bar = barplot(ego, showCategory = 25) +
+        ggtitle(title_plot) +
+        facet_grid(ONTOLOGY ~ ., scales="free")
      
       output = list(ggo = df_ggo,
                     ego_result = df_ego,
@@ -146,3 +148,20 @@ GO_clusterProfiler_fun = function(tab_corr, list_gene, directory_output, gene_un
 
 }
 
+
+### 2) Perform gene ontology with enrichR package 
+# We would need to convert any other identifier format to SYMBOL which is the required input identifier format. 
+library(enrichR)
+
+# GO_enrichR_fun = function(tab_corr, list_gene, directory_output) {
+# 
+#   setEnrichrSite("Enrichr") # Human genes
+#   dbs = listEnrichrDbs()
+#   dbs = dbs$libraryName
+#   dbs = c("GO_Molecular_Function_2021", "GO_Cellular_Component_2021", "GO_Biological_Process_2021")
+#   
+#   enriched = enrichr(genes = list_genes[3], dbs)
+# 
+#   if (websiteLive) plotEnrich(enriched[[3]], showTerms = 20, numChar = 40, y = "Count", orderBy = "P.value")
+# 
+# }

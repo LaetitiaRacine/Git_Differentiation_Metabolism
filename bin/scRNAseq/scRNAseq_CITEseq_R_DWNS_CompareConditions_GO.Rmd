@@ -1,0 +1,718 @@
+---
+title: "scRNAseq_CITEseq_R_DWNS_CompareConditions_GO"
+author: "Laëtitia Racine"
+date: "2022-12-15"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(Seurat)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(gridExtra)
+library(tidyverse)
+library(ggrepel)
+library(org.Hs.eg.db) # GO functions
+library(clusterProfiler) # GO functions
+library(kableExtra)
+# library(xlsx)
+library(XLConnect)
+
+```
+
+
+# Overview
+
+This script aims at comparing conditions (CTRL vs drug) in terms of gene expression. We extract list of differentially expressed genes (on/off analysis or differential analysis) and we perform gene ontology on those list to see if we find something relevant.  
+
+Based on :  
+- https://satijalab.org/seurat/articles/de_vignette.html  
+- https://satijalab.org/seurat/articles/sctransform_v2_vignette.html  
+- https://ycl6.github.io/GO-Enrichment-Analysis-Demo/  
+- https://satijalab.org/seurat/archive/v3.1/immune_alignment.html  
+- https://stackoverflow.com/questions/27713310/easy-way-to-export-multiple-data-frame-to-multiple-excel-worksheets  
+- https://stackoverflow.com/questions/66646394/dplyr-mutate-grouped-data-without-using-exact-column-name  
+- https://rdrr.io/cran/XLConnect/man/writeWorksheet-methods.html  
+
+```{r, Working directories and external script}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CompareConditions/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CompareConditions/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CompareConditions/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
+merged_all = readRDS(file = paste0(dir, "/", "merged_all_prep_1-40dim.rds"))
+
+dir_corr = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_GenomePosition/"))
+tab_corr = read.csv2(paste0(dir_corr, "/scRNAseq_correspondence_tab_EnsemblID_geneName_genomePos.csv")) %>% 
+    dplyr::select(gene_symbol_dupl, ensembl_gene_id) %>%
+    dplyr::rename(gene = "gene_symbol_dupl") %>%
+    dplyr::distinct()  # to remove duplicated genes
+
+gene_universe = read.delim(paste0(directory, "data/scRNAseq/", 
+                                  "scRNAseq_CTRL_sample_feature_bc_matrix_features.tsv.gz"), 
+                                  header = FALSE)[,1]
+
+```
+
+<br>
+
+Choose the combinations we want to analyse.
+```{r, Combinations}
+
+combination = list(c("CTRL","AOA"), c("CTRL","2DG"), c("CTRL","DON"),
+                   c("CTRL", "VPA"), c("CTRL","CTRLaK"), c("2DG","2DGaK"),
+                   c("DON","DONaK"), c("AOA","AOAaK"), c("CTRLaK","2DGaK"),
+                   c("CTRLaK","AOAaK"), c("CTRLaK","DONaK"))
+
+```
+
+
+
+# Qualitative analysis : expressed / no expressed
+
+<br>
+
+On/Off analysis : we created a binary matrix expressed/no expressed to remove the variation of the number of UMI. 
+
+```{r}
+
+list_quali_analysis = list()
+
+```
+
+## Binary matrix 
+
+```{r, Binary matrix expressed/no expressed}
+
+# extract count matrix from SCT assay and transform into data frame
+# we can work with counts slot because it's not a quantitative analysis 
+# just expressed/no expressed, no need for normalized data
+# Split into list of expressed and no expressed genes
+gene_expr_fun = function(seurat_obj, condition) {
+  
+  tab = subset(seurat_obj, subset = orig.ident %in% condition)
+  tab = as.data.frame(tab@assays$SCT@counts) %>% mutate_all(as.logical)
+  tab = data.frame(gene = rownames(tab), expression = rowSums(tab))
+  tab$expression = as.logical(tab$expression)
+  tab_exp = tab %>% dplyr::filter(expression == TRUE)
+  tab_noexp = tab %>% dplyr::filter(expression == FALSE)
+  return(list(tab_exp = tab_exp, tab_noexp = tab_noexp))
+  
+}
+
+list_bin_mat = list("CTRL" = gene_expr_fun(merged_all, c("CTRL")),
+                    "AOA" = gene_expr_fun(merged_all, "AOA"),
+                    "2DG" = gene_expr_fun(merged_all, "2DG"),
+                    "DON" = gene_expr_fun(merged_all, "DON"),
+                    "CTRLaK" = gene_expr_fun(merged_all, "CTRLaK"),
+                    "AOAaK" = gene_expr_fun(merged_all, "AOAaK"),
+                    "2DGaK" = gene_expr_fun(merged_all, "2DGaK"),
+                    "DONaK" = gene_expr_fun(merged_all, "DONaK"),
+                    "VPA" = gene_expr_fun(merged_all, "VPA"))
+
+```
+
+## Extract list of genes 
+
+```{r}
+
+# Loop for combination of comparisons
+for (i in 1:length(combination)) {
+  
+  cond = paste(combination[[i]], collapse = "_")
+  name_cond1 = combination[[i]][1]
+  name_cond2 = combination[[i]][2]
+  expr_cond1 = list_bin_mat[[name_cond1]]$tab_exp
+  expr_cond2 = list_bin_mat[[name_cond2]]$tab_exp
+  
+  #################################
+  ### Genes lost across conditions
+  #################################
+  
+  # elements in cond1 but not in cond2
+  diff_cond1_cond2 = setdiff(expr_cond1$gene, expr_cond2$gene)
+  # elements in cond2 but not in cond1
+  diff_cond2_cond1 = setdiff(expr_cond2$gene, expr_cond1$gene)
+  # save in the list 
+  list_quali_analysis[[paste0("diff_", name_cond1, "_", name_cond2)]]$gene_list = diff_cond1_cond2
+  list_quali_analysis[[paste0("diff_", name_cond2, "_", name_cond1)]]$gene_list = diff_cond2_cond1
+  
+  #####################################
+  ### Genes conserved across conditions
+  #####################################
+  
+  # common elements between cond1 and cond2
+  inter_cond1_cond2 = intersect(expr_cond1$gene, expr_cond2$gene)
+  # save in the list
+  list_quali_analysis[[paste0("inter_", name_cond1, "_", name_cond2)]]$gene_list = inter_cond1_cond2
+  
+}
+
+```
+
+```{r}
+
+# Summarize in a dataframe
+tab_diff = data.frame(comparison = names(list_quali_analysis),
+                      nbgenes_comparison = lengths(unlist(list_quali_analysis, recursive=FALSE))) %>%
+  tidyr::separate(col = comparison, into = c("comparison", "cond1", "cond2"), sep = "_", remove = TRUE) %>%
+  dplyr::select(cond1, cond2, comparison, nbgenes_comparison)
+
+tab_genes_expressed = as.data.frame(sapply(unlist(list_bin_mat, recursive=FALSE), nrow)) %>%
+  tibble::rownames_to_column("condition") %>%
+  dplyr::filter(str_detect(condition, "tab_exp")) %>%
+  tidyr::separate(col = condition, into = c("condition", "trash"), remove = TRUE)
+colnames(tab_genes_expressed) = c("condition", "trash", "nbgenes_expressed")
+tab_genes_expressed = tab_genes_expressed %>% dplyr::select(-trash)
+
+tab_diff = tab_diff %>% dplyr::rename(condition = "cond1")
+tab_diff = full_join(tab_diff, tab_genes_expressed, by = "condition") %>%
+  dplyr::rename(cond1 = "condition", nbgenes_expressed_cond1 = "nbgenes_expressed") %>%
+  dplyr::rename(condition = "cond2")
+tab_diff = full_join(tab_diff, tab_genes_expressed, by = "condition") %>%
+  dplyr::rename(cond2 = "condition", nbgenes_expressed_cond2 = "nbgenes_expressed") %>%
+  dplyr::select(cond1, nbgenes_expressed_cond1, cond2, nbgenes_expressed_cond2, comparison, nbgenes_comparison)
+
+tab_diff %>%
+  kable() %>%
+  kable_styling()
+
+```
+
+```{r}
+
+#####################################################################
+### Genes expressed or not expressed in all conditions simultaneously
+#####################################################################
+  
+all_cond = unlist(list_bin_mat,recursive=FALSE)
+
+all_cond_noexpr = all_cond[str_detect(names(all_cond), "tab_noexp")]
+all_cond_noexpr = unlist(all_cond_noexpr, recursive=FALSE)
+all_cond_noexpr = all_cond_noexpr[str_detect(names(all_cond_noexpr), "gene")]
+genes_absent = Reduce(intersect, all_cond_noexpr)
+list_quali_analysis[["Never_Expressed"]]$gene_list = genes_absent
+
+all_cond_expr = all_cond[str_detect(names(all_cond), "tab_exp")]
+all_cond_expr = unlist(all_cond_expr, recursive=FALSE)
+all_cond_expr = all_cond_expr[str_detect(names(all_cond_expr), "gene")]
+genes_all = Reduce(intersect, all_cond_expr)
+list_quali_analysis[["Always_Expressed"]]$gene_list = genes_all
+
+cat("Number of genes absent in all conditions (even CTRL) :", length(genes_absent), "\n",
+    "Number of genes present in all conditions (even CTRL) :", length(genes_all), "\n")
+
+###########################################################
+### Genes expressed in CTRL but not in any other conditions 
+###########################################################
+
+# Genes expressed in drug conditions
+others = unlist(list_bin_mat[names(list_bin_mat) != "CTRL"], recursive=FALSE)
+others = unlist(others, recursive=FALSE)
+others = others[str_detect(names(others), "tab_exp.gene")]
+others = unique(unlist(others, recursive=FALSE))
+
+# Genes expressed in ctrl condition
+ctrl = list_bin_mat[["CTRL"]]$tab_exp$gene
+
+# Genes expressed in ctrl but not in others
+diff_ctrl = setdiff(ctrl, others)
+list_quali_analysis[["CTRL_only"]]$gene_list = diff_ctrl
+
+cat("Number of genes expressed in CTRL but absent in every other conditions :", 
+    length(diff_ctrl), "\n")
+
+###########################################################
+### Genes expressed in AOA but not in any other conditions
+###########################################################
+
+# Genes expressed in AOA condition
+aoa = list_bin_mat[["AOA"]]$tab_exp$gene
+
+# Genes expressed in others conditions
+others = unlist(list_bin_mat[names(list_bin_mat) != "AOA"], recursive=FALSE)
+others = unlist(others, recursive=FALSE)
+others = others[str_detect(names(others), "tab_exp.gene")]
+others = unique(unlist(others, recursive=FALSE))
+
+# Genes expressed in ctrl but not in others
+diff_aoa = setdiff(aoa, others)
+list_quali_analysis[["AOA_only"]]$gene_list = diff_aoa
+
+cat("Number of genes expressed in AOA but absent in every other conditions :", 
+    length(diff_aoa), "\n")
+
+###########################################################
+### Genes expressed in 2DG but not in any other conditions
+###########################################################
+
+# Genes expressed in 2DG condition
+ddg = list_bin_mat[["2DG"]]$tab_exp$gene
+
+# Genes expressed in others conditions
+others = unlist(list_bin_mat[names(list_bin_mat) != "2DG"], recursive=FALSE)
+others = unlist(others, recursive=FALSE)
+others = others[str_detect(names(others), "tab_exp.gene")]
+others = unique(unlist(others, recursive=FALSE))
+
+# Genes expressed in ctrl but not in others
+diff_ddg = setdiff(ddg, others)
+list_quali_analysis[["2DG_only"]]$gene_list = diff_ddg
+
+cat("Number of genes expressed in 2DG but absent in every other conditions :", 
+    length(diff_ddg), "\n")
+
+```
+
+```{r}
+
+as.data.frame(lengths(unlist(list_quali_analysis, recursive=FALSE))) %>%
+  kable() %>%
+  kable_styling()
+
+```
+
+## Perform GO on list of genes
+
+```{r}
+
+for (i in 1:length(list_quali_analysis)) {
+  
+  print(names(list_quali_analysis[i]))
+  tab_gene = data.frame(list_quali_analysis[[i]]$gene_list)
+
+  if(nrow(tab_gene) == 0) { 
+    print("No gene in the list.") 
+    
+  } else {
+    GO_results = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                        list_gene = tab_gene,
+                                        gene_universe = gene_universe,
+                                        title_plot = names(list_quali_analysis[i]))
+    list_quali_analysis[[names(list_quali_analysis[i])]]$GO_results = GO_results
+  }
+  
+} 
+
+```
+
+```{r, fig.height = 8, fig.width = 8}
+
+list_GO_plot_quali = unlist(list_quali_analysis,recursive=FALSE)
+list_GO_plot_quali = list_GO_plot_quali[str_detect(names(list_GO_plot_quali), "GO_results")]
+list_GO_plot_quali = unlist(list_GO_plot_quali,recursive=FALSE)
+list_GO_plot_quali = list_GO_plot_quali[str_detect(names(list_GO_plot_quali), "plot")]
+list_GO_plot_quali
+
+```
+
+```{r, Save outputs qualitative, fig.show='hide'}
+
+# Save binary matrix and GO list of genes for further R analysis
+saveRDS(list_bin_mat, paste0(directory_output, "list_binary_mat.rds"))
+saveRDS(list_quali_analysis, paste0(directory_output, "list_compCond_quali.rds"))
+
+# Save excel file (list of genes and GO tables)
+# wb = createWorkbook()  
+# for (i in 1:length(list_quali_analysis)) {
+#   print(i)
+#   name = names(list_quali_analysis[i])
+#   sheet = createSheet(wb, name)
+#   addDataFrame(list_quali_analysis[[name]]$gene_list, sheet=sheet, startColumn=1, row.names=FALSE)
+#   addDataFrame(list_quali_analysis[[name]]$GO_results$ggo, sheet=sheet, startColumn=3, row.names=FALSE)
+#   addDataFrame(list_quali_analysis[[name]]$GO_results$ego, sheet=sheet, startColumn=10, row.names=FALSE)
+# }
+# saveWorkbook(wb, paste0(directory_output, "list_quali_analysis.xlsx"))
+
+# wb = loadWorkbook(filename =  paste0(directory_output, "list_quali_analysis.xlsx"), create = TRUE)
+# for (i in 1:length(list_quali_analysis)) {
+#   print(i)
+#   name = names(list_quali_analysis[i])
+#   createSheet(wb, name = name)
+#   writeWorksheet(wb, list_quali_analysis[[name]]$gene_list, sheet=name, startRow=1, startCol=1)
+#   writeWorksheet(wb, list_quali_analysis[[name]]$GO_results$ggo, sheet=name, startRow=1, startCol=3)
+#   writeWorksheet(wb, list_quali_analysis[[name]]$GO_results$ego, sheet=name, startRow=1, startCol=10)
+# }
+# saveWorkbook(wb)
+
+# Save plots
+for (i in 1:length(list_GO_plot_quali)) {
+  plot = list_GO_plot_quali[[i]]
+  if (str_detect(names(list_GO_plot_quali[i]), "barplot")) { suffix = "barplot.svg" }
+  if (str_detect(names(list_GO_plot_quali[i]), "dotplot")) { suffix = "dotplot.svg" }
+  prefix = str_extract(names(list_GO_plot_quali[i]), "[:graph:]+(?=.[:alpha:]{3}plot_25)")
+  ggsave(plot = plot,
+         filename = paste0(directory_output, prefix, "_GO_plots_quali_", suffix),
+         width = 8, height = 12)
+}
+
+```
+
+```{r}
+
+rm(list=setdiff(ls(), c("directory_output", "current_date", "start_time", "color_code",  
+                        "merged_all", "tab_corr", "gene_universe", "combination",
+                        "GO_clusterProfiler_fun")))
+
+```
+
+
+# Quantitative analysis : differential analysis
+
+<br>
+
+Number of UMI taken in account.  
+
+```{r}
+
+list_quanti_analysis = list()
+
+```
+
+## List of genes : compare conditions two by two 
+
+### Visual outliers = average gene expression comparison
+
+One way to look broadly at these changes is to plot the average expression of both the stimulated and control cells and look for genes that are visual outliers on a scatter plot. 
+
+```{r, fig.width = 8, fig.height = 6}
+
+Idents(merged_all) = "orig.ident"
+
+for (i in 1:length(combination)) {
+  
+  cond = paste(combination[[i]], collapse = "_")
+  
+  # subset to keep cells from those two conditions
+  temp = subset(merged_all, subset = orig.ident %in% combination[[i]])
+  print(table(temp$orig.ident))
+  
+  # calcul average expression
+  avg = as.data.frame(log1p(AverageExpression(temp)$SCT)) 
+  
+  # identify interesting genes
+  avg = avg %>%
+    dplyr::mutate(pos_threshold = cur_data()[[1]]+0.5) %>%
+    dplyr::mutate(neg_threshold = cur_data()[[1]]-0.5) %>%
+    dplyr::mutate(sign = ifelse(cur_data()[[2]] > neg_threshold & cur_data()[[2]] < pos_threshold, FALSE, TRUE)) %>%
+    tibble::rownames_to_column(var = "gene") 
+  
+  # plot the result
+  plot = ggplot(avg, aes(x = avg[,2], y = avg[,3], label = gene)) + 
+    geom_point() + 
+    geom_abline(slope = 1, intercept = 0, linetype = 2, col = "grey") +
+    geom_abline(slope = 1, intercept = 0.5, linetype = 2, col = "red") +
+    geom_abline(slope = 1, intercept = -0.5, linetype = 2, col = "red") +
+    xlab(colnames(avg)[2]) +
+    ylab(colnames(avg)[3]) +
+    ggtitle(cond) +
+    geom_label_repel(aes(label = ifelse(sign == TRUE, gene, "")),
+                     segment.color = "black", max.overlaps = Inf, 
+                     min.segment.length = 0.5, size = 3, direction ="both",
+                     box.padding = 0.5, force = 2)
+  print(plot)
+  
+  # significatives markers 
+  avg_sign = avg %>% dplyr::filter(sign == TRUE)
+  pos_sign = avg_sign %>% dplyr::filter(avg_sign[,2] > avg_sign[,3])
+  neg_sign = avg_sign %>% dplyr::filter(avg_sign[,2] < avg_sign[,3])
+  
+  list_quanti_analysis[[cond]]$avg_outliers = list(
+    gene_all = avg,
+    gene_all_sign = avg_sign,
+    gene_pos_sign = pos_sign,
+    gene_neg_sign = neg_sign
+  )
+  
+}
+
+```
+
+### Differential Expression between two conditions with FindMarkers
+
+```{r}
+
+for (i in 1:length(combination)) {
+  
+  cond1 = combination[[i]][1]
+  cond2 = combination[[i]][2]
+  cond = paste(combination[[i]], collapse = "_")
+  
+  markers = FindMarkers(object = merged_all, 
+                        ident.1 = cond1, # all cells from cond1
+                        ident.2 = cond2, # all cells from cond2
+                        features = NULL, # all genes
+                        logfc.threshold = 0.25,
+                        test.use = "wilcox",
+                        only.pos = FALSE,
+                        assay = "SCT",
+                        slot = "data") %>%
+    dplyr::filter(p_val_adj <= 0.05) %>%
+    tibble::rownames_to_column("gene")  %>% 
+    dplyr::mutate(conditions = cond)
+  
+  pos_markers = markers %>% 
+    dplyr::filter(avg_log2FC >= 0) %>%
+    dplyr::arrange(p_val_adj) %>%
+    dplyr::select(conditions, gene, p_val_adj, everything())
+  
+  neg_markers = markers %>%
+    dplyr::filter(avg_log2FC < 0) %>%
+    dplyr::arrange(p_val_adj) %>%
+    dplyr::select(conditions, gene, p_val_adj, everything())
+  
+  list_quanti_analysis[[cond]]$FM_DE = list(
+    gene_all_sign = markers,
+    gene_pos_sign = pos_markers,
+    gene_neg_sign = neg_markers
+  )
+  
+}
+
+```
+
+### Compare lists obtained with the two methods 
+
+```{r}
+
+for( i in 1:length(combination)) {
+  
+  cond = paste(combination[[i]], collapse = "_")
+  method_1 = list_quanti_analysis[[cond]]$avg_outliers$gene_all_sign$gene
+  method_2 = list_quanti_analysis[[cond]]$FM_DE$gene_all_sign$gene
+  diff = setdiff(method_1, method_2)
+  common = intersect(method_1, method_2)
+  cat("For", cond, ", we have found", length(method_1), 
+      "genes with the method of average expression outliers and",
+      length(method_2), "genes with the method of FindMarkers (Wilcoxon DE).",
+      length(common), "/", length(method_1), "genes are common with both method and",
+      length(diff), "/", length(method_1), "genes are found as outliers but not significant in DE analysis.",
+      "\n", "Common genes :", common, "\n", "Different genes :", diff, "\n", "\n")
+  
+  list_quanti_analysis[[cond]]$comp = list(
+    common_avg_FM = common,
+    diff_avg_FM = diff
+  )
+  
+}
+
+```
+
+## Gene ontology
+
+We perform GO on list of genes from both method.
+
+```{r}
+
+for (i in 1:length(list_quanti_analysis)) {
+  
+  print(names(list_quanti_analysis[i]))
+  
+  # Average expression - Pos markers
+  tab_gene_avgP = data.frame(list_quanti_analysis[[i]]$avg_outliers$gene_pos_sign$gene)
+
+  if(nrow(tab_gene_avgP) == 0) { 
+    print("No gene in the list.") 
+    
+  } else {
+    GO_results_avgP = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                          list_gene = tab_gene_avgP,
+                                          gene_universe = gene_universe,
+                                          title_plot = paste0("avg positive markers -", names(list_quanti_analysis[i])))
+    
+  }
+  
+  # Average expression - Neg markers
+  tab_gene_avgN = data.frame(list_quanti_analysis[[i]]$avg_outliers$gene_neg_sign$gene)
+
+  if(nrow(tab_gene_avgN) == 0) { 
+    print("No gene in the list.") 
+    
+  } else {
+    GO_results_avgN = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                          list_gene = tab_gene_avgN,
+                                          gene_universe = gene_universe,
+                                          title_plot = paste0("avg negative markers -", names(list_quanti_analysis[i])))
+    
+  }
+  
+  # FindMarkers - positive markers (more expressed in cond1)
+  tab_gene_FMp = data.frame(list_quanti_analysis[[i]]$FM_DE$gene_pos_sign$gene)
+
+  if(nrow(tab_gene_FMp) == 0) { 
+    print("No gene in the list.") 
+    
+  } else {
+    GO_results_FMp = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                        list_gene = tab_gene_FMp,
+                                        gene_universe = gene_universe,
+                                          title_plot = paste0("FM positive markers -", names(list_quanti_analysis[i])))
+    
+  }
+  
+  # FindMarkers - negative markers (more expressed in cond2)
+  tab_gene_FMn = data.frame(list_quanti_analysis[[i]]$FM_DE$gene_neg_sign$gene)
+
+  if(nrow(tab_gene_FMn) == 0) { 
+    print("No gene in the list.") 
+    
+  } else {
+    GO_results_FMn = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                          list_gene = tab_gene_FMn,
+                                          gene_universe = gene_universe,
+                                          paste0("FM negative markers -", names(list_quanti_analysis[i])))
+    
+  }
+
+   list_quanti_analysis[[names(list_quanti_analysis[i])]]$GO_results = list(
+      GO_avg_pos = GO_results_avgP,
+      GO_avg_neg = GO_results_avgN,
+      GO_FM_pos = GO_results_FMp,
+      GO_FM_neg = GO_results_FMn
+  )
+  
+} 
+
+```
+
+```{r, fig.height = 10, fig.width = 10}
+
+list_GO_plot_quanti = unlist(list_quanti_analysis,recursive=FALSE)
+list_GO_plot_quanti = list_GO_plot_quanti[str_detect(names(list_GO_plot_quanti), "GO_results")]
+list_GO_plot_quanti = unlist(unlist(list_GO_plot_quanti,recursive=FALSE), recursive=FALSE)
+list_GO_plot_quanti = list_GO_plot_quanti[str_detect(names(list_GO_plot_quanti), "plot")]
+list_GO_plot_quanti
+
+```
+
+```{r, Save outputs quantitative}
+
+# Save list of genes and tables for further R analysis
+saveRDS(list_quanti_analysis, paste0(directory_output, "list_compCond_quanti.rds"))
+
+# Save plots
+for (i in 1:length(list_GO_plot_quanti)) {
+  plot = list_GO_plot_quanti[[i]]
+  if (str_detect(names(list_GO_plot_quanti[i]), "barplot")) { suffix = "barplot.svg" }
+  if (str_detect(names(list_GO_plot_quanti[i]), "dotplot")) { suffix = "dotplot.svg" }
+  prefix = str_extract(names(list_GO_plot_quanti[i]), "[:graph:]+(?=.[:alpha:]{3}plot_25)")
+  ggsave(plot = plot,
+         filename = paste0(directory_output, prefix, "_GO_plots_quanti_", suffix),
+         width = 8, height = 12)
+}
+
+# Save excel file (list of genes and GO tables)
+# for (i in 1:length(list_quanti_analysis)) {
+#   # create file
+#   name = names(list_quanti_analysis[i])
+#   wb = createWorkbook()
+#   # sheet 1 for avg pos tables
+#   sheet = createSheet(wb, paste0(name, "_avg_pos"))
+#   addDataFrame(list_quanti_analysis[[name]]$avg_outliers$gene_pos_sign, sheet=sheet, startColumn=1, row.names=FALSE)
+#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_avg_pos$ggo, sheet=sheet, startColumn=8, row.names=FALSE)
+#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_avg_pos$ego, sheet=sheet, startColumn=14, row.names=FALSE)
+#   # sheet 2 for avg neg tables
+#   sheet = createSheet(wb, paste0(name, "_avg_neg"))
+#   addDataFrame(list_quanti_analysis[[name]]$avg_outliers$gene_neg_sign, sheet=sheet, startColumn=1, row.names=FALSE)
+#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_avg_neg$ggo, sheet=sheet, startColumn=8, row.names=FALSE)
+#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_avg_neg$ego, sheet=sheet, startColumn=14, row.names=FALSE)
+#   # sheet 3 for FM pos markers tables
+#   sheet = createSheet(wb, paste0(name, "_FM_pos"))
+#   addDataFrame(list_quanti_analysis[[name]]$FM_DE$gene_pos_sign, sheet=sheet, startColumn=1, row.names=FALSE)
+#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_FM_pos$ggo, sheet=sheet, startColumn=9, row.names=FALSE)
+#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_FM_pos$ego, sheet=sheet, startColumn=15, row.names=FALSE)
+#   # sheet 4 for FM neg markers tables
+#   sheet = createSheet(wb, paste0(name, "_FM_neg"))
+#   addDataFrame(list_quanti_analysis[[name]]$FM_DE$gene_neg_sign, sheet=sheet, startColumn=1, row.names=FALSE)
+#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_FM_neg$ggo, sheet=sheet, startColumn=9, row.names=FALSE)
+#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_FM_neg$ego, sheet=sheet, startColumn=15, row.names=FALSE)
+#   # save file
+#   saveWorkbook(wb, paste0(directory_output, name, "_quali_analysis.xlsx"))
+# }
+
+# for (i in 1:length(list_quanti_analysis)) {
+#   # create file
+#   name = names(list_quanti_analysis[i])
+#   wb = loadWorkbook(filename =  paste0(directory_output, name, "_quanti_analysis.xlsx"), create = TRUE)
+#   # sheet 1 for avg pos tables
+#   sheetname = paste0(name, "_avg_pos")
+#   createSheet(wb, name = sheetname)
+#   writeWorksheet(wb, list_quanti_analysis[[name]]$avg_outliers$gene_pos_sign, sheet=sheetname, startRow=1, startCol=1)
+#   writeWorksheet(wb, list_quanti_analysis[[name]]$GO_results$GO_avg_pos$ggo, sheet=sheetname, startRow=1, startCol=8)
+#   writeWorksheet(wb, list_quanti_analysis[[name]]$GO_results$GO_avg_pos$ego, sheet=sheetname, startRow=1, startCol=14)
+#   # sheet 2 for avg neg tables
+#   sheetname = paste0(name, "_avg_neg")
+#   createSheet(wb, name = sheetname)
+#   writeWorksheet(list_quanti_analysis[[name]]$avg_outliers$gene_neg_sign, sheet=sheetname, startRow=1, startCol=1)
+#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_avg_neg$ggo, sheet=sheetname, startRow=1, startCol=8)
+#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_avg_neg$ego, sheet=sheetname, startRow=1, startCol=14)
+#   # sheet 3 for FM pos markers tables
+#   sheetname = paste0(name, "_FM_pos")
+#   createSheet(wb, name = sheetname)
+#   writeWorksheet(list_quanti_analysis[[name]]$FM_DE$gene_pos_sign, sheet=sheetname, startRow=1, startCol=1)
+#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_FM_pos$ggo, sheet=sheetname, startRow=1, startCol=9)
+#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_FM_pos$ego, sheet=sheetname, startRow=1, startCol=15)
+#   # sheet 4 for FM neg markers tables
+#   sheetname = paste0(name, "_FM_neg")
+#   createSheet(wb, name = sheetname)
+#   writeWorksheet(list_quanti_analysis[[name]]$FM_DE$gene_neg_sign, sheet=sheetname, startRow=1, startCol=1)
+#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_FM_neg$ggo, sheet=sheetname, startRow=1, startCol=9)
+#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_FM_neg$ego, sheet=sheetname, startRow=1, startCol=15)
+#   # save file
+#   saveWorkbook(wb)
+# }
+
+```
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results = "hide"}
+
+# Clean working space and memory
+rm(list = ls())
+gc()
+
+```
