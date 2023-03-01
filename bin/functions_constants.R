@@ -147,21 +147,3 @@ GO_clusterProfiler_fun = function(tab_corr, list_gene, gene_universe, title_plot
   return(output)
 
 }
-
-
-### 2) Perform gene ontology with enrichR package 
-# We would need to convert any other identifier format to SYMBOL which is the required input identifier format. 
-library(enrichR)
-
-# GO_enrichR_fun = function(tab_corr, list_gene, directory_output) {
-# 
-#   setEnrichrSite("Enrichr") # Human genes
-#   dbs = listEnrichrDbs()
-#   dbs = dbs$libraryName
-#   dbs = c("GO_Molecular_Function_2021", "GO_Cellular_Component_2021", "GO_Biological_Process_2021")
-#   
-#   enriched = enrichr(genes = list_genes[3], dbs)
-# 
-#   if (websiteLive) plotEnrich(enriched[[3]], showTerms = 20, numChar = 40, y = "Count", orderBy = "P.value")
-# 
-# }
