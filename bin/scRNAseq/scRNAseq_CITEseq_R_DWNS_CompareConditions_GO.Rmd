@@ -35,8 +35,8 @@ library(ggrepel)
 library(org.Hs.eg.db) # GO functions
 library(clusterProfiler) # GO functions
 library(kableExtra)
-# library(xlsx)
-library(XLConnect)
+library(openxlsx)
+library(gdata)
 
 ```
 
@@ -347,27 +347,21 @@ saveRDS(list_bin_mat, paste0(directory_output, "list_binary_mat.rds"))
 saveRDS(list_quali_analysis, paste0(directory_output, "list_compCond_quali.rds"))
 
 # Save excel file (list of genes and GO tables)
-# wb = createWorkbook()  
-# for (i in 1:length(list_quali_analysis)) {
-#   print(i)
-#   name = names(list_quali_analysis[i])
-#   sheet = createSheet(wb, name)
-#   addDataFrame(list_quali_analysis[[name]]$gene_list, sheet=sheet, startColumn=1, row.names=FALSE)
-#   addDataFrame(list_quali_analysis[[name]]$GO_results$ggo, sheet=sheet, startColumn=3, row.names=FALSE)
-#   addDataFrame(list_quali_analysis[[name]]$GO_results$ego, sheet=sheet, startColumn=10, row.names=FALSE)
-# }
-# saveWorkbook(wb, paste0(directory_output, "list_quali_analysis.xlsx"))
-
-# wb = loadWorkbook(filename =  paste0(directory_output, "list_quali_analysis.xlsx"), create = TRUE)
-# for (i in 1:length(list_quali_analysis)) {
-#   print(i)
-#   name = names(list_quali_analysis[i])
-#   createSheet(wb, name = name)
-#   writeWorksheet(wb, list_quali_analysis[[name]]$gene_list, sheet=name, startRow=1, startCol=1)
-#   writeWorksheet(wb, list_quali_analysis[[name]]$GO_results$ggo, sheet=name, startRow=1, startCol=3)
-#   writeWorksheet(wb, list_quali_analysis[[name]]$GO_results$ego, sheet=name, startRow=1, startCol=10)
-# }
-# saveWorkbook(wb)
+list_genes = list()
+list_ggo = list()
+list_ego = list()
+for (i in 1:length(list_quali_analysis)) {
+   name_sheet = names(list_quali_analysis[i])
+   list_genes[[name_sheet]] = ifelse(length((list_quali_analysis[[name_sheet]]$gene_list)) != 0, 
+                                     list_quali_analysis[[name_sheet]]$gene_list, "empty")
+   list_ggo[[name_sheet]] = ifelse(!is.null(list_quali_analysis[[name_sheet]]$GO_results$ggo), 
+                                   list_quali_analysis[[name_sheet]]$GO_results$ggo, "empty")
+   list_ego[[name_sheet]] = ifelse(!is.null(list_quali_analysis[[name_sheet]]$GO_results$ego), 
+                                   list_quali_analysis[[name_sheet]]$GO_results$ego, "empty")
+}  
+openxlsx::write.xlsx(list_genes, file = paste0(directory_output, "list_compCond_quali_genes.xlsx"))
+openxlsx::write.xlsx(list_ggo, file = paste0(directory_output, "list_compCond_quali_ggo.xlsx"))
+openxlsx::write.xlsx(list_ego, file = paste0(directory_output, "list_compCond_quali_ego.xlsx"))
 
 # Save plots
 for (i in 1:length(list_GO_plot_quali)) {
@@ -376,7 +370,7 @@ for (i in 1:length(list_GO_plot_quali)) {
   if (str_detect(names(list_GO_plot_quali[i]), "dotplot")) { suffix = "dotplot.svg" }
   prefix = str_extract(names(list_GO_plot_quali[i]), "[:graph:]+(?=.[:alpha:]{3}plot_25)")
   ggsave(plot = plot,
-         filename = paste0(directory_output, prefix, "_GO_plots_quali_", suffix),
+         filename = paste0(directory_output, prefix, "_quali_", suffix),
          width = 8, height = 12)
 }
 
@@ -455,7 +449,8 @@ for (i in 1:length(combination)) {
     gene_all = avg,
     gene_all_sign = avg_sign,
     gene_pos_sign = pos_sign,
-    gene_neg_sign = neg_sign
+    gene_neg_sign = neg_sign,
+    plot = plot
   )
   
 }
@@ -622,7 +617,7 @@ list_GO_plot_quanti
 ```{r, Save outputs quantitative}
 
 # Save list of genes and tables for further R analysis
-saveRDS(list_quanti_analysis, paste0(directory_output, "list_compCond_quanti.rds"))
+saveRDS(list_quanti_analysis, paste0(directory_output, "list_CompCond_quanti.rds"))
 
 # Save plots
 for (i in 1:length(list_GO_plot_quanti)) {
@@ -631,70 +626,52 @@ for (i in 1:length(list_GO_plot_quanti)) {
   if (str_detect(names(list_GO_plot_quanti[i]), "dotplot")) { suffix = "dotplot.svg" }
   prefix = str_extract(names(list_GO_plot_quanti[i]), "[:graph:]+(?=.[:alpha:]{3}plot_25)")
   ggsave(plot = plot,
-         filename = paste0(directory_output, prefix, "_GO_plots_quanti_", suffix),
+         filename = paste0(directory_output, prefix, "_quanti_", suffix),
          width = 8, height = 12)
 }
 
 # Save excel file (list of genes and GO tables)
-# for (i in 1:length(list_quanti_analysis)) {
-#   # create file
-#   name = names(list_quanti_analysis[i])
-#   wb = createWorkbook()
-#   # sheet 1 for avg pos tables
-#   sheet = createSheet(wb, paste0(name, "_avg_pos"))
-#   addDataFrame(list_quanti_analysis[[name]]$avg_outliers$gene_pos_sign, sheet=sheet, startColumn=1, row.names=FALSE)
-#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_avg_pos$ggo, sheet=sheet, startColumn=8, row.names=FALSE)
-#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_avg_pos$ego, sheet=sheet, startColumn=14, row.names=FALSE)
-#   # sheet 2 for avg neg tables
-#   sheet = createSheet(wb, paste0(name, "_avg_neg"))
-#   addDataFrame(list_quanti_analysis[[name]]$avg_outliers$gene_neg_sign, sheet=sheet, startColumn=1, row.names=FALSE)
-#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_avg_neg$ggo, sheet=sheet, startColumn=8, row.names=FALSE)
-#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_avg_neg$ego, sheet=sheet, startColumn=14, row.names=FALSE)
-#   # sheet 3 for FM pos markers tables
-#   sheet = createSheet(wb, paste0(name, "_FM_pos"))
-#   addDataFrame(list_quanti_analysis[[name]]$FM_DE$gene_pos_sign, sheet=sheet, startColumn=1, row.names=FALSE)
-#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_FM_pos$ggo, sheet=sheet, startColumn=9, row.names=FALSE)
-#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_FM_pos$ego, sheet=sheet, startColumn=15, row.names=FALSE)
-#   # sheet 4 for FM neg markers tables
-#   sheet = createSheet(wb, paste0(name, "_FM_neg"))
-#   addDataFrame(list_quanti_analysis[[name]]$FM_DE$gene_neg_sign, sheet=sheet, startColumn=1, row.names=FALSE)
-#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_FM_neg$ggo, sheet=sheet, startColumn=9, row.names=FALSE)
-#   addDataFrame(list_quanti_analysis[[name]]$GO_results$GO_FM_neg$ego, sheet=sheet, startColumn=15, row.names=FALSE)
-#   # save file
-#   saveWorkbook(wb, paste0(directory_output, name, "_quali_analysis.xlsx"))
-# }
+list_genes = list()
+list_ggo = list()
+list_ego = list()
+for (i in 1:length(list_quanti_analysis)) {
+   name_sheet = names(list_quanti_analysis[i])
+   # 4 tables of genes list side by side 
+   genes = cbindX(data.frame(avg_gene_pos = "avg_gene_pos"),
+                 list_quanti_analysis[[name_sheet]]$avg_outliers$gene_pos_sign, 
+                 data.frame(avg_gene_neg = "avg_gene_neg"),
+                 list_quanti_analysis[[name_sheet]]$avg_outliers$gene_neg_sign,
+                 data.frame(FindMarkers_gene_pos = "FindMarkers_gene_pos"),
+                 list_quanti_analysis[[name_sheet]]$FM_DE$gene_pos_sign,
+                 data.frame(FindMarkers_gene_neg = "FindMarkers_gene_neg"),
+                 list_quanti_analysis[[name_sheet]]$FM_DE$gene_neg_sign)
+   # 4 tables of ggo side by side 
+   ggo = cbindX(data.frame(ggo_avg_gene_pos = "ggo_avg_gene_pos"),
+                list_quanti_analysis[[name_sheet]]$GO_results$GO_avg_pos$ggo, 
+                data.frame(ggo_avg_gene_neg = "ggo_avg_gene_neg"),
+                list_quanti_analysis[[name_sheet]]$GO_results$GO_avg_neg$ggo,
+                data.frame(ggo_FindMarkers_gene_pos = "ggo_FindMarkers_gene_pos"),
+                list_quanti_analysis[[name_sheet]]$GO_results$GO_FM_pos$ggo,
+                data.frame(ggo_FindMarkers_gene_neg = "ggo_FindMarkers_gene_neg"),
+                list_quanti_analysis[[name_sheet]]$GO_results$GO_FM_neg$ggo)
+   # 4 tables of ego side by side 
+   ego = cbindX(data.frame(ego_avg_gene_pos = "ego_avg_gene_pos"),
+                list_quanti_analysis[[name_sheet]]$GO_results$GO_avg_pos$ego, 
+                data.frame(ego_avg_gene_neg = "ego_avg_gene_neg"),
+                list_quanti_analysis[[name_sheet]]$GO_results$GO_avg_neg$ego,
+                data.frame(ego_FindMarkers_gene_pos = "ego_FindMarkers_gene_pos"),
+                list_quanti_analysis[[name_sheet]]$GO_results$GO_FM_pos$ego,
+                data.frame(ego_FindMarkers_gene_neg = "ego_FindMarkers_gene_neg"),
+                list_quanti_analysis[[name_sheet]]$GO_results$GO_FM_neg$ego)
+  # save in list for saving
+   list_genes[[name_sheet]] = genes
+   list_ggo[[name_sheet]] = ggo
+   list_ego[[name_sheet]] = ego
+}  
+write.xlsx(list_genes, file = paste0(directory_output, "list_CompCond_quanti_genes.xlsx"))
+write.xlsx(list_ggo, file = paste0(directory_output, "list_CompCond_quanti_ggo.xlsx"))
+write.xlsx(list_ego, file = paste0(directory_output, "list_CompCond_quanti_ego.xlsx"))
 
-# for (i in 1:length(list_quanti_analysis)) {
-#   # create file
-#   name = names(list_quanti_analysis[i])
-#   wb = loadWorkbook(filename =  paste0(directory_output, name, "_quanti_analysis.xlsx"), create = TRUE)
-#   # sheet 1 for avg pos tables
-#   sheetname = paste0(name, "_avg_pos")
-#   createSheet(wb, name = sheetname)
-#   writeWorksheet(wb, list_quanti_analysis[[name]]$avg_outliers$gene_pos_sign, sheet=sheetname, startRow=1, startCol=1)
-#   writeWorksheet(wb, list_quanti_analysis[[name]]$GO_results$GO_avg_pos$ggo, sheet=sheetname, startRow=1, startCol=8)
-#   writeWorksheet(wb, list_quanti_analysis[[name]]$GO_results$GO_avg_pos$ego, sheet=sheetname, startRow=1, startCol=14)
-#   # sheet 2 for avg neg tables
-#   sheetname = paste0(name, "_avg_neg")
-#   createSheet(wb, name = sheetname)
-#   writeWorksheet(list_quanti_analysis[[name]]$avg_outliers$gene_neg_sign, sheet=sheetname, startRow=1, startCol=1)
-#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_avg_neg$ggo, sheet=sheetname, startRow=1, startCol=8)
-#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_avg_neg$ego, sheet=sheetname, startRow=1, startCol=14)
-#   # sheet 3 for FM pos markers tables
-#   sheetname = paste0(name, "_FM_pos")
-#   createSheet(wb, name = sheetname)
-#   writeWorksheet(list_quanti_analysis[[name]]$FM_DE$gene_pos_sign, sheet=sheetname, startRow=1, startCol=1)
-#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_FM_pos$ggo, sheet=sheetname, startRow=1, startCol=9)
-#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_FM_pos$ego, sheet=sheetname, startRow=1, startCol=15)
-#   # sheet 4 for FM neg markers tables
-#   sheetname = paste0(name, "_FM_neg")
-#   createSheet(wb, name = sheetname)
-#   writeWorksheet(list_quanti_analysis[[name]]$FM_DE$gene_neg_sign, sheet=sheetname, startRow=1, startCol=1)
-#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_FM_neg$ggo, sheet=sheetname, startRow=1, startCol=9)
-#   writeWorksheet(list_quanti_analysis[[name]]$GO_results$GO_FM_neg$ego, sheet=sheetname, startRow=1, startCol=15)
-#   # save file
-#   saveWorkbook(wb)
-# }
 
 ```
 
