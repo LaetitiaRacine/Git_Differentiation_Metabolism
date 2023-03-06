@@ -1,0 +1,530 @@
+---
+title: "scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis"
+author: "Laëtitia Racine"
+date: "2023-01-25"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Global dependencies}
+
+library(Seurat)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(kableExtra)
+library(gridExtra)
+
+```
+
+```{r, Working directories and external script}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+# Overview 
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
+merged_prep = readRDS(file = paste0(dir, "/", "merged_all_prep_1-40dim.rds"))
+
+# combination = list(c("CTRL","AOA"), c("CTRL","2DG"), c("CTRL","DON"),
+#                    c("CTRL", "VPA"), c("CTRL","CTRLaK"), c("2DG","2DGaK"),
+#                    c("DON","DONaK"), c("AOA","AOAaK"), c("CTRLaK","2DGaK"),
+#                    c("CTRLaK","AOAaK"), c("CTRLaK","DONaK"))
+
+```
+
+As a reminder, here are the clusters we identified in the dataset.
+
+```{r, Show clusters, fig.width = 6, fig.height = 4}
+
+DimPlot(merged_prep,
+        label = TRUE,
+        reduction = "umap",
+        group.by = "clusters")
+
+```
+
+
+<br>
+
+
+# Pathways analysis with ReactomeGSA
+
+```{r}
+library(ReactomeGSA)
+```
+
+Documentation :    
+- https://bioconductor.org/packages/release/bioc/vignettes/ReactomeGSA/inst/doc/analysing-scRNAseq.html  
+- https://www.sciencedirect.com/science/article/pii/S1535947620600159  
+- https://bioconductor.org/packages/devel/bioc/vignettes/ReactomeGSA/inst/doc/using-reactomegsa.html  
+- https://rdrr.io/bioc/ReactomeGSA/man/analyse_sc_clusters.html  
+- https://rdrr.io/bioc/ReactomeGSA/src/R/perform_analysis.R  
+- https://gsea-msigdb.github.io/ssGSEA-gpmodule/v10/index.html    
+  
+Workflow  :  Analyses cell groups (idents) of a single-cell RNA-sequencing experiment to get pathway-level expressions for every group of cells.    
+- Idents() function => defines which grouping variable to use for the analysis (conditions/clusters...)      
+- analyse_sc_clusters() function => returns an ReactomeAnalysisResult object          
+- pathways() function => returns a dataframe with pathway-level expression values per cell groups      
+- max_difference homemade function => finds the most relevant pathways    
+- plots function => plots barplots and heatmaps    
+
+
+<br>
+
+
+## Identify interesting pathways to analyze 
+
+https://bioconductor.org/packages/devel/bioc/vignettes/ReactomeContentService4R/inst/doc/ReactomeContentService4R.html
+
+```{r}
+library(ReactomeContentService4R)
+```
+
+**Fetch all human pathway available in the Reactome database**
+```{r}
+
+# pathways_db = getSchemaClass(class= "Pathway", species= "human", all= TRUE)
+# pathways_db = data.frame(pathways_db) %>% dplyr::select(displayName, stId)
+# colnames(pathways_db) = c("pathway_name", "pathway_id")
+# 
+# pathways_db %>%
+#   kable() %>%
+#   kable_styling() %>%
+#   scroll_box(height = "250px", width = "100%")
+# 
+# write.csv2(x = pathways_db, row.names = FALSE,
+#            file = paste0(directory_output, "pathways_database_reactome.csv"))
+
+pathways_db = read.csv2(paste0(directory_output, "pathways_database_reactome.csv"))
+  
+```
+
+**Extract genes associated to the pathways of the Reactome database**
+```{r}
+
+# genes_pathways = list()
+# for (i in 1:nrow(pathways_db)) {
+#   cat("Extract pathway", i, "/", nrow(pathways_db), "\n")
+#   path = pathways_db$pathway_id[i]
+#   genes = event2Ids(path)$geneSymbol
+#   if (is.null(genes)) { 
+#     cat("No gene associated to pathway", path, "\n") 
+#   } else {
+#       genes_pathways[[path]] = data.frame(pathway_id = path, gene = genes)
+#     }
+# }
+# genes_pathways = do.call(rbind, genes_pathways)
+# 
+# genes_pathways %>%
+#   kable() %>%
+#   kable_styling() %>%
+#   scroll_box(height = "250px", width = "100%")
+# 
+# write.csv2(x = genes_pathways, row.names = FALSE,
+#            file = paste0(directory_output, "pathways_genes_reactome.csv"))
+
+genes_pathways = read.csv2(paste0(directory_output, "pathways_genes_reactome.csv"))
+
+```
+
+**Select manually interesting pathways in database list for our study**
+```{r}
+
+pathways_of_interest = c("R-HSA-15869","R-HSA-70171","R-HSA-70221","R-HSA-70263",
+                         "R-HSA-70268","R-HSA-70326","R-HSA-70350","R-HSA-70370",
+                         "R-HSA-70635","R-HSA-70688","R-HSA-70895","R-HSA-70921",
+                         "R-HSA-71032","R-HSA-71064","R-HSA-71240","R-HSA-71262",
+                         "R-HSA-71288","R-HSA-71291","R-HSA-71336","R-HSA-71384",
+                         "R-HSA-71387","R-HSA-71403","R-HSA-71406","R-HSA-73817",
+                         "R-HSA-75105","R-HSA-77286","R-HSA-77288","R-HSA-77289",
+                         "R-HSA-163685","R-HSA-174403","R-HSA-189445","R-HSA-189451",
+                         "R-HSA-189483","R-HSA-352230","R-HSA-2262752","R-HSA-9711097",
+                         "R-HSA-9711123","R-HSA-3247509","R-HSA-5334118","R-HSA-156581",
+                         "R-HSA-156582","R-HSA-212165","R-HSA-8964539")
+
+pathways_interest_tab = pathways_db %>% 
+  dplyr::filter(pathway_id %in% pathways_of_interest) 
+
+pathways_interest_tab %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+genes_interest_tab = genes_pathways %>%
+  dplyr::filter(pathway_id %in% pathways_of_interest) 
+  
+genes_interest_tab %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+write.csv2(x = pathways_interest_tab, row.names = FALSE,
+           file = paste0(directory_output, "pathways_interest_reactome.csv"))
+write.csv2(x = genes_interest_tab, row.names = FALSE,
+           file = paste0(directory_output, "pathways_genes_interest_reactome.csv"))
+
+```
+
+
+<br>
+
+
+## Pathway-level expression values
+
+**Call analyse_sc_clusters function on groups of cells based on clustering algorithm**
+```{r}
+
+gsva_clust = readRDS(paste0(directory_output, "gsva_result_clusters.rds"))
+
+# DefaultAssay(merged_prep) = "SCT"
+# Idents(merged_prep) = "clusters"
+# 
+# gsva_clust = analyse_sc_clusters(
+#   object = merged_prep, 
+#   use_interactors = TRUE,
+#   include_disease_pathways = FALSE,
+#   create_reactome_visualization = FALSE,
+#   verbose = TRUE
+# )
+
+gsva_clust
+
+# saveRDS(gsva_clust, paste0(directory_output, "gsva_result_clusters.rds"))
+
+```
+
+**Call analyse_sc_clusters function on groups of cells based on culture conditions**
+```{r}
+
+gsva_cond = readRDS(paste0(directory_output, "gsva_result_condition.rds"))
+
+# DefaultAssay(merged_prep) = "SCT"
+# Idents(merged_prep) = "orig.ident"
+# 
+# gsva_cond = analyse_sc_clusters(
+#   object = merged_prep,
+#   use_interactors = TRUE,
+#   include_disease_pathways = FALSE,
+#   create_reactome_visualization = TRUE,
+#   verbose = TRUE
+# )
+
+gsva_cond
+
+# saveRDS(gsva_cond, paste0(directory_output, "gsva_result_condition.rds"))
+
+```
+
+**Extract pathway-level expression tabs for clusters and conditions**
+```{r}
+
+pathway_exp_clust = pathways(gsva_clust)
+colnames(pathway_exp_clust) = gsub("\\.Seurat", "", colnames(pathway_exp_clust))
+colnames(pathway_exp_clust) = str_replace(string = colnames(pathway_exp_clust),
+                                           pattern = "X",
+                                           replacement = "cluster_")
+pathway_exp_clust = pathway_exp_clust %>%
+  tibble::rownames_to_column("pathway_id") %>%
+  dplyr::select(pathway_id, Name, cluster_0, cluster_1, cluster_2, cluster_3,
+                cluster_4, cluster_5, cluster_6, cluster_7, cluster_8,
+                cluster_9, cluster_10, cluster_11, cluster_12, cluster_13,
+                cluster_14, cluster_15, cluster_16)
+
+pathway_exp_clust %>%
+  kable(caption = "Pathway-level expression for clusters") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+write.csv2(pathway_exp_clust, row.names = FALSE,
+           paste0(directory_output, "pathway_clusters.csv"))
+
+
+pathway_exp_cond = pathways(gsva_cond)
+colnames(pathway_exp_cond) = gsub("\\.Seurat", "", colnames(pathway_exp_cond))
+colnames(pathway_exp_cond) = str_replace(string = colnames(pathway_exp_cond),
+                                           pattern = "X",
+                                           replacement = "")
+pathway_exp_cond = pathway_exp_cond %>%
+  tibble::rownames_to_column("pathway_id") 
+
+pathway_exp_cond %>%
+  kable(caption = "Pathway-level expression for conditions") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+write.csv2(pathway_exp_cond, row.names = FALSE,
+           paste0(directory_output, "pathway_conditions.csv"))
+
+```
+
+**Extract fold-change tabs for clusters and conditions**
+```{r}
+
+fc_clust = get_result(x = gsva_clust, type = "fold_changes", name ="Seurat")
+colnames(fc_clust) = str_replace(string = colnames(fc_clust),
+                                           pattern = "X",
+                                           replacement = "cluster_")
+fc_clust %>%
+  kable(caption = "Fold change for clusters") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+fc_cond = get_result(x = gsva_cond, type = "fold_changes", name ="Seurat")
+colnames(fc_cond) = str_replace(string = colnames(fc_cond),
+                                           pattern = "X",
+                                           replacement = "")
+fc_cond %>%
+  kable(caption = "Fold change for conditions") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+**Visualize outliers groups with PCA**
+```{r, fig.width = 16}
+
+gsva_result = gsva_clust
+plot_gsva_pca(object = gsva_result, pathway_ids = NULL)
+gsva_result = gsva_cond
+plot_gsva_pca(object = gsva_cond, pathway_ids = NULL)
+
+```
+
+The analyse_sc_cluster() function includes several steps :  
+- calculate the mean gene expression for every group of cells (idents)  
+- map gene identifiers to the database to extract associate pathway(s) (one pathway = gene set) 
+- submit this data to a gene set variation analysis (ssGSEA = single sample gene set enrichment analysis => calculates separate enrichment scores for each pairing of a sample (= group of cells) and gene set (=pathway). Each ssGSEA enrichment score represents the degree to which the genes in a particular gene set are coordinately up or down regulated within a sample.
+
+
+<br>
+
+
+## Study the most relevant pathways 
+
+**Calcul max difference tab for clusters and conditions comparisons**  
+We start with a table containing one pathway-expression value per group of cells (idents = cluster or condition). For each pathway, we identify the maximal and minimal value among the groups and we calculate the difference. Then, we keep the pathway with the highest values of difference because it concerns pathway with high heterogeneity of expression between grups of cells.
+
+```{r}
+
+max_diff_fun = function(pathway_exp_tab, gsva) {
+  
+  max_difference = do.call(rbind, apply(pathway_exp_tab, 1, function(row) {
+    values = as.numeric(row[3:length(row)])
+    return(data.frame(pathway_ID = row[1], name = row[2], min = min(values), max = max(values)))
+  }))
+  
+  max_difference$diff = max_difference$max - max_difference$min
+  max_difference = max_difference[order(max_difference$diff, decreasing = T), ]
+  return(max_difference)
+  
+}
+
+```
+
+```{r}
+
+relevant_path_clust = max_diff_fun(pathway_exp_clust, gsva_clust)
+relevant_path_cond = max_diff_fun(pathway_exp_cond, gsva_cond)
+
+relevant_path_clust %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+relevant_path_cond %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+**Visualize the 30 most relevant pathways for clusters and conditions**
+```{r}
+
+barplots_fun = function(max_difference, gsva, nb_pathway) {
+  
+  list_plot = list()
+  
+  for (i in 1:nb_pathway) {
+    
+    pathway_id = max_difference$pathway_ID[i]
+    plot_title = paste0(max_difference$name[i], " (", pathway_id, ")")
+    
+    plot = plot_gsva_pathway(gsva, pathway_id = pathway_id) +
+      labs(title = str_wrap(plot_title, 50)) +
+      theme(title = element_text(size = 9))
+    
+    list_plot[[i]] = plot
+    
+  }
+  
+  return(list_plot)
+
+}
+
+```
+
+```{r, fig.width = 14, fig.height = 16}
+
+relevant_path_clust_plots = barplots_fun(relevant_path_clust, gsva_clust, 30)
+do.call("grid.arrange", c(relevant_path_clust_plots, ncol=4))
+
+relevant_path_cond_plots = barplots_fun(relevant_path_cond, gsva_cond, 30)
+do.call("grid.arrange", c(relevant_path_cond_plots, ncol=4))
+
+```
+
+```{r, fig.width = 10, fig.height = 8}
+
+plot_gsva_heatmap(gsva_clust,
+                  pathway_ids = relevant_path_clust_plots$pathway_ID[1:30],
+                  margins = c(6,35),
+                  dendrogram = "col",
+                  scale = "row",
+                  lmat = rbind(c(0,3),c(2,1),c(0,4)),
+                  lwid = c(0.1,4),
+                  lhei = c(1.5,4,1),
+                  truncate_names = FALSE,
+                  key = TRUE,
+                  keysize = 0.5,
+                  cexRow=1) 
+
+plot_gsva_heatmap(gsva_cond,
+                  pathway_ids = relevant_path_cond_plots$pathway_ID[1:30],
+                  margins = c(6,35),
+                  dendrogram = "col",
+                  scale = "row",
+                  lmat = rbind(c(0,3),c(2,1),c(0,4)),
+                  lwid = c(0.1,4),
+                  lhei = c(1.5,4,1),
+                  truncate_names = FALSE,
+                  key = TRUE,
+                  keysize = 0.5,
+                  cexRow=1) 
+
+```
+
+
+<br>
+
+
+## Study our list of interesting pathways 
+
+We can only study pathways with enough genes represented in our dataset so we have to filter the list of pathway of interest to keep only those we can study.
+
+```{r, fig.width = 14, fig.height = 18}
+
+pathway_int_clust = pathway_exp_clust %>% dplyr::filter(pathway_id %in% pathways_of_interest)
+list_int_path_clust = list() 
+
+for (i in 1:nrow(pathway_int_clust)) {
+    pathway_id = pathway_int_clust$pathway_id[i]
+    plot_title = paste0(pathway_int_clust$Name[i], " (", pathway_id, ")")
+    plot = plot_gsva_pathway(gsva_clust, pathway_id = pathway_id) +
+      labs(title = str_wrap(plot_title, 50)) +
+      theme(title = element_text(size = 9))
+    list_int_path_clust[[pathway_id]] = plot
+}
+
+do.call("grid.arrange", c(list_int_path_clust, ncol = 4))
+
+
+pathway_int_cond = pathway_exp_cond %>% dplyr::filter(pathway_id %in% pathways_of_interest)
+list_int_path_cond = list() 
+
+for (i in 1:nrow(pathway_int_cond)) {
+    pathway_id = pathway_int_cond$pathway_id[i]
+    plot_title = paste0(pathway_int_cond$Name[i], " (", pathway_id, ")")
+    plot = plot_gsva_pathway(gsva_cond, pathway_id = pathway_id) +
+      labs(title = str_wrap(plot_title, 50)) +
+      theme(title = element_text(size = 9))
+    list_int_path_cond[[pathway_id]] = plot
+  }
+
+do.call("grid.arrange", c(list_int_path_cond, ncol = 4))
+
+```
+
+```{r, fig.width = 10, fig.height = 8}
+
+plot_gsva_heatmap(gsva_clust,
+                  pathway_ids = pathway_int_clust$pathway_id,
+                  margins = c(6,35),
+                  dendrogram = "col",
+                  scale = "row",
+                  lmat = rbind(c(0,3),c(2,1),c(0,4)),
+                  lwid = c(0.1,4),
+                  lhei = c(1.5,4,1),
+                  truncate_names = FALSE,
+                  key = TRUE,
+                  keysize = 0.5,
+                  cexRow=1) 
+
+plot_gsva_heatmap(gsva_cond,
+                  pathway_ids = pathway_int_cond$pathway_id,
+                  margins = c(6,35),
+                  dendrogram = "col",
+                  scale = "row",
+                  lmat = rbind(c(0,3),c(2,1),c(0,4)),
+                  lwid = c(0.1,4),
+                  lhei = c(1.5,4,1),
+                  truncate_names = FALSE,
+                  key = TRUE,
+                  keysize = 0.5,
+                  cexRow=1) 
+
+```
+
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results='hide'}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+
