@@ -31,6 +31,7 @@ library(stringr)
 library(ggplot2)
 library(kableExtra)
 library(gridExtra)
+library(ggrepel)
 
 ```
 
@@ -44,7 +45,8 @@ start_time = Sys.time()
 current_date = format(Sys.time(), "%Y%m%d")
 dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/"))
 dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date))
-directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date, "/")
+#directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date, "/")
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/20230306/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
@@ -58,10 +60,10 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
 merged_prep = readRDS(file = paste0(dir, "/", "merged_all_prep_1-40dim.rds"))
 
-# combination = list(c("CTRL","AOA"), c("CTRL","2DG"), c("CTRL","DON"),
-#                    c("CTRL", "VPA"), c("CTRL","CTRLaK"), c("2DG","2DGaK"),
-#                    c("DON","DONaK"), c("AOA","AOAaK"), c("CTRLaK","2DGaK"),
-#                    c("CTRLaK","AOAaK"), c("CTRLaK","DONaK"))
+combination = list(c("CTRL","AOA"), c("CTRL","2DG"), c("CTRL","DON"),
+                   c("CTRL", "VPA"), c("CTRL","CTRLaK"), c("2DG","2DGaK"),
+                   c("DON","DONaK"), c("AOA","AOAaK"), c("CTRLaK","2DGaK"),
+                   c("CTRLaK","AOAaK"), c("CTRLaK","DONaK"))
 
 ```
 
@@ -77,44 +79,28 @@ DimPlot(merged_prep,
 ```
 
 
-<br>
+
+<br><br><br>
 
 
-# Pathways analysis with ReactomeGSA
 
-```{r}
-library(ReactomeGSA)
-```
+# Gene set generation : identify interesting pathways to analyze 
 
-Documentation :    
-- https://bioconductor.org/packages/release/bioc/vignettes/ReactomeGSA/inst/doc/analysing-scRNAseq.html  
-- https://www.sciencedirect.com/science/article/pii/S1535947620600159  
-- https://bioconductor.org/packages/devel/bioc/vignettes/ReactomeGSA/inst/doc/using-reactomegsa.html  
-- https://rdrr.io/bioc/ReactomeGSA/man/analyse_sc_clusters.html  
-- https://rdrr.io/bioc/ReactomeGSA/src/R/perform_analysis.R  
-- https://gsea-msigdb.github.io/ssGSEA-gpmodule/v10/index.html    
+To perform pathway analysis on our scRNAseq dataset, we need to compare our genes expression to gene set (list of genes connected to pathway). To do so, there are multiple packages avaliable depending on the final result we want : ReactomeGSA, SCPA, GAGE, Pathview.... We decided to try two of them, ReactomeGSA and SCPA. To do so, the first step is to extract the gene set to allow the comparaison and the gene set enrichment analysis. Based, on documentation, we tried two packages (ReactomeContentService4R and msigdbr) to extract gene set from Reactome database. We compared the output and select the best for further analysis.  
+- https://bioconductor.org/packages/devel/bioc/vignettes/ReactomeContentService4R/inst/doc/ReactomeContentService4R.html  
+- https://jackbibby1.github.io/SCPA/articles/quick_start.html  
+- https://github.com/igordot/msigdbr/issues/4  
+- https://www.gsea-msigdb.org/gsea/msigdb/human/genesets.jsp?collection=CP:REACTOME  
   
-Workflow  :  Analyses cell groups (idents) of a single-cell RNA-sequencing experiment to get pathway-level expressions for every group of cells.    
-- Idents() function => defines which grouping variable to use for the analysis (conditions/clusters...)      
-- analyse_sc_clusters() function => returns an ReactomeAnalysisResult object          
-- pathways() function => returns a dataframe with pathway-level expression values per cell groups      
-- max_difference homemade function => finds the most relevant pathways    
-- plots function => plots barplots and heatmaps    
-
-
-<br>
-
-
-## Identify interesting pathways to analyze 
-
-https://bioconductor.org/packages/devel/bioc/vignettes/ReactomeContentService4R/inst/doc/ReactomeContentService4R.html
+## Extract list of pathways with package ReactomeContentService4R
 
 ```{r}
 library(ReactomeContentService4R)
 ```
 
-**Fetch all human pathway available in the Reactome database**
 ```{r}
+
+## Fetch all human pathway available in the Reactome database
 
 # pathways_db = getSchemaClass(class= "Pathway", species= "human", all= TRUE)
 # pathways_db = data.frame(pathways_db) %>% dplyr::select(displayName, stId)
@@ -130,10 +116,7 @@ library(ReactomeContentService4R)
 
 pathways_db = read.csv2(paste0(directory_output, "pathways_database_reactome.csv"))
   
-```
-
-**Extract genes associated to the pathways of the Reactome database**
-```{r}
+## Extract genes associated to the pathways of the Reactome database
 
 # genes_pathways = list()
 # for (i in 1:nrow(pathways_db)) {
@@ -160,7 +143,89 @@ genes_pathways = read.csv2(paste0(directory_output, "pathways_genes_reactome.csv
 
 ```
 
-**Select manually interesting pathways in database list for our study**
+## Extract list of pathways with package msigdbr
+
+```{r}
+library(msigdbr)
+```
+
+```{r}
+
+pathways_db_ms <- msigdbr(species = "Homo sapiens", 
+                          category = "C2",
+                          subcategory = "CP:REACTOME") 
+
+pathways_db_ms %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+## Compare packages 
+
+```{r}
+
+cat("The ReactomeContentService4R allowed us to extract : ", 
+    nrow(pathways_db), "gene sets from the Reactome database. \n",
+    "The msigdbr allowed us to extract :", 
+    length(unique(pathways_db_ms$gs_name)), "gene sets from the Reactome database. \n") 
+
+# intersection
+common = intersect(pathways_db_ms$gs_exact_source, pathways_db$pathway_id)
+# elements in pathways_db_ms not in pathways_db
+diff_msigdbr = setdiff(pathways_db_ms$gs_exact_source, pathways_db$pathway_id)
+# elements in pathways_db not in pathways_db_ms
+diff_react = setdiff(pathways_db$pathway_id, pathways_db_ms$gs_exact_source)
+
+cat("We found", length(common), "pathways in common between the two lists. \n",
+    "Only", length(diff_msigdbr), "pathway from msigdbr is not in the bigger list of pathways from ReactomeContent.",
+    "ReactomeContent allow us to extract", length(diff_react), "more pathways. \n",
+    "We will now compare the common gene set to see if they are equals.")
+
+# compare gene list for one gene set
+path = pathways_db_ms$gs_exact_source[[1]]
+if(path %in% pathways_db$pathway_id) { print("TRUE")}
+genes_msigdbr = (pathways_db_ms %>% dplyr::filter(gs_exact_source == path))$gene_symbol
+genes_reactome = (genes_pathways %>% dplyr::filter(pathway_id == path))$gene 
+intersect(genes_msigdbr, genes_reactome)
+setdiff(genes_msigdbr, genes_reactome)
+setdiff(genes_reactome, genes_msigdbr)
+cat("For pathway", path, "we have", length(genes_msigdbr),
+    "genes associated for msigdbr package and", length(genes_reactome),
+    "genes associated for reactome package.", 
+    "All the genes from msigdbr list are in the reactome list.", 
+    "The others names are associated proteins or synonyms of the gene.")
+# G22P1 = XRCC6
+# G22P2 = XRCC5
+# HMGIY est la protéine codée par HMGA1
+# BAF = BCRG1 = BANF1
+# DFS70 = LEDGF = PSIP2 = PSIP1 
+
+```
+
+To summarize, by accessing the same database (Reactome) but with different packages (msigdbr and ReactomeContentService4R), the results are not totally equals. Msigdbr package is less precise and we are missing some information (pathways and gene synonyms) so we decided to use the ReactomeContentService4R gene set list for further analysis. We just have to format the data in a specific way (one list par pathway containing a tab with pathway name/id in column 1 and gene name in column 2).
+
+```{r}
+
+# pathways_db_list = list()
+# 
+# for (i in 1:length(unique(genes_pathways$pathway_id))){
+#   cat(i, "/", length(unique(genes_pathways$pathway_id)), "\n")
+#   path = unique(genes_pathways$pathway_id)[i]
+#   temp = genes_pathways %>% dplyr::filter(pathway_id == path)
+#   colnames(temp) = c("Pathway", "Genes")
+#   pathways_db_list[[path]] = temp
+# }
+# 
+# saveRDS(object = pathways_db_list, file = paste0(directory_output, "pathways_database_reactome_format_scpa.rds"))
+
+pathways_db_list = readRDS(paste0(directory_output, "pathways_database_reactome_format_scpa.rds"))
+
+```
+
+## Select interesting pathways for our study 
+
 ```{r}
 
 pathways_of_interest = c("R-HSA-15869","R-HSA-70171","R-HSA-70221","R-HSA-70263",
@@ -176,7 +241,8 @@ pathways_of_interest = c("R-HSA-15869","R-HSA-70171","R-HSA-70221","R-HSA-70263"
                          "R-HSA-156582","R-HSA-212165","R-HSA-8964539")
 
 pathways_interest_tab = pathways_db %>% 
-  dplyr::filter(pathway_id %in% pathways_of_interest) 
+  dplyr::filter(pathway_id %in% pathways_of_interest) %>%
+  dplyr::mutate(Pathway = paste(pathway_name, pathway_id, sep =" - "))
 
 pathways_interest_tab %>%
   kable() %>%
@@ -199,8 +265,33 @@ write.csv2(x = genes_interest_tab, row.names = FALSE,
 ```
 
 
-<br>
 
+<br><br><br>
+
+
+
+# Pathways analysis with ReactomeGSA
+
+```{r}
+library(ReactomeGSA)
+```
+
+Documentation :    
+- https://bioconductor.org/packages/release/bioc/vignettes/ReactomeGSA/inst/doc/analysing-scRNAseq.html  
+- https://www.sciencedirect.com/science/article/pii/S1535947620600159  
+- https://bioconductor.org/packages/devel/bioc/vignettes/ReactomeGSA/inst/doc/using-reactomegsa.html  
+- https://rdrr.io/bioc/ReactomeGSA/man/analyse_sc_clusters.html  
+- https://rdrr.io/bioc/ReactomeGSA/src/R/perform_analysis.R  
+- https://gsea-msigdb.github.io/ssGSEA-gpmodule/v10/index.html    
+  
+Workflow  :  Analyses cell groups (idents) of a single-cell RNA-sequencing experiment to get pathway-level expressions for every group of cells.    
+- Idents() function => defines which grouping variable to use for the analysis (conditions/clusters...)      
+- analyse_sc_clusters() function => returns an ReactomeAnalysisResult object          
+- pathways() function => returns a dataframe with pathway-level expression values per cell groups      
+- max_difference homemade function => finds the most relevant pathways    
+- plots function => plots barplots and heatmaps    
+
+<br>
 
 ## Pathway-level expression values
 
@@ -328,9 +419,7 @@ The analyse_sc_cluster() function includes several steps :
 - map gene identifiers to the database to extract associate pathway(s) (one pathway = gene set) 
 - submit this data to a gene set variation analysis (ssGSEA = single sample gene set enrichment analysis => calculates separate enrichment scores for each pairing of a sample (= group of cells) and gene set (=pathway). Each ssGSEA enrichment score represents the degree to which the genes in a particular gene set are coordinately up or down regulated within a sample.
 
-
 <br>
-
 
 ## Study the most relevant pathways 
 
@@ -437,9 +526,7 @@ plot_gsva_heatmap(gsva_cond,
 
 ```
 
-
 <br>
-
 
 ## Study our list of interesting pathways 
 
@@ -507,6 +594,199 @@ plot_gsva_heatmap(gsva_cond,
                   cexRow=1) 
 
 ```
+
+
+
+<br><br><br>
+
+
+
+# Pathway analysis with SCPA
+
+"It’s a different approach to pathway analysis that defines pathway activity as a change in multivariate distribution of a given pathway across conditions, rather than enrichment or over representation of genes."    
+"This analysis provides a statistic (Qval), which indicates the size of distribution change for a given pathway and can be used for the ranking of pathways in order of biological relevance. This method therefore provides a fundamentally different definition of pathway activity when compared with current tools that typically rely on enrichment of overrepresentation of genes in a given pathway."  
+  
+Documentation :    
+- https://jackbibby1.github.io/SCPA/    
+- https://jackbibby1.github.io/SCPA/articles/quick_start.html    
+- https://jackbibby1.github.io/SCPA/articles/seurat_comparison.html   
+- https://jackbibby1.github.io/SCPA/reference/compare_seurat.html    
+- https://doi.org/10.1186/s13059-019-1790-4    
+- https://jackbibby1.github.io/SCPA/reference/plot_rank.html    
+- https://www.sciencedirect.com/science/article/pii/S2211124722015716    
+- https://github.com/jackbibby1/SCPA/blob/HEAD/R/PlotRank.R  
+
+```{r}
+library(SCPA)
+```
+
+We use the gene set list stored in pathways_db_list.
+
+<br>
+
+## Calculate scpa_out for each combination of conditions
+
+```{r}
+
+# list_scpa_cond = list()
+# 
+# for (i in 1:length(combination)) {
+#   
+#   print(combination[[i]])
+#   
+#   scpa_out = compare_seurat(seurat_object = merged_prep,
+#                            assay = "SCT",
+#                            group1 = "orig.ident", 
+#                            group1_population = combination[[i]],
+#                            pathways = pathways_db_list,
+#                            downsample = 500,
+#                            min_genes = 5,
+#                            max_genes = 500, 
+#                            parallel = TRUE, 
+#                            cores = 8) %>%
+#     dplyr::mutate(color = case_when(FC > 5 & adjPval < 0.01 ~ '#6dbf88', # positive enrichment + good pvalue
+#                                     FC < -5 & adjPval < 0.01 ~ 'mediumseagreen', # negative enrichment + good pvalue
+#                                     FC < 5 & FC > -5 & adjPval < 0.01 ~ '#84b0f0', # no enrichment + good pavalue
+#                                     FC < 5 & FC > -5 & adjPval > 0.01 ~ 'black')) %>% # no enrichment + bad pvalue 
+#      dplyr::mutate(combination = paste(combination[[i]], collapse = "_")) 
+#   
+#   scpa_out = left_join(scpa_out, (pathways_db %>% dplyr::rename("Pathway" = "pathway_id")), by = "Pathway") %>% 
+#     dplyr::mutate(pathway_id = Pathway) %>%
+#     dplyr::mutate(Pathway = paste(pathway_name, Pathway, sep =" - ")) %>%
+#     dplyr::select(-pathway_name)
+#   
+#   list_scpa_cond[[paste(combination[[i]], collapse = "_")]] = scpa_out
+# 
+# }
+# 
+# list_scpa_cond
+
+# saveRDS(object = list_scpa_cond, file = paste0(directory_output, "list_scpa_conditions.rds"))
+
+list_scpa_cond = readRDS(paste0(directory_output, "list_scpa_conditions.rds"))
+
+```
+
+Output :   
+- qval : higher qval translates to larger pathway differences between conditions even without enrichment      
+- FC enrichment score : is generated from a running sum of mean changes in gene expression from all genes of the pathway  
+- FC > 0  => average pathway expression population 1 > population 2  
+- FC < 0 => average pathway expression pathway population 1 < population 2  
+
+<br>
+
+## Plot the results 
+
+**Heatmap on interesting pathways for each combination of conditions**
+```{r, fig.height = 14, fig.width = 8, results = 'hold'}
+
+tab_heat_scpa_cond = Reduce(full_join, list_scpa_cond) %>%
+  dplyr::select(Pathway, qval, combination) %>% 
+  tidyr::pivot_wider(names_from = combination, values_from = qval)
+colnames(tab_heat_scpa_cond) = c("Pathway", paste(colnames(tab_heat_scpa_cond[,2:ncol(tab_heat_scpa_cond)]),"qval",sep="_"))
+
+plot_ht = plot_heatmap(scpa_out = tab_heat_scpa_cond, 
+                       highlight_pathways = pathways_interest_tab$Pathway,
+                       column_names = colnames(tab_heat_scpa_cond[,2:ncol(tab_heat_scpa_cond)]),
+                       row_fontsize = 10,
+                       column_fontsize = 10,
+                       show_row_names = FALSE,
+                       hm_colors = NULL)
+plot_ht
+
+tab_heat_scpa_cond = tab_heat_scpa_cond %>% dplyr::filter(Pathway %in% pathways_interest_tab$Pathway)
+
+plot_ht_int = plot_heatmap(scpa_out = tab_heat_scpa_cond, 
+                       highlight_pathways = NULL,
+                       column_names = colnames(tab_heat_scpa_cond[,2:ncol(tab_heat_scpa_cond)]),
+                       row_fontsize = 8,
+                       column_fontsize = 10,
+                       show_row_names = TRUE,
+                       hm_colors = NULL)
+plot_ht_int
+
+```
+
+
+**Enrichment and rank plot for each combination of conditions**
+```{r, fig.width = 16, fig.height = 20, results='hold'}
+
+list_enrich_cond_all = list()
+list_enrich_cond_int = list()
+list_rank_cond = list()
+
+for (i in 1:length(list_scpa_cond)) {
+  
+  # Enrichment plot with all pathways
+  scpa_out = list_scpa_cond[[i]]
+  
+  plot = ggplot(scpa_out, aes(x = FC, y = qval)) +
+    geom_vline(xintercept = c(-5, 5), linetype = "dashed", col = 'black', lwd = 0.3) +
+    geom_hline(yintercept = 5, linetype = "dashed", col = 'black', lwd = 0.3) +
+    geom_point(alpha = 0.6, cex = 2.6, shape = 21, fill = scpa_out$color, stroke = 0.3) +
+    geom_text_repel(data = scpa_out %>% dplyr::filter(qval > 5),
+                    aes(label = pathway_id), size = 2, direction = "both",
+                    force = 3, force_pull = 2, max.overlaps = 100) +
+    coord_cartesian(xlim=c(-20,80), ylim=c(0,11)) +
+    xlab("Enrichment") +
+    ylab("Qval") +
+    ggtitle(names(list_scpa_cond[i])) +
+    theme(panel.background = element_blank(),
+          panel.border = element_rect(fill = NA),
+          aspect.ratio = 1) 
+ 
+  list_enrich_cond_all[[i]] = plot
+  
+  # Rank plot with interesting pathways 
+  scpa_out = list_scpa_cond[[i]] %>% dplyr::mutate(Pathway = pathway_id)
+  
+  plot_rank = plot_rank(scpa_out = scpa_out,
+                        pathway = pathways_interest_tab$pathway_id,
+                        population_name = "qval",
+                        base_point_size = 4,
+                        base_point_color = "gray70",
+                        highlight_point_size = 3,
+                        highlight_point_color = "cornflowerblue",
+                        label_pathway = TRUE,
+                        label_size = 2.5)
+
+  list_rank_cond[[i]] = plot_rank
+  
+  # Enrichment plot with interesting pathways only 
+  scpa_out = list_scpa_cond[[i]] %>% dplyr::filter(pathway_id %in% pathways_of_interest) 
+  
+  plot_int = ggplot(scpa_out, aes(FC, qval)) +
+    geom_vline(xintercept = c(-5, 5), linetype = "dashed", col = 'black', lwd = 0.3) +
+    geom_hline(yintercept = 5, linetype = "dashed", col = 'black', lwd = 0.3) +
+    geom_point(cex = 2.6, shape = 21, fill = scpa_out$color, stroke = 0.3) +
+    geom_text_repel(data = scpa_out %>% dplyr::filter(qval > 5),
+                    aes(label = pathway_id), size = 2, direction = "both",
+                    force = 3, force_pull = 2, max.overlaps = 100) +
+    coord_cartesian(xlim=c(-20,80), ylim=c(0,11)) +
+    xlab("Enrichment") +
+    ylab("Qval") +
+    ggtitle(names(list_scpa_cond[i])) +
+    theme(panel.background = element_blank(),
+          panel.border = element_rect(fill = NA),
+          aspect.ratio = 1) 
+  
+  list_enrich_cond_int[[i]] = plot_int
+  
+}
+
+do.call("grid.arrange", c(list_enrich_cond_all, ncol = 4))
+do.call("grid.arrange", c(list_enrich_cond_int, ncol=4))
+do.call("grid.arrange", c(list_rank_cond, ncol = 4))
+
+```
+
+
+
+
+
+
+
+
 
 
 
