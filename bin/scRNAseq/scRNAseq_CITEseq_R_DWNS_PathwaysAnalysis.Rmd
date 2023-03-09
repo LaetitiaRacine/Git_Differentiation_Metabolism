@@ -31,7 +31,10 @@ library(stringr)
 library(ggplot2)
 library(kableExtra)
 library(gridExtra)
-library(ggrepel)
+library(ggrepel) # geom_text_repel() function
+library(RColorBrewer)
+library(cowplot) # plot_grid() function
+library(viridis)
 
 ```
 
@@ -45,8 +48,7 @@ start_time = Sys.time()
 current_date = format(Sys.time(), "%Y%m%d")
 dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/"))
 dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date))
-#directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date, "/")
-directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/20230306/")
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
@@ -102,43 +104,45 @@ library(ReactomeContentService4R)
 
 ## Fetch all human pathway available in the Reactome database
 
-# pathways_db = getSchemaClass(class= "Pathway", species= "human", all= TRUE)
-# pathways_db = data.frame(pathways_db) %>% dplyr::select(displayName, stId)
-# colnames(pathways_db) = c("pathway_name", "pathway_id")
-# 
-# pathways_db %>%
-#   kable() %>%
-#   kable_styling() %>%
-#   scroll_box(height = "250px", width = "100%")
-# 
-# write.csv2(x = pathways_db, row.names = FALSE,
-#            file = paste0(directory_output, "pathways_database_reactome.csv"))
+pathways_db = getSchemaClass(class= "Pathway", species= "human", all= TRUE)
+pathways_db = data.frame(pathways_db) %>% dplyr::select(displayName, stId)
+colnames(pathways_db) = c("pathway_name", "pathway_id")
 
-pathways_db = read.csv2(paste0(directory_output, "pathways_database_reactome.csv"))
-  
+pathways_db %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
 ## Extract genes associated to the pathways of the Reactome database
 
-# genes_pathways = list()
-# for (i in 1:nrow(pathways_db)) {
-#   cat("Extract pathway", i, "/", nrow(pathways_db), "\n")
-#   path = pathways_db$pathway_id[i]
-#   genes = event2Ids(path)$geneSymbol
-#   if (is.null(genes)) { 
-#     cat("No gene associated to pathway", path, "\n") 
-#   } else {
-#       genes_pathways[[path]] = data.frame(pathway_id = path, gene = genes)
-#     }
-# }
-# genes_pathways = do.call(rbind, genes_pathways)
-# 
-# genes_pathways %>%
-#   kable() %>%
-#   kable_styling() %>%
-#   scroll_box(height = "250px", width = "100%")
-# 
+genes_pathways = list()
+for (i in 1:nrow(pathways_db)) {
+  #cat("Extract pathway", i, "/", nrow(pathways_db), "\n")
+  path = pathways_db$pathway_id[i]
+  genes = event2Ids(path)$geneSymbol
+  if (is.null(genes)) {
+    cat("No gene associated to pathway", path, "\n")
+  } else {
+      genes_pathways[[path]] = data.frame(pathway_id = path, gene = genes)
+    }
+}
+genes_pathways = do.call(rbind, genes_pathways)
+
+genes_pathways %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+```{r}
+
+# write.csv2(x = pathways_db, row.names = FALSE,
+#            file = paste0(directory_output, "pathways_database_reactome.csv"))
 # write.csv2(x = genes_pathways, row.names = FALSE,
 #            file = paste0(directory_output, "pathways_genes_reactome.csv"))
 
+pathways_db = read.csv2(paste0(directory_output, "pathways_database_reactome.csv"))
 genes_pathways = read.csv2(paste0(directory_output, "pathways_genes_reactome.csv"))
 
 ```
@@ -208,19 +212,21 @@ To summarize, by accessing the same database (Reactome) but with different packa
 
 ```{r}
 
-# pathways_db_list = list()
-# 
-# for (i in 1:length(unique(genes_pathways$pathway_id))){
-#   cat(i, "/", length(unique(genes_pathways$pathway_id)), "\n")
-#   path = unique(genes_pathways$pathway_id)[i]
-#   temp = genes_pathways %>% dplyr::filter(pathway_id == path)
-#   colnames(temp) = c("Pathway", "Genes")
-#   pathways_db_list[[path]] = temp
-# }
-# 
-# saveRDS(object = pathways_db_list, file = paste0(directory_output, "pathways_database_reactome_format_scpa.rds"))
+pathways_db_list = list()
 
-pathways_db_list = readRDS(paste0(directory_output, "pathways_database_reactome_format_scpa.rds"))
+for (i in 1:length(unique(genes_pathways$pathway_id))){
+  #cat(i, "/", length(unique(genes_pathways$pathway_id)), "\n")
+  path = unique(genes_pathways$pathway_id)[i]
+  temp = genes_pathways %>% dplyr::filter(pathway_id == path)
+  colnames(temp) = c("Pathway", "Genes")
+  pathways_db_list[[path]] = temp
+}
+
+```
+
+```{r}
+
+saveRDS(object = pathways_db_list, file = paste0(directory_output, "pathways_database_reactome_format_scpa.rds"))
 
 ```
 
@@ -249,21 +255,42 @@ pathways_interest_tab %>%
   kable_styling() %>%
   scroll_box(height = "250px", width = "100%")
 
+```
+
+```{r}
+
+write.csv2(x = pathways_interest_tab, row.names = FALSE,
+           file = paste0(directory_output, "pathways_interest_reactome.csv"))
+
+```
+
+```{r}
+
+# Extract all gene names associated to each pathway
+# Keep only gene name present in our dataset  (lots of synonyms to remove)
 genes_interest_tab = genes_pathways %>%
-  dplyr::filter(pathway_id %in% pathways_of_interest) 
-  
+  dplyr::filter(pathway_id %in% pathways_of_interest) %>%
+  dplyr::filter(gene %in% rownames(merged_prep))
+ 
 genes_interest_tab %>%
   kable() %>%
   kable_styling() %>%
   scroll_box(height = "250px", width = "100%")
 
-write.csv2(x = pathways_interest_tab, row.names = FALSE,
-           file = paste0(directory_output, "pathways_interest_reactome.csv"))
+```
+
+```{r}
+
 write.csv2(x = genes_interest_tab, row.names = FALSE,
            file = paste0(directory_output, "pathways_genes_interest_reactome.csv"))
 
 ```
 
+```{r}
+rm(directory, loadRData, GO_clusterProfiler_fun, dir, pathways_db_ms,
+   common, diff_msigdbr, diff_react, path, genes_msigdbr, genes_reactome,
+   temp)
+```
 
 
 <br><br><br>
@@ -298,44 +325,48 @@ Workflow  :  Analyses cell groups (idents) of a single-cell RNA-sequencing exper
 **Call analyse_sc_clusters function on groups of cells based on clustering algorithm**
 ```{r}
 
-gsva_clust = readRDS(paste0(directory_output, "gsva_result_clusters.rds"))
+DefaultAssay(merged_prep) = "SCT"
+Idents(merged_prep) = "clusters"
 
-# DefaultAssay(merged_prep) = "SCT"
-# Idents(merged_prep) = "clusters"
-# 
-# gsva_clust = analyse_sc_clusters(
-#   object = merged_prep, 
-#   use_interactors = TRUE,
-#   include_disease_pathways = FALSE,
-#   create_reactome_visualization = FALSE,
-#   verbose = TRUE
-# )
+gsva_clust = analyse_sc_clusters(
+  object = merged_prep,
+  use_interactors = TRUE,
+  include_disease_pathways = FALSE,
+  create_reactome_visualization = FALSE,
+  verbose = TRUE
+)
 
 gsva_clust
 
-# saveRDS(gsva_clust, paste0(directory_output, "gsva_result_clusters.rds"))
+```
+
+```{r}
+
+saveRDS(gsva_clust, paste0(directory_output, "RGSA_gsva_result_clusters.rds"))
 
 ```
 
 **Call analyse_sc_clusters function on groups of cells based on culture conditions**
 ```{r}
 
-gsva_cond = readRDS(paste0(directory_output, "gsva_result_condition.rds"))
+DefaultAssay(merged_prep) = "SCT"
+Idents(merged_prep) = "orig.ident"
 
-# DefaultAssay(merged_prep) = "SCT"
-# Idents(merged_prep) = "orig.ident"
-# 
-# gsva_cond = analyse_sc_clusters(
-#   object = merged_prep,
-#   use_interactors = TRUE,
-#   include_disease_pathways = FALSE,
-#   create_reactome_visualization = TRUE,
-#   verbose = TRUE
-# )
+gsva_cond = analyse_sc_clusters(
+  object = merged_prep,
+  use_interactors = TRUE,
+  include_disease_pathways = FALSE,
+  create_reactome_visualization = TRUE,
+  verbose = TRUE
+)
 
 gsva_cond
 
-# saveRDS(gsva_cond, paste0(directory_output, "gsva_result_condition.rds"))
+```
+
+```{r}
+
+saveRDS(gsva_cond, paste0(directory_output, "RGSA_gsva_result_condition.rds"))
 
 ```
 
@@ -359,10 +390,6 @@ pathway_exp_clust %>%
   kable_styling() %>%
   scroll_box(height = "250px", width = "100%")
 
-write.csv2(pathway_exp_clust, row.names = FALSE,
-           paste0(directory_output, "pathway_clusters.csv"))
-
-
 pathway_exp_cond = pathways(gsva_cond)
 colnames(pathway_exp_cond) = gsub("\\.Seurat", "", colnames(pathway_exp_cond))
 colnames(pathway_exp_cond) = str_replace(string = colnames(pathway_exp_cond),
@@ -376,8 +403,14 @@ pathway_exp_cond %>%
   kable_styling() %>%
   scroll_box(height = "250px", width = "100%")
 
+```
+
+```{r}
+
+write.csv2(pathway_exp_clust, row.names = FALSE,
+           paste0(directory_output, "RGSA_pathway_clusters.csv"))
 write.csv2(pathway_exp_cond, row.names = FALSE,
-           paste0(directory_output, "pathway_conditions.csv"))
+           paste0(directory_output, "RGSA_pathway_conditions.csv"))
 
 ```
 
@@ -404,13 +437,32 @@ fc_cond %>%
 
 ```
 
+```{r}
+
+write.csv2(fc_cond, row.names = FALSE,
+           paste0(directory_output, "RGSA_foldchange_conditions.csv"))
+write.csv2(fc_clust, row.names = FALSE,
+           paste0(directory_output, "RGSA_foldchange_clusters.csv"))
+
+```
+
 **Visualize outliers groups with PCA**
 ```{r, fig.width = 16}
 
 gsva_result = gsva_clust
-plot_gsva_pca(object = gsva_result, pathway_ids = NULL)
+p_clust = plot_gsva_pca(object = gsva_result, pathway_ids = NULL)
+p_clust
+
 gsva_result = gsva_cond
-plot_gsva_pca(object = gsva_cond, pathway_ids = NULL)
+p_cond = plot_gsva_pca(object = gsva_cond, pathway_ids = NULL)
+p_cond
+
+```
+
+```{r}
+
+ggsave(plot = p_clust, filename = paste0(directory_output, "RGSA_outliers_clusters.svg"))
+ggsave(plot = p_cond, filename = paste0(directory_output, "RGSA_outliers_conditions.svg"))
 
 ```
 
@@ -509,7 +561,7 @@ plot_gsva_heatmap(gsva_clust,
                   truncate_names = FALSE,
                   key = TRUE,
                   keysize = 0.5,
-                  cexRow=1) 
+                  cexRow=1)
 
 plot_gsva_heatmap(gsva_cond,
                   pathway_ids = relevant_path_cond_plots$pathway_ID[1:30],
@@ -522,7 +574,51 @@ plot_gsva_heatmap(gsva_cond,
                   truncate_names = FALSE,
                   key = TRUE,
                   keysize = 0.5,
+                  cexRow=1)  https://bioconductor.org/packages/release/bioc/vignettes/ReactomeGSA/inst/doc/analysing-scRNAseq.html
+
+```
+
+```{r, fig.show='hide', results='hide'}
+
+ggsave(plot = do.call("grid.arrange", c(relevant_path_clust_plots, ncol=6)), 
+       filename = paste0(directory_output, "RGSA_relevant_path_clust.svg"),
+       height = 20, width = 24)
+ggsave(plot = do.call("grid.arrange", c(relevant_path_cond_plots, ncol=6)), 
+       filename = paste0(directory_output, "RGSA_relevant_path_cond.svg"),
+       height = 20, width = 24)
+
+
+pdf(file = paste0(directory_output, "RGSA_heatmap_clust.pdf"),
+    height = 12, width = 16)
+plot_gsva_heatmap(gsva_clust,
+                  pathway_ids = relevant_path_clust_plots$pathway_ID[1:30],
+                  margins = c(6,35),
+                  dendrogram = "col",
+                  scale = "row",
+                  lmat = rbind(c(0,3),c(2,1),c(0,4)),
+                  lwid = c(0.1,4),
+                  lhei = c(1.5,4,1),
+                  truncate_names = FALSE,
+                  key = TRUE,
+                  keysize = 0.5,
+                  cexRow=1)
+dev.off()
+
+pdf(file = paste0(directory_output, "RGSA_heatmap_cond.pdf"),
+    height = 12, width = 16)
+plot_gsva_heatmap(gsva_cond,
+                  pathway_ids = relevant_path_cond_plots$pathway_ID[1:30],
+                  margins = c(6,35),
+                  dendrogram = "col",
+                  scale = "row",
+                  lmat = rbind(c(0,3),c(2,1),c(0,4)),
+                  lwid = c(0.1,4),
+                  lhei = c(1.5,4,1),
+                  truncate_names = FALSE,
+                  key = TRUE,
+                  keysize = 0.5,
                   cexRow=1) 
+dev.off()
 
 ```
 
@@ -547,7 +643,6 @@ for (i in 1:nrow(pathway_int_clust)) {
 }
 
 do.call("grid.arrange", c(list_int_path_clust, ncol = 4))
-
 
 pathway_int_cond = pathway_exp_cond %>% dplyr::filter(pathway_id %in% pathways_of_interest)
 list_int_path_cond = list() 
@@ -580,6 +675,7 @@ plot_gsva_heatmap(gsva_clust,
                   keysize = 0.5,
                   cexRow=1) 
 
+
 plot_gsva_heatmap(gsva_cond,
                   pathway_ids = pathway_int_cond$pathway_id,
                   margins = c(6,35),
@@ -592,6 +688,48 @@ plot_gsva_heatmap(gsva_cond,
                   key = TRUE,
                   keysize = 0.5,
                   cexRow=1) 
+
+```
+
+```{r, fig.show='hide'}
+
+ggsave(plot = do.call("grid.arrange", c(list_int_path_clust, ncol = 4)), 
+       filename = paste0(directory_output, "RGSA_interest_path_clust.svg"))
+ggsave(plot = do.call("grid.arrange", c(list_int_path_cond, ncol = 4)), 
+       filename = paste0(directory_output, "RGSA_interest_path_cond.svg"))
+
+
+pdf(paste0(directory_output, "RGSA_heatmap_interest_clust.pdf"),
+    height = 12, width = 16)
+plot_gsva_heatmap(gsva_clust,
+                  pathway_ids = pathway_int_clust$pathway_id,
+                  margins = c(6,35),
+                  dendrogram = "col",
+                  scale = "row",
+                  lmat = rbind(c(0,3),c(2,1),c(0,4)),
+                  lwid = c(0.1,4),
+                  lhei = c(1.5,4,1),
+                  truncate_names = FALSE,
+                  key = TRUE,
+                  keysize = 0.5,
+                  cexRow=1) 
+dev.off()
+
+pdf(paste0(directory_output, "RGSA_heatmap_interest_cond.pdf"),
+    height = 12, width = 16)
+plot_gsva_heatmap(gsva_cond,
+                  pathway_ids = pathway_int_cond$pathway_id,
+                  margins = c(6,35),
+                  dendrogram = "col",
+                  scale = "row",
+                  lmat = rbind(c(0,3),c(2,1),c(0,4)),
+                  lwid = c(0.1,4),
+                  lhei = c(1.5,4,1),
+                  truncate_names = FALSE,
+                  key = TRUE,
+                  keysize = 0.5,
+                  cexRow=1) 
+dev.off()
 
 ```
 
@@ -628,42 +766,42 @@ We use the gene set list stored in pathways_db_list.
 
 ```{r}
 
-# list_scpa_cond = list()
-# 
-# for (i in 1:length(combination)) {
-#   
-#   print(combination[[i]])
-#   
-#   scpa_out = compare_seurat(seurat_object = merged_prep,
-#                            assay = "SCT",
-#                            group1 = "orig.ident", 
-#                            group1_population = combination[[i]],
-#                            pathways = pathways_db_list,
-#                            downsample = 500,
-#                            min_genes = 5,
-#                            max_genes = 500, 
-#                            parallel = TRUE, 
-#                            cores = 8) %>%
-#     dplyr::mutate(color = case_when(FC > 5 & adjPval < 0.01 ~ '#6dbf88', # positive enrichment + good pvalue
-#                                     FC < -5 & adjPval < 0.01 ~ 'mediumseagreen', # negative enrichment + good pvalue
-#                                     FC < 5 & FC > -5 & adjPval < 0.01 ~ '#84b0f0', # no enrichment + good pavalue
-#                                     FC < 5 & FC > -5 & adjPval > 0.01 ~ 'black')) %>% # no enrichment + bad pvalue 
-#      dplyr::mutate(combination = paste(combination[[i]], collapse = "_")) 
-#   
-#   scpa_out = left_join(scpa_out, (pathways_db %>% dplyr::rename("Pathway" = "pathway_id")), by = "Pathway") %>% 
-#     dplyr::mutate(pathway_id = Pathway) %>%
-#     dplyr::mutate(Pathway = paste(pathway_name, Pathway, sep =" - ")) %>%
-#     dplyr::select(-pathway_name)
-#   
-#   list_scpa_cond[[paste(combination[[i]], collapse = "_")]] = scpa_out
-# 
-# }
-# 
-# list_scpa_cond
+list_scpa_cond = list()
 
-# saveRDS(object = list_scpa_cond, file = paste0(directory_output, "list_scpa_conditions.rds"))
+for (i in 1:length(combination)) {
 
-list_scpa_cond = readRDS(paste0(directory_output, "list_scpa_conditions.rds"))
+  print(combination[[i]])
+
+  scpa_out = compare_seurat(seurat_object = merged_prep,
+                           assay = "SCT",
+                           group1 = "orig.ident",
+                           group1_population = combination[[i]],
+                           pathways = pathways_db_list,
+                           downsample = 500,
+                           min_genes = 5,
+                           max_genes = 500,
+                           parallel = TRUE,
+                           cores = 8) %>%
+    dplyr::mutate(color = case_when(FC > 5 & adjPval < 0.01 ~ '#6dbf88', # positive enrichment + good pvalue
+                                    FC < -5 & adjPval < 0.01 ~ 'mediumseagreen', # negative enrichment + good pvalue
+                                    FC < 5 & FC > -5 & adjPval < 0.01 ~ '#84b0f0', # no enrichment + good pavalue
+                                    FC < 5 & FC > -5 & adjPval > 0.01 ~ 'black')) %>% # no enrichment + bad pvalue
+     dplyr::mutate(combination = paste(combination[[i]], collapse = "_"))
+
+  scpa_out = left_join(scpa_out, (pathways_db %>% dplyr::rename("Pathway" = "pathway_id")), by = "Pathway") %>%
+    dplyr::mutate(pathway_id = Pathway) %>%
+    dplyr::mutate(Pathway = paste(pathway_name, Pathway, sep =" - ")) %>%
+    dplyr::select(-pathway_name)
+
+  list_scpa_cond[[paste(combination[[i]], collapse = "_")]] = scpa_out
+
+}
+
+```
+
+```{r}
+
+saveRDS(object = list_scpa_cond, file = paste0(directory_output, "SCPA_list_scpa_conditions.rds"))
 
 ```
 
@@ -697,13 +835,28 @@ plot_ht
 tab_heat_scpa_cond = tab_heat_scpa_cond %>% dplyr::filter(Pathway %in% pathways_interest_tab$Pathway)
 
 plot_ht_int = plot_heatmap(scpa_out = tab_heat_scpa_cond, 
-                       highlight_pathways = NULL,
-                       column_names = colnames(tab_heat_scpa_cond[,2:ncol(tab_heat_scpa_cond)]),
-                       row_fontsize = 8,
-                       column_fontsize = 10,
-                       show_row_names = TRUE,
-                       hm_colors = NULL)
+                           highlight_pathways = NULL,
+                           column_names = colnames(tab_heat_scpa_cond[,2:ncol(tab_heat_scpa_cond)]),
+                           row_fontsize = 8,
+                           column_fontsize = 10,
+                           show_row_names = TRUE,
+                           hm_colors = NULL)
 plot_ht_int
+
+```
+
+```{r}
+
+pdf(paste0(directory_output, "SCPA_heatmap_interest_path.pdf"),
+    width = 14, height = 10)
+plot_heatmap(scpa_out = tab_heat_scpa_cond, 
+             highlight_pathways = NULL,
+             column_names = colnames(tab_heat_scpa_cond[,2:ncol(tab_heat_scpa_cond)]),
+             row_fontsize = 8,
+             column_fontsize = 10,
+             show_row_names = TRUE,
+             hm_colors = NULL)
+dev.off()
 
 ```
 
@@ -726,7 +879,7 @@ for (i in 1:length(list_scpa_cond)) {
     geom_point(alpha = 0.6, cex = 2.6, shape = 21, fill = scpa_out$color, stroke = 0.3) +
     geom_text_repel(data = scpa_out %>% dplyr::filter(qval > 5),
                     aes(label = pathway_id), size = 2, direction = "both",
-                    force = 3, force_pull = 2, max.overlaps = 100) +
+                    force = 3, force_pull = 2, max.overlaps = 200) +
     coord_cartesian(xlim=c(-20,80), ylim=c(0,11)) +
     xlab("Enrichment") +
     ylab("Qval") +
@@ -761,7 +914,7 @@ for (i in 1:length(list_scpa_cond)) {
     geom_point(cex = 2.6, shape = 21, fill = scpa_out$color, stroke = 0.3) +
     geom_text_repel(data = scpa_out %>% dplyr::filter(qval > 5),
                     aes(label = pathway_id), size = 2, direction = "both",
-                    force = 3, force_pull = 2, max.overlaps = 100) +
+                    force = 3, force_pull = 2, max.overlaps = 200) +
     coord_cartesian(xlim=c(-20,80), ylim=c(0,11)) +
     xlab("Enrichment") +
     ylab("Qval") +
@@ -780,14 +933,368 @@ do.call("grid.arrange", c(list_rank_cond, ncol = 4))
 
 ```
 
+```{r, fig.show="hide"}
+
+ggsave(plot = do.call("grid.arrange", c(list_enrich_cond_all, ncol = 4)),
+       filename = paste0(directory_output, "SCPA_enrich_cond.svg"),
+       width = 20, height = 14)
+ggsave(plot = do.call("grid.arrange", c(list_enrich_cond_int, ncol=4)),
+       filename = paste0(directory_output, "SCPA_interest_enrich_cond.svg"),
+       width = 20, height = 14)
+ggsave(plot = do.call("grid.arrange", c(list_rank_cond, ncol = 4)),
+       filename = paste0(directory_output, "SCPA_rank_cond.svg"),
+       width = 20, height = 14)
+
+```
+
+
+<br><br><br>
 
 
 
+# "Manual" pathways and genes analysis
 
+Documentation :  
+- https://satijalab.org/seurat/reference/addmodulescore  
+- https://www.waltermuskovic.com/2021/04/15/seurat-s-addmodulescore-function/  
+- https://github.com/satijalab/seurat/issues/1342  
+- https://github.com/satijalab/seurat/issues/261  
+- https://github.com/satijalab/seurat/issues/4881  
+- https://github.com/satijalab/seurat/issues/2495  
 
+<br>
 
+## AddModuleScore with gene set from Reactome database
 
+```{r, results='hold'}
 
+list_modulescore_clust = list()
+list_modulescore_cond = list()
+
+for (i in 1:length(unique(genes_interest_tab$pathway_id))) {
+  
+  pathway = unique(genes_interest_tab$pathway_id)[i]
+  tab_pathway = genes_interest_tab %>% dplyr::filter(pathway_id == pathway)
+  ms.features = list(as.vector(tab_pathway$gene))
+  name = str_extract(string = pathway, pattern = "(?<=R-HSA-)[:digit:]+")
+  name = paste0("RHSA", name, "_")
+  
+  merged_prep = AddModuleScore(object = merged_prep, 
+                               features = ms.features, 
+                               pool = NULL, #default
+                               nbin = 24, #default
+                               ctrl = 5, #vignette example
+                               k = FALSE, #default
+                               assay = "RNA",
+                               name = name,
+                               seed = 42,
+                               search = TRUE)
+  
+  plot_clust = FeaturePlot(object = merged_prep,
+                           features = paste0(name, "1"),
+                           reduction = "umap",
+                           cols = rev(brewer.pal(n = 11, name = "RdBu")))
+  
+  plot_cond = FeaturePlot(object = merged_prep,
+                          features = paste0(name, "1"),
+                          reduction = "umap",
+                          split.by = "orig.ident",
+                          keep.scale = "feature",
+                          combine = FALSE, 
+                          cols = rev(brewer.pal(n = 11, name = "RdBu"))) 
+  
+  list_modulescore_clust[[pathway]] = plot_clust
+  list_modulescore_cond[[pathway]] = plot_cond 
+
+}
+
+```
+
+```{r, fig.width=14, fig.height=26, results='hold'}
+
+do.call("grid.arrange", c(list_modulescore_clust, ncol = 4))
+
+```
+
+```{r, fig.width=14, fig.height=10, results='hold'}
+
+for (i in 1:length(list_modulescore_cond)){
+  print(plot_grid(plotlist = list_modulescore_cond[[i]], ncol = 4))
+}
+
+```
+
+```{r, fig.show='hide'}
+
+ggsave(plot = do.call("grid.arrange", c(list_modulescore_clust, ncol = 4)),
+       filename = paste0(directory_output, "modulescore_clust.svg"))
+
+saveRDS(object = list_modulescore_cond, 
+        file = paste0(directory_output, "list_modulescore_cond.rds"))
+saveRDS(object = list_modulescore_clust, 
+        file = paste0(directory_output, "list_modulescore_clust.rds"))
+
+```
+
+<br>
+
+## Visualize expression of specific genes manually selected
+
+```{r}
+
+plot_gene_fun = function(seurat_obj, list, choice){
+  
+  for (i in 1:length(list)) {
+    
+    gene = list[i]
+    
+    if (choice == "clust") {
+      
+      plot_cl = FeaturePlot(object = seurat_obj,
+                            features = gene,
+                            reduction = "umap",
+                            cols = rev(brewer.pal(n = 11, name = "RdBu")))
+      print(plot_cl)
+      
+    }
+    
+    if (choice == "cond") {
+      
+       plot_cond = FeaturePlot(object = seurat_obj,
+                            features = gene,
+                            reduction = "umap",
+                            split.by = "orig.ident",
+                            keep.scale = "feature",
+                            combine = FALSE,
+                            cols = rev(brewer.pal(n = 11, name = "RdBu"))) 
+    
+      print(plot_grid(plotlist = plot_cond, ncol = 4))
+ 
+    }
+    
+    if (choice != "clust" & choice != "cond") {
+      
+      print("Wrong parameter value.")
+      
+    }
+
+  }
+  
+}
+
+```
+
+```{r, results="hold"}
+
+# Global metabolic genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo, rownames(merged_prep)), "clust") 
+# Glutaminolysis genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_glut, rownames(merged_prep)), "clust") 
+# Glycolysis genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_glycolysis, rownames(merged_prep)), "clust")
+# TCA genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_tca, rownames(merged_prep)), "clust") 
+# Hematopoietic Transcription Factors
+plot_gene_fun(merged_prep, intersect(list_genes_TH_hemato, rownames(merged_prep)), "clust") 
+
+```
+
+```{r, results="hold", fig.width=14, fig.height=10}
+
+# Global metabolic genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo, rownames(merged_prep)), "cond") 
+# Glutaminolysis genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_glut, rownames(merged_prep)), "cond") 
+# Glycolysis genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_glycolysis, rownames(merged_prep)), "cond")
+# TCA genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_tca, rownames(merged_prep)), "cond") 
+# Hematopoietic Transcription Factors
+plot_gene_fun(merged_prep, intersect(list_genes_TH_hemato, rownames(merged_prep)), "cond") 
+
+```
+
+```{r, fig.width = 14, fig.height = 10}
+
+# Cluster only 
+Idents(merged_prep) = "clusters"
+
+p1 = DotPlot(merged_prep,
+        features = list_genes_metabo,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p2 = DotPlot(merged_prep,
+        features = list_genes_metabo_glut,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p3 = DotPlot(merged_prep,
+        features = list_genes_metabo_glycolysis,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p4 = DotPlot(merged_prep,
+        features = list_genes_metabo_tca,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p5 = DotPlot(merged_prep,
+        features = list_genes_TH_hemato,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+# Conditions only
+Idents(merged_prep) = "orig.ident"
+
+p6 = DotPlot(merged_prep,
+        features = list_genes_metabo,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p7 = DotPlot(merged_prep,
+        features = list_genes_metabo_glut,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p8 = DotPlot(merged_prep,
+        features = list_genes_metabo_glycolysis,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p9 = DotPlot(merged_prep,
+        features = list_genes_metabo_tca,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p10 = DotPlot(merged_prep,
+        features = list_genes_TH_hemato,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+# Clusters and conditions
+Idents(merged_prep) = "orig.ident"
+
+p11 = DotPlot(merged_prep,
+        features = list_genes_metabo,
+        cols = plasma(18),
+        dot.scale = 8,
+        split.by = "clusters") +
+  RotatedAxis()
+
+p12 = DotPlot(merged_prep,
+        features = list_genes_metabo_glut,
+        cols = plasma(18),
+        dot.scale = 8,
+        split.by = "clusters") +
+  RotatedAxis()
+
+p13 = DotPlot(merged_prep,
+        features = list_genes_metabo_glycolysis,
+        cols = plasma(18),
+        dot.scale = 8,
+        split.by = "clusters") +
+  RotatedAxis()
+
+p14 = DotPlot(merged_prep,
+        features = list_genes_metabo_tca,
+        cols = plasma(18),
+        dot.scale = 8,
+        split.by = "clusters") +
+  RotatedAxis()
+
+p15 = DotPlot(merged_prep,
+        features = list_genes_TH_hemato,
+        cols = c("red"),
+        dot.scale = 8,
+        split.by = "clusters") +
+  RotatedAxis()
+
+(p1 | p2 | p3) / (p4 | p5)
+(p6 | p7 | p8) / (p9 | p10)
+
+```
+
+```{r, fig.width = 14, fig.height = 34}
+
+(p11 | p12 | p13) / (p14 | p15)
+
+```
+
+```{r}
+
+ggsave(plot = (p1 | p2 | p3) / (p4 | p5), width = 20, height = 16,
+       filename = paste0(directory_output, "SCPA_dotplot_list_genes_clust.svg"))
+ggsave(plot = (p6 | p7 | p8) / (p9 | p10), width = 20, height = 16,
+       filename = paste0(directory_output, "SCPA_dotplot_list_genes_cond.svg"))
+ggsave(plot = p11 | p12, width = 20, height = 22,
+       filename = paste0(directory_output, "SCPA_dotplot_list_genes_clust_cond_1.svg"))
+ggsave(plot = p13 | p14, width = 20, height = 22,
+       filename = paste0(directory_output, "SCPA_dotplot_list_genes_clust_cond_2.svg"))
+ggsave(plot = p15, width = 10, height = 22,
+       filename = paste0(directory_output, "SCPA_dotplot_list_genes_clust_cond_3.svg"))
+
+```
+
+```{r, fig.width = 18, fig.height = 6}
+
+v1 = VlnPlot(merged_prep,
+             features = list_genes_metabo,
+             cols = plasma(18),
+             group.by = "orig.ident",
+             split.by = "clusters",
+             ncol = 1, 
+             combine = FALSE)
+
+v2 = VlnPlot(merged_prep,
+             features = list_genes_metabo_glut,
+             cols = plasma(18),
+             group.by = "orig.ident",
+             split.by = "clusters",
+             ncol = 1, 
+             combine = FALSE)
+
+v3 = VlnPlot(merged_prep,
+             features = list_genes_metabo_glycolysis,
+             cols = plasma(18),
+             group.by = "orig.ident",
+             split.by = "clusters",
+             ncol = 1, 
+             combine = FALSE)
+
+v4 = VlnPlot(merged_prep,
+             features = list_genes_metabo_tca,
+             cols = plasma(18),
+             group.by = "orig.ident",
+             split.by = "clusters",
+             ncol = 1, 
+             combine = FALSE)
+
+v5 = VlnPlot(merged_prep,
+             features = list_genes_TH_hemato,
+             cols = plasma(18),
+             group.by = "orig.ident",
+             split.by = "clusters",
+             ncol = 1, 
+             combine = FALSE)
+
+lapply(v1, function(x) { print(x) })
+lapply(v2, function(x) { print(x) })
+lapply(v3, function(x) { print(x) })
+lapply(v4, function(x) { print(x) })
+lapply(v5, function(x) { print(x) })
+
+```
 
 
 ```{r, Rsession}
