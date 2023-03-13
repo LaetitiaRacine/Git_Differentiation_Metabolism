@@ -1,0 +1,552 @@
+---
+title: "scRNAseq_CITEseq_R_DWNS_STEMNET"
+author: "Laëtitia Racine"
+date: "2023-03-10"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r, Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+# install.packages("devtools")
+# devtools::install_git("https://git.embl.de/velten/STEMNET/")
+
+library(STEMNET)
+library(ggplot2)
+library(cluster)
+library(pheatmap)
+library(gridExtra)
+library(stringr)
+library(kableExtra)
+set.seed(1234)
+
+```
+
+```{r, Working directories and external script}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_STEMNET/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_STEMNET/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_STEMNET/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_DWNS_CorrelationADTRNA/"))
+merged_all = readRDS(file = paste0(dir, "/", "merged_all_CITEgroups.rds"))
+
+```
+
+# Overview 
+
+We try to reproduce the fig5.a from Velten et al., Human haematopoietic stem cell lineage commitment is a continuous process (2017 : DOI: 10.1038/ncb3493) article.  
+To do so, we follow the vignette : https://git.embl.de/velten/STEMNET/-/blob/master/vignettes/VeltenHaasRaffel_Reproducible.Rmd and try to adapt it with our data.  
+We have got gene expression with RNAseq and surface expression with CITEseq.  
+
+<br>
+
+To reproduce figure 5, we need two files as input : stemnet_result and GeneExpression.  
+=> geneExpression is the matrix of gene expression formatted in a certain way ("raw data")  
+=> stemnet_result is the output file from step/figure 3.  
+So we need to look at the figure 3 to produce stemnet_result. This step also need two input files :  
+=> geneExpression is the same matrix as previously described  
+=> pop is an object created in the step 1+2 
+Then, we need to reproduce the step 1+2 also. It takes as input two files :  
+=> populations is the raw data of surface gene expression formatted with boolean  
+=> geneExpression  
+  
+To summarize, to reproduce fig5, we need to follow the code from fig1+2 and fig3 but we can keep the fig4 part.  
+
+
+<br><br><br>
+
+
+# Step 1 : Identification of mature populations
+
+## Understand the input data in the vignette and find the equivalent in our dataset
+```{r}
+
+geneExpression = geneExpression
+colnames(geneExpression)
+nrow(geneExpression)
+# matrice avec les gènes en column et les cellules en lignes
+# équivalent de notre matrice RNAseq avec les lignes et les colonnes inversées
+
+populations = populations
+populations %>% kable() %>% kable_styling() %>% scroll_box(height="250px", width="100%")
+# tableau avec autant de ligne que GeneExpression = 1 ligne par cellule
+# pour chaque cellule, on a son information d'expression => équivalent à nos groupes de CITEseq 
+
+```
+
+```{r}
+
+geneExpression_1 = t(as.matrix(merged_all@assays$SCT@data))
+
+populations_1 = data.frame(cells = rownames(geneExpression_1),
+                           CD34 = merged_all@meta.data$CD34_two_groups,
+                           CD133 = merged_all@meta.data$CD133_two_groups) %>%
+   dplyr::mutate(CD34low = ifelse(CD34 == "CD34_low", TRUE, FALSE),
+                 CD34high = ifelse(CD34 == "CD34_high", TRUE, FALSE),
+                 CD133low = ifelse(CD133 == "CD133_low", TRUE, FALSE),
+                 CD133high = ifelse(CD133 == "CD133_high", TRUE, FALSE)) %>%
+  dplyr::select(-CD34, -CD133) %>% 
+  dplyr::mutate(CD34lowCD133low = ifelse(CD34low == TRUE & CD133low == TRUE, TRUE, FALSE),
+                CD34lowCD133high = ifelse(CD34low == TRUE & CD133high == TRUE, TRUE, FALSE),
+                CD34highCD133low = ifelse(CD34high == TRUE & CD133low == TRUE, TRUE, FALSE),
+                CD34highCD133high = ifelse(CD34high == TRUE & CD133high == TRUE, TRUE, FALSE))
+
+#### We will study conditions one by one 
+geneExpression_1 = geneExpression_1[str_detect(rownames(geneExpression_1), "CTRL_"),]
+populations_1 = populations_1 %>% dplyr::filter(str_detect(cells, "CTRL_"))
+
+```
+
+## Follow the code and adapt with our data
+```{r}
+
+# code STEMNET
+cd38 <- populations[,"CD38+"]
+cd38minus_data <- geneExpression[!cd38,]
+cd38plus_data <- geneExpression[cd38,]
+
+vars_cd38plus <- apply(cd38plus_data, 2, var) # MARGIN = 2 -> var on columns
+vars_cd38plus <- vars_cd38plus[order(vars_cd38plus, decreasing=T)]
+vars_cd38minus <- apply(cd38minus_data, 2, var)
+vars_cd38minus <- vars_cd38minus[order(vars_cd38minus, decreasing=T)]
+
+# Adapted code
+cd34 <- populations_1[, "CD34high"] # Extract cell name of CD34+ population
+cd34minus_data <- geneExpression_1[!cd34,] # Extract geneExpr matrix of CD34+ cells
+cd34plus_data <- geneExpression_1[cd34,] # Extract geneExpr matrix of CD34- cells
+
+# For each gene in the dataset, calcul variance of geneExpr in CD34+ or CD34- population
+# List of nammed variance (gene name) in decreasing order
+vars_cd34plus <- apply(cd34plus_data, 2, var)
+vars_cd34plus <- vars_cd34plus[order(vars_cd34plus, decreasing=T)]
+vars_cd34minus <- apply(cd34minus_data, 2, var)
+vars_cd34minus <- vars_cd34minus[order(vars_cd34minus, decreasing=T)]
+
+```
+
+```{r}
+
+# code STEMNET
+colors <- c("CD38+CD10+" = "#F9B233",
+            "CD38+CD10-CD45RA+CD135+" = "#F76C34",
+            "CD38+CD10-CD45RA-CD135-" = "#E80505",
+            "CD38+CD10-CD45RA-CD135+" = "#5B0202",
+            "CD38-CD45RA+CD10-" = "#5F6FFF",
+            "CD38-CD45RA+CD10+" = "#61C7FF",
+            "CD38-CD45RA-CD90-" = "#2D2E83",
+            "CD38-CD45RA-CD90dim" = "#8F4DB2",
+            "CD38-CD90high" = "black",
+            "other" = "lightgrey"
+            )
+
+usepop <- names(colors)[-length(colors)]
+
+anno_df <- data.frame(class = booleanTable2Character(populations[cd38,usepop]), 
+                      row.names=rownames(cd38plus_data))
+
+ann_colors = list(class =colors)
+
+# Adapted code
+colors_1 <- c(CD34lowCD133low = "#F9B233",
+            CD34lowCD133high = "#F76C34",
+            CD34highCD133low = "#E80505",
+            CD34highCD133high = "#5B0202") # define exclusive categories of cells
+
+usepop_1 <- names(colors_1)
+
+# create a tab with the category for each cell
+anno_df_1 <- data.frame(class = booleanTable2Character(populations_1[cd34,usepop_1]), 
+                        row.names = rownames(cd34plus_data))
+
+ann_colors_1 = list(class=colors_1)
+
+```
+
+Columns in a heatmap can be arranged in multiple ways and still be consistent with the dendrogram; Wolfgang Huber suggested to order columns by principal component 1 unless this would conflict with the dendrogram. We therefore define a function that will be passed to the pheatmap function as clustering_callback:
+
+```{r}
+
+# function from STEMNET that we can use directly
+callback = function(hc, mat){
+  sv = svd(t(mat))$v[,1]
+  dend = reorder(as.dendrogram(hc), wts = sv)
+  as.hclust(dend)
+}
+
+```
+
+Only for visual display (not for clustering), we censor outliers and then we call pheatmap to create the plot. Note that clustering occurs on the top 1000 genes, but only 100 genes are displayed.
+
+```{r}
+
+### code STEMNET
+ddata <- t(cd38plus_data[,names(vars_cd38plus[1:100])])
+ddata[ddata>10] <- 10
+
+cd38plus_heatmap <- pheatmap(ddata, 
+                             color = c(rep("black",15), colorRampPalette(c("black","blue","red","yellow"))(85)), 
+                             cluster_rows = T, cluster_cols = T, 
+                             clustering_distance_cols =dist(cd38plus_data[,names(vars_cd38plus[1:1000])]), 
+                             clustering_distance_rows = "euclidean", 
+                             annotation_col = anno_df,  
+                             annotation_colors=ann_colors, 
+                             show_rownames=F,show_colnames=F, 
+                             clustering_method="ward.D2",
+                             clustering_callback=callback, 
+                             cutree_cols = 12,
+                             fontsize_row=7)
+
+
+### Adapted code
+# extract the 100 genes with the highest variance
+# transpose the table to have genes in rows and cells in columns
+ddata_1 <- t(cd34plus_data[,names(vars_cd34plus[1:100])]) 
+# put a maximal threshold to 10 for heatmap
+ddata_1[ddata_1>10] <- 10
+
+cd34plus_heatmap <- pheatmap(ddata_1, 
+                             color = c(rep("black",15), colorRampPalette(c("black","blue","red","yellow"))(85)), 
+                             cluster_rows = T, cluster_cols = T, 
+                             clustering_distance_cols =dist(cd34plus_data[,names(vars_cd34plus[1:1000])]), 
+                             clustering_distance_rows = "euclidean", 
+                             annotation_col = anno_df_1,  
+                             annotation_colors=ann_colors_1, 
+                             show_rownames=F,show_colnames=F, 
+                             clustering_method="ward.D2",
+                             clustering_callback=callback, 
+                             cutree_cols = 12,
+                             fontsize_row=7)
+
+```
+
+```{r}
+
+# function from STEMNET that we can use directly
+clusterfunction <- function(x, k) {
+  d <- dist(x)
+  dendro <- hclust(d, method="ward.D")
+  list(cluster = cutree(dendro, k=k))
+}
+
+```
+
+Visually, the heatmap clearly supports a split into at least 12 very distinct clusters; to get a clearer idea on the optimal number of clusters, we compute the gap statistics.
+
+```{r}
+
+#### code STEMNET that we can use directly 
+webfile <- url("https://www.dropbox.com/s/1vgan9pzv23ntw3/gapstat.rda?dl=1")
+load(webfile)
+
+#### code from STEMNET
+gap_cd38plus <- clusGap(cd38plus_data[,names(vars_cd38plus[1:1000])], clusterfunction, K.max = 30)
+
+plf_gap <- data.frame(k = 1:30, gap = gap_cd38plus$Tab[,"gap"], sd = gap_cd38plus$Tab[,"SE.sim"], stringsAsFactors=T)
+
+gapplot <- ggplot2::qplot(x = k, y= gap, data=plf_gap, geom="line",size=I(0.5)) + 
+  ggplot2::theme_classic(base_size=12) + 
+  ggplot2::xlab("Cluster number") + 
+  ggplot2::geom_ribbon(aes(ymax = gap + sd, ymin=gap-sd), alpha=0.1, color = NA) + 
+  ggplot2::ylab(expression(Gap[k])) 
+
+print(gapplot)
+
+saveRDS(gap_cd38plus, paste0(directory_output, "gap_cd38plus.rds"))
+
+#### Adapted code 
+gap_cd34plus <- clusGap(cd34plus_data[,names(vars_cd34plus[1:1000])], clusterfunction, K.max = 30)
+
+plf_gap_1 <- data.frame(k = 1:30, gap = gap_cd34plus$Tab[,"gap"], sd = gap_cd34plus$Tab[,"SE.sim"], stringsAsFactors=T)
+
+gapplot_1 <- ggplot2::qplot(x = k, y= gap, data=plf_gap_1, geom="line",size=I(0.5)) + 
+  ggplot2::theme_classic(base_size=12) + 
+  ggplot2::xlab("Cluster number") + 
+  ggplot2::geom_ribbon(aes(ymax = gap + sd, ymin=gap-sd), alpha=0.1, color = NA) + 
+  ggplot2::ylab(expression(Gap[k])) 
+
+print(gapplot_1)
+
+saveRDS(gap_cd34plus, paste0(directory_output, "gap_cd34plus_ctrl.rds"))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+The data evidently support a higher number of clusters, with an optimal number of r which.max(plf_gap$gap). We therefore split the heatmap into r which.max(plf_gap$gap) clusters and then merge several clusters of less than 5 cells back together.
+
+```{r}
+
+#### code from STEMNET
+ncluster <- which.max(plf_gap$gap)
+cell_cluster <- cutree(cd38plus_heatmap$tree_col, k=ncluster)
+#create a data frame containing information on the populations
+pop <- cbind(all=T,do.call(cbind, lapply(1:max(cell_cluster), function(x) rep(F, length(cd38)))))
+pop[cd38,] <- cbind(all=T,do.call(cbind, lapply(1:max(cell_cluster), function(x) x == cell_cluster)))
+colnames(pop) <- c("all",paste0("HClust",1:ncluster))
+#manually merge small clusters of <=5 cells with the next bigger cluster:
+pop <- cbind(pop, HClust12_15_18_19_20 = apply(pop[,c("HClust12","HClust15","HClust18","HClust19", "HClust20")],1,any))
+pop <- pop[, !colnames(pop) %in% c("HClust12","HClust15","HClust18","HClust19", "HClust20")]
+ 
+
+#### Adapted code
+ncluster_1 <- which.max(plf_gap_1$gap)
+cell_cluster_1 <- cutree(cd34plus_heatmap$tree_col, k=ncluster)
+pop_1 <- cbind(all=T,do.call(cbind, lapply(1:max(cell_cluster_1), function(x) rep(F, length(cd34)))))
+pop_1[cd34,] <- cbind(all=T,do.call(cbind, lapply(1:max(cell_cluster_1), function(x) x == cell_cluster_1)))
+colnames(pop_1) <- c("all",paste0("HClust",1:ncluster_1))
+#manually merge small clusters of <=5 cells with the next bigger cluster:
+pop <- cbind(pop, HClust12_15_18_19_20 = apply(pop[,c("HClust12","HClust15","HClust18","HClust19", "HClust20")],1,any))
+pop <- pop[, !colnames(pop) %in% c("HClust12","HClust15","HClust18","HClust19", "HClust20")]
+ 
+```
+
+From analyzing these gene sets, we can assign more meaningful names to the populations, i.e. the names used in the paper:
+
+```{r}
+
+# no need
+colnames(pop) <- c("all","Im-2", "N-1", "Mono/D", "Im-1","ME-2", "N-0","sB-1","Mk", "N-2","ME-3","N-3","E-1","E-2", "G2M","sB-2","Eo/Baso")
+
+```
+
+
+# Setting up STEMNET => entrée pop and geneExpression
+
+For STEMNET, create a vector annotating each cell as part of one of the most mature populations, or NA. Then, call stemnet.
+
+```{r}
+
+#### code from STEMNET
+stemnet_pop <- data.frame(
+   B = apply(pop[,c("sB-1","sB-2")],1,any),
+  `Eo/Baso` = pop[,"Eo/Baso"],
+  Erythroid = apply(pop[,c("E-1","E-2")],1,any),
+   `Mono/D` = pop[,"Mono/D"],
+  Mk =  pop[,"Mk"],
+  Neutrophil = apply(pop[,c("N-1","N-2","N-3")],1,any)
+)
+
+#### Adapted code
+stemnet_pop_1 <- data.frame(
+   B = apply(pop[,c("sB-1","sB-2")],1,any),
+  `Eo/Baso` = pop[,"Eo/Baso"],
+  Erythroid = apply(pop[,c("E-1","E-2")],1,any),
+   `Mono/D` = pop[,"Mono/D"],
+  Mk =  pop[,"Mk"],
+  Neutrophil = apply(pop[,c("N-1","N-2","N-3")],1,any)
+)
+
+```
+
+```{r}
+
+#### code from STEMNET
+stemnet_pop <- booleanTable2Character(stemnet_pop,other_value=NA)
+stemnet_result <- runSTEMNET(geneExpression, stemnet_pop)
+cat("The output of STEMNET is a matrix of class probabilities:")
+print(stemnet_result)
+
+#### Adapted code
+stemnet_pop_1 <- booleanTable2Character(stemnet_pop_1,other_value=NA)
+stemnet_result_1 <- runSTEMNET(geneExpression_1, stemnet_pop_1)
+cat("The output of STEMNET is a matrix of class probabilities:")
+print(stemnet_result_1)
+
+```
+
+This matrix represents a 5-plex. One way to plot a simplex is to project it on a circle, with simplex corners equally spaced along the circle's edge. This general strategy has been described before by Jaitin and colleagues).
+To find the optimal arrangement of the developmental endpoints on the circle, lineages with common precursor stages are placed next to each other. The proximity between lineages l and k is computed by
+Dkl=∑ipil∗pikD_{kl} = \sum_i p_{il} * p_{ik}Dkl​=i∑​pil​∗pik​
+
+```{r}
+
+#### code from STEMNET
+CAPframe <- plot(stemnet_result)
+
+#### Adapted code
+CAPframe <- plot(stemnet_result_1)
+
+```
+
+This is the optimal arrangement, but other arrangements are possible. The following plot shows the 4 best possible arrangements:
+
+```{r}
+
+#### code from STEMNET
+plot(stemnet_result, top=4)
+
+#### Adapted code
+plot(stemnet_result_1, top=4)
+
+```
+
+Which are all very similar in that erythroid and megakaryocytic precursors are placed next to each other while monocyte/dendritic cell precursors are placed between neutrophil and B-cell precursors.
+We can highlight the position of immunophenotypic populations on the STEMNET plot:
+
+```{r}
+
+#### code from STEMNET
+CAPframe <- plot(stemnet_result, color = populations[,"CD38+CD10+"])[["PlotData"]]
+
+#### Adapted code
+CAPframe <- plot(stemnet_result_1, color = populations[,"CD38+CD10+"])[["PlotData"]]
+
+```
+
+
+# Graph fig5-a 
+
+=> Entrée : stemnet_result et GeneExpression
+
+We then identified genes whose expression depends on the degree of lineage priming SrelS^{\text{rel}}Srel, the direction of priming ddd, or both, by separately fitting four different linear models to the expression data of each gene:
+- The first model describes gene expression as a function of the predominant direction ddd, which is a categorial variable. It best fits to genes that are up- or downregulated early during developmental progression in a certain direction and stay unchanged until the end.
+- The second model describes gene expression as a function of a 3rd degree polynomial through SrelS^{\text{rel}}Srel. It best fits to genes that are up- or downregulated at a specific stage of developmental progression, independent of the developmental direction.
+- The third model describes gene expression as a function of ddd, a 3rd degree polynomial through SrelS^{\text{rel}}Srel and the interaction of ddd and SrelS^{\text{rel}}Srel. It best fits to genes that are up- or downregulated at a specific stage of development in a specific direction.
+- The fourth model describes gene expression as a constant. It best fits to genes that do not change systematically during acquisition of lineage fate.
+
+```{r}
+
+re <- log10(primingDegree(stemnet_result))
+dir <- primingDirection(stemnet_result)
+
+#uncomment the following lines to reproduce computation (slow)
+
+# lmodels <- mclapply(as.data.frame(geneExpresion), function(x) lm(x ~ poly(re,3) +dir + re:dir),mc.cores=40)
+# lmodels_pa <- mclapply(as.data.frame(geneExpresion), function(x) lm(x ~ poly(re,3)),mc.cores=40)
+# lmodels_angle <- mclapply(as.data.frame(geneExpresion), function(x) lm(x ~ dir),mc.cores=40)
+# lmodels_nothing <- mclapply(as.data.frame(geneExpresion), function(x) lm(x ~ 1),mc.cores=40)
+# AICs <- data.frame(both = sapply(lmodels,BIC), amount = sapply(lmodels_pa, BIC), angle = sapply(lmodels_angle,BIC), nothing = sapply(lmodels_nothing, BIC))
+
+ webfile <- url("https://www.dropbox.com/s/vmiqood9orj68y1/geneclusters_BIC_log.rda?dl=1")
+load(webfile)
+
+minBIC <- apply(AICs[,1:4], 1,which.min)
+deltaBIC <- apply(AICs,2,function(x) x - AICs[,4])
+
+use_any_gene <- names(which(minBIC != 4))
+
+
+```
+
+```{r}
+print(table(minBIC))
+
+```
+
+```{r}
+
+makeplots <- function(cors, ncut) {
+
+#uncomment to view clustering result
+# out_GLM <- pheatmap(t(apply(smoothened[order(re),use],2,scale)), color = c(colorRampPalette(rev(brewer.pal(n = 7, name ="RdYlBu")))(20), rep("#D73027",5)), cluster_rows = T, cluster_cols = F, clustering_distance_rows = as.dist(1-cors/2),show_rownames=F,show_colnames=F, clustering_method="complete", fontsize_row=7, cutree_rows=ncut)
+
+dendr <- hclust(as.dist(1-cors/2),method="complete")
+cluster_GLM <- cutree(dendr,k=ncut)
+
+
+genes_by_cluster_GLM <- sapply(1:ncut, function(x) use[cluster_GLM==x])
+
+smoothened_cluster <- lapply(genes_by_cluster_GLM, function(genes) {
+  expression <- apply(geneExpression[,genes[genes %in% colnames(geneExpression)]],1,sum)
+
+})
+
+gname <- function(x) paste(sapply(strsplit(x, "[ \\(\\)]"), "[",1), collapse = ", ")
+
+
+plf_simple <- lapply(smoothened_cluster, function(x) data.frame(x=CAPframe$x, y=CAPframe$y, s=x, d=CAPframe$direction,srel = re))
+
+simple <- lapply(1:length(smoothened_cluster), function(i) qplot(x = x , y = y, color = s, data=plf_simple[[i]], size=I(0.5)) + theme_minimal()+ xlab(paste(gname(head(genes_by_cluster_GLM[[i]],n=5)),collapse=", ")) + ylab("")+scale_color_gradientn(colours = c("darkgrey","black", "blue","red","orange"), guide=F) + theme(axis.text = element_blank(), axis.title.y=element_blank(),axis.title.x = element_text(size = 8), panel.grid=element_blank(),panel.background=element_rect(fill=NA) ))
+
+do.call(grid.arrange, simple)
+invisible(simple)
+}
+
+#Genes from class 1 - depend on direction + degree of priming
+  #uncomment to reproduce computations
+  # smoothened <- lapply(lmodels, function(m) m$fitted.values)
+  # smoothened <- do.call(cbind,smoothened)
+  # colnames(smoothened) <- names(lmodels)
+webfile <- url("https://www.dropbox.com/s/xdddn38vtfx7d4v/geneclusters_class1_log.rda?dl=1")
+load(webfile)
+use <- names(which(minBIC == 1))
+use <- use[order(deltaBIC[use,1])]
+cors_model1 <- cor(smoothened[,use], method="pearson") 
+makeplots(cors_model1, ncut =13 )
+
+```
+
+```{r}
+#Genes from class 2 - depend on degree of priming
+  #uncomment to reproduce computations
+  # smoothened_anisotrop <- lapply(lmodels_pa, function(m) m$fitted.values)
+  # smoothened_anisotrop <- do.call(cbind,smoothened_anisotrop)
+  # colnames(smoothened_anisotrop) <- names(lmodels_pa)
+webfile <- url("https://www.dropbox.com/s/h0qq17sfgwvgvxj/geneclusters_class2_log.rda?dl=1")
+load(webfile)
+use <- names(which(minBIC == 2))
+use <- use[order(deltaBIC[use,2])]
+cors_model2 <- cor(smoothened_anisotrop[,use], method="pearson") 
+makeplots(cors_model2, ncut = 8)
+
+```
+
+```{r}
+#Genes from class 3 - depend on amount of priming
+#  smoothened_direction <- lapply(lmodels_angle, function(m) m$fitted.values)
+# smoothened_direction <- do.call(cbind,smoothened_direction)
+# colnames(smoothened_direction) <- names(lmodels_angle)
+
+webfile <- url("https://www.dropbox.com/s/uv5kmph0a4vjfdn/geneclusters_class3_log.rda?dl=0")
+load(webfile)
+use <- names(which(minBIC == 3))
+use <- use[order(deltaBIC[use,3])]
+cors_model3 <- cor(smoothened[,use], method="pearson") 
+makeplots(cors_model3, ncut = 21)
+
+```
+
