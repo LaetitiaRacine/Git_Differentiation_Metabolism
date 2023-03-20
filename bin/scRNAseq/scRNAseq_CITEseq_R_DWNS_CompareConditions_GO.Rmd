@@ -40,20 +40,6 @@ library(gdata)
 
 ```
 
-
-# Overview
-
-This script aims at comparing conditions (CTRL vs drug) in terms of gene expression. We extract list of differentially expressed genes (on/off analysis or differential analysis) and we perform gene ontology on those list to see if we find something relevant.  
-
-Based on :  
-- https://satijalab.org/seurat/articles/de_vignette.html  
-- https://satijalab.org/seurat/articles/sctransform_v2_vignette.html  
-- https://ycl6.github.io/GO-Enrichment-Analysis-Demo/  
-- https://satijalab.org/seurat/archive/v3.1/immune_alignment.html  
-- https://stackoverflow.com/questions/27713310/easy-way-to-export-multiple-data-frame-to-multiple-excel-worksheets  
-- https://stackoverflow.com/questions/66646394/dplyr-mutate-grouped-data-without-using-exact-column-name  
-- https://rdrr.io/cran/XLConnect/man/writeWorksheet-methods.html  
-
 ```{r, Working directories and external script}
 
 # Load working directories
@@ -62,15 +48,34 @@ start_time = Sys.time()
 
 # Create a unique folder for output corresponding to the date of the day
 current_date = format(Sys.time(), "%Y%m%d")
-dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CompareConditions/"))
-dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CompareConditions/", current_date))
-directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CompareConditions/", current_date, "/")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CompareConditions_GO/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CompareConditions_GO/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CompareConditions_GO/", current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
 
 ```
 
+
+
+<br><br><br>
+
+
+
+# Overview
+
+This script aims at comparing conditions (CTRL vs drug) in terms of gene expression. We extract list of differentially expressed genes (on/off analysis or differential analysis) and we perform gene ontology on those lists to see if we find something relevant.    
+  
+Based on :    
+- https://satijalab.org/seurat/articles/de_vignette.html    
+- https://satijalab.org/seurat/articles/sctransform_v2_vignette.html    
+- https://ycl6.github.io/GO-Enrichment-Analysis-Demo/    
+- https://satijalab.org/seurat/archive/v3.1/immune_alignment.html    
+- https://stackoverflow.com/questions/27713310/easy-way-to-export-multiple-data-frame-to-multiple-excel-worksheets    
+- https://stackoverflow.com/questions/66646394/dplyr-mutate-grouped-data-without-using-exact-column-name    
+- https://rdrr.io/cran/XLConnect/man/writeWorksheet-methods.html    
+  
 ```{r, Input loading}
 
 dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
@@ -99,6 +104,12 @@ combination = list(c("CTRL","AOA"), c("CTRL","2DG"), c("CTRL","DON"),
                    c("CTRLaK","AOAaK"), c("CTRLaK","DONaK"))
 
 ```
+
+We work with the output file of the last script of pre-processing steps (scRNAseq_CITEseq_R_ReductionDimension) : *merged_all_prep_1-40dim.rds*, the list of all genes in the database used for alignment and a correspondence table between gene name/symbol and there Ensembl_ID. As **output files**, we obtain GO dotplots and barplots and list of genes and ego results.  
+
+
+
+<br><br><br>
 
 
 
@@ -330,13 +341,41 @@ for (i in 1:length(list_quali_analysis)) {
 
 ```
 
-```{r, fig.height = 8, fig.width = 8}
+```{r}
 
 list_GO_plot_quali = unlist(list_quali_analysis,recursive=FALSE)
 list_GO_plot_quali = list_GO_plot_quali[str_detect(names(list_GO_plot_quali), "GO_results")]
 list_GO_plot_quali = unlist(list_GO_plot_quali,recursive=FALSE)
 list_GO_plot_quali = list_GO_plot_quali[str_detect(names(list_GO_plot_quali), "plot")]
-list_GO_plot_quali
+list_GO_plot_quali = lapply(list_GO_plot_quali, function(x) {x= x+theme(axis.text.y=element_text(size=8))})
+list_GO_plot_quali_dotplot = list_GO_plot_quali[str_detect(names(list_GO_plot_quali), "dotplot")]
+list_GO_plot_quali_barplot= list_GO_plot_quali[str_detect(names(list_GO_plot_quali), "barplot")]
+
+list_GO_plot_quali_dotplot_diff = list_GO_plot_quali_dotplot[str_detect(names(list_GO_plot_quali_dotplot), "diff")]
+list_GO_plot_quali_dotplot_inter = list_GO_plot_quali_dotplot[str_detect(names(list_GO_plot_quali_dotplot), "inter")]
+list_GO_plot_quali_dotplot_spe = list_GO_plot_quali_dotplot[str_detect(names(list_GO_plot_quali_dotplot), "Expressed|only")]
+
+list_GO_plot_quali_barplot_diff = list_GO_plot_quali_barplot[str_detect(names(list_GO_plot_quali_barplot), "diff")]
+list_GO_plot_quali_barplot_inter = list_GO_plot_quali_barplot[str_detect(names(list_GO_plot_quali_barplot), "inter")]
+list_GO_plot_quali_barplot_spe = list_GO_plot_quali_barplot[str_detect(names(list_GO_plot_quali_barplot), "Expressed|only")]
+
+```
+
+```{r, fig.width = 26, fig.height = 60}
+
+do.call("grid.arrange", c(list_GO_plot_quali_dotplot_diff, ncol = 4))
+
+```
+
+```{r, fig.width = 26, fig.height = 35}
+
+do.call("grid.arrange", c(list_GO_plot_quali_dotplot_inter, ncol = 4))
+
+```
+
+```{r, fig.width = 20, fig.height = 10}
+
+do.call("grid.arrange", c(list_GO_plot_quali_barplot_spe, ncol = 3))
 
 ```
 
@@ -364,15 +403,24 @@ openxlsx::write.xlsx(list_ggo, file = paste0(directory_output, "list_compCond_qu
 openxlsx::write.xlsx(list_ego, file = paste0(directory_output, "list_compCond_quali_ego.xlsx"))
 
 # Save plots
-for (i in 1:length(list_GO_plot_quali)) {
-  plot = list_GO_plot_quali[[i]]
-  if (str_detect(names(list_GO_plot_quali[i]), "barplot")) { suffix = "barplot.svg" }
-  if (str_detect(names(list_GO_plot_quali[i]), "dotplot")) { suffix = "dotplot.svg" }
-  prefix = str_extract(names(list_GO_plot_quali[i]), "[:graph:]+(?=.[:alpha:]{3}plot_25)")
-  ggsave(plot = plot,
-         filename = paste0(directory_output, prefix, "_quali_", suffix),
-         width = 8, height = 12)
-}
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quali_dotplot_diff, ncol = 7)),
+       filename = paste0(directory_output, "GO_compCond_quali_diff_dotplot.svg"),
+       width = 45, height = 35)
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quali_dotplot_inter, ncol = 6)),
+       filename = paste0(directory_output, "GO_compCond_quali_inter_dotplot.svg"),
+       width = 32, height = 16)
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quali_dotplot_spe, ncol = 3)),
+       filename = paste0(directory_output, "GO_compCond_quali_spe_dotplot.svg"),
+       width = 20, height = 8)
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quali_barplot_diff, ncol = 7)),
+       filename = paste0(directory_output, "GO_compCond_quali_diff_barplot.svg"),
+       width = 45, height = 30)
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quali_barplot_inter, ncol = 4)),
+       filename = paste0(directory_output, "GO_compCond_quali_inter_barplot.svg"),
+       width = 25, height = 22)
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quali_barplot_spe, ncol = 3)),
+       filename = paste0(directory_output, "GO_compCond_quali_spe_barplot.svg"),
+       width = 20, height = 8)
 
 ```
 
@@ -383,6 +431,11 @@ rm(list=setdiff(ls(), c("directory_output", "current_date", "start_time", "color
                         "GO_clusterProfiler_fun")))
 
 ```
+
+
+
+<br><br><br>
+
 
 
 # Quantitative analysis : differential analysis
@@ -529,7 +582,7 @@ for( i in 1:length(combination)) {
 
 ## Gene ontology
 
-We perform GO on list of genes from both method.
+We perform GO on list of genes from both methods.
 
 ```{r}
 
@@ -610,25 +663,65 @@ list_GO_plot_quanti = unlist(list_quanti_analysis,recursive=FALSE)
 list_GO_plot_quanti = list_GO_plot_quanti[str_detect(names(list_GO_plot_quanti), "GO_results")]
 list_GO_plot_quanti = unlist(unlist(list_GO_plot_quanti,recursive=FALSE), recursive=FALSE)
 list_GO_plot_quanti = list_GO_plot_quanti[str_detect(names(list_GO_plot_quanti), "plot")]
-list_GO_plot_quanti
+list_GO_plot_quanti = lapply(list_GO_plot_quanti, function(x) {x= x+theme(axis.text.y=element_text(size=8))})
+
+list_GO_plot_quanti_dotplot = list_GO_plot_quanti[str_detect(names(list_GO_plot_quanti), "dotplot")]
+list_GO_plot_quanti_barplot = list_GO_plot_quanti[str_detect(names(list_GO_plot_quanti), "barplot")]
+
+list_GO_plot_quanti_dotplot_avg_pos = list_GO_plot_quanti_dotplot[str_detect(names(list_GO_plot_quanti_dotplot), "avg_pos")]
+list_GO_plot_quanti_dotplot_avg_neg = list_GO_plot_quanti_dotplot[str_detect(names(list_GO_plot_quanti_dotplot), "avg_neg")]
+list_GO_plot_quanti_dotplot_FM_pos = list_GO_plot_quanti_dotplot[str_detect(names(list_GO_plot_quanti_dotplot), "FM_pos")]
+list_GO_plot_quanti_dotplot_FM_neg = list_GO_plot_quanti_dotplot[str_detect(names(list_GO_plot_quanti_dotplot), "FM_neg")]
+
+list_GO_plot_quanti_barplot_avg_pos = list_GO_plot_quanti_barplot[str_detect(names(list_GO_plot_quanti_barplot), "avg_pos")]
+list_GO_plot_quanti_barplot_avg_neg = list_GO_plot_quanti_barplot[str_detect(names(list_GO_plot_quanti_barplot), "avg_neg")]
+list_GO_plot_quanti_barplot_FM_pos = list_GO_plot_quanti_barplot[str_detect(names(list_GO_plot_quanti_barplot), "FM_pos")]
+list_GO_plot_quanti_barplot_FM_neg = list_GO_plot_quanti_barplot[str_detect(names(list_GO_plot_quanti_barplot), "FM_neg")]
 
 ```
 
-```{r, Save outputs quantitative}
+```{r, fig.width=16, fig.height = 50, results="hold"}
+
+# We only plot dotplot on the html file
+
+do.call("grid.arrange", c(list_GO_plot_quanti_dotplot_avg_pos, ncol = 3))
+do.call("grid.arrange", c(list_GO_plot_quanti_dotplot_avg_neg, ncol = 3))
+do.call("grid.arrange", c(list_GO_plot_quanti_dotplot_FM_pos, ncol = 3))
+do.call("grid.arrange", c(list_GO_plot_quanti_dotplot_FM_neg, ncol = 3))
+
+```
+
+```{r, Save outputs quantitative, fig.show="hide", results="hide"}
 
 # Save list of genes and tables for further R analysis
-saveRDS(list_quanti_analysis, paste0(directory_output, "list_CompCond_quanti.rds"))
+saveRDS(list_quanti_analysis, paste0(directory_output, "list_compCond_quanti.rds"))
 
 # Save plots
-for (i in 1:length(list_GO_plot_quanti)) {
-  plot = list_GO_plot_quanti[[i]]
-  if (str_detect(names(list_GO_plot_quanti[i]), "barplot")) { suffix = "barplot.svg" }
-  if (str_detect(names(list_GO_plot_quanti[i]), "dotplot")) { suffix = "dotplot.svg" }
-  prefix = str_extract(names(list_GO_plot_quanti[i]), "[:graph:]+(?=.[:alpha:]{3}plot_25)")
-  ggsave(plot = plot,
-         filename = paste0(directory_output, prefix, "_quanti_", suffix),
-         width = 8, height = 12)
-}
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quanti_dotplot_avg_pos, ncol = 6)),
+       filename = paste0(directory_output, "GO_compCond_quanti_avgpos_dotplot.svg"),
+       width = 40, height = 25)
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quanti_dotplot_avg_neg, ncol = 6)),
+       filename = paste0(directory_output, "GO_compCond_quanti_avgneg_dotplot.svg"),
+       width = 40, height = 25)
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quanti_dotplot_FM_pos, ncol = 6)),
+       filename = paste0(directory_output, "GO_compCond_quanti_FMpos_dotplot.svg"),
+       width = 40, height = 30)
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quanti_dotplot_FM_neg, ncol = 6)),
+       filename = paste0(directory_output, "GO_compCond_quanti_FMneg_dotplot.svg"),
+       width = 40, height = 25)
+
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quanti_barplot_avg_pos, ncol = 6)),
+       filename = paste0(directory_output, "GO_compCond_quanti_avgpos_barplot.svg"),
+       width = 40, height = 30)
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quanti_barplot_avg_neg, ncol = 6)),
+       filename = paste0(directory_output, "GO_compCond_quanti_avgneg_barplot.svg"),
+       width = 40, height = 30)
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quanti_barplot_FM_pos, ncol = 6)),
+       filename = paste0(directory_output, "GO_compCond_quanti_FMpos_barplot.svg"),
+       width = 40, height = 30)
+ggsave(plot = do.call("grid.arrange", c(list_GO_plot_quanti_barplot_FM_neg, ncol = 6)),
+       filename = paste0(directory_output, "GO_compCond_quanti_FMneg_barplot.svg"),
+       width = 40, height = 30)
 
 # Save excel file (list of genes and GO tables)
 list_genes = list()
@@ -671,7 +764,6 @@ for (i in 1:length(list_quanti_analysis)) {
 write.xlsx(list_genes, file = paste0(directory_output, "list_CompCond_quanti_genes.xlsx"))
 write.xlsx(list_ggo, file = paste0(directory_output, "list_CompCond_quanti_ggo.xlsx"))
 write.xlsx(list_ego, file = paste0(directory_output, "list_CompCond_quanti_ego.xlsx"))
-
 
 ```
 

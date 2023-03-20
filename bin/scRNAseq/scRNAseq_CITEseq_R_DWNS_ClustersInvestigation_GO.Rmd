@@ -1,0 +1,781 @@
+---
+title: "scRNAseq_CITEseq_R_DWNS_ClustersInvestigation_GO"
+author: "Laëtitia Racine"
+date: "2022-10-03"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(Seurat)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(gridExtra)
+library(tidyverse)
+library(kableExtra)
+library(org.Hs.eg.db) # GO functions
+library(clusterProfiler) # GO functions
+
+```
+
+```{r, Working directories and external script}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersInvestigation_GO/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersInvestigation_GO/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersInvestigation_GO/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Overview 
+
+This code aims at :    
+-  finding specific markers for each cluster        
+-  doing gene ontology on cluster specific markers    
+-  comparing clusters two by two when needed      
+  
+We work with the output file of the last script of pre-processing steps (scRNAseq_CITEseq_R_ReductionDimension) : *merged_all_prep_1-40dim.rds*, the list of all genes in the database used for alignment and a correspondence table between gene name/symbol and there Ensembl_ID. As **output files**, we obtain GO dotplots and barplots and list of markers and ego results.  
+  
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
+merged_prep = readRDS(file = paste0(dir, "/", "merged_all_prep_1-40dim.rds"))
+
+gene_universe = read.delim(paste0(directory, "data/scRNAseq/", 
+                                  "scRNAseq_CTRL_sample_feature_bc_matrix_features.tsv.gz"), 
+                                  header = FALSE)[,1]
+
+dir_corr = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_GenomePosition/"))
+tab_corr = read.csv2(paste0(dir_corr, "/scRNAseq_correspondence_tab_EnsemblID_geneName_genomePos.csv")) %>% 
+    dplyr::select(gene_symbol_dupl, ensembl_gene_id) %>%
+    dplyr::rename(gene = "gene_symbol_dupl") %>%
+    dplyr::distinct()  # to remove duplicated genes
+
+```
+
+As a reminder, here are the clusters we identified in the dataset.
+
+```{r, Show clusters, fig.width = 6, fig.height = 4}
+
+DimPlot(merged_prep,
+        label = TRUE,
+        reduction = "umap",
+        group.by = "clusters")
+
+```
+
+And the cell's distribution among conditions. 
+
+```{r, Show conditions, fig.width = 22, fig.height = 16}
+
+umap_highlight = function(seurat_obj, color_code) {
+
+  ind_umap = list()
+
+  for (i in 1:length(unique(seurat_obj$orig.ident))) {
+
+  # Select condition to highlight
+  highlight_cond = unique(seurat_obj$orig.ident)[i]
+  color = unname(noquote(color_code[highlight_cond]))
+  others_cond = setdiff(unique(seurat_obj$orig.ident), highlight_cond)
+  others_cond_group = paste(others_cond, collapse=", ")
+
+  # Sort cell according to their condition
+  cell_highlight = unlist(CellsByIdentities(object = seurat_obj, idents = highlight_cond))
+  cell_nohighlight = unlist(CellsByIdentities(object = seurat_obj, idents = others_cond))
+
+  # Plot
+  plot_umap = DimPlot(object = seurat_obj,
+                      group.by = "orig.ident",
+                      reduction ="umap",
+                      pt.size = 0.05,
+                      cells.highlight = list(cell_highlight, cell_nohighlight),
+                      cols.highlight = c(color,"grey")) +
+    ggtitle(highlight_cond) +
+    theme(legend.position = "none")
+
+  ind_umap[[i]] = plot_umap
+
+  }
+
+  # function's output
+  return(ind_umap)
+
+}
+
+merged_prep = SetIdent(object = merged_prep, value = "orig.ident")
+umap_hl = umap_highlight(merged_prep, color_code)
+do.call("grid.arrange", c(umap_hl, ncol = 3))
+
+```
+
+Based on documentation :  
+  
+- FindAllMarkers : find markers differentially expressed (positive = overexpressed, negative = underexpressed) in each identity group (cluster => specified in ident.1) by comparing to all of the others.    
+*Useful for identifying unknown clusters and improving confidence in hypothesized cell types.*   
+https://satijalab.org/seurat/reference/findallmarkers  
+https://satijalab.org/seurat/articles/pbmc3k_tutorial.html  
+https://www.biostars.org/p/410170/   
+  
+- FindConservedMarkers : find the similarity between two groups (it means they are differentially expressed compared to other groups, but have similar expression between the two groups you're actually comparing)    
+*Useful with more than one condition to identify cell type markers that are conserved across conditions.*    
+https://satijalab.org/seurat/reference/findconservedmarkers  
+  
+- FindMarkers : find the differences between two groups      
+*Useful for determining differences in gene expression between clusters that appear to be representing the same cell type (i.e with markers that are similar) from the above analyses.*    
+    
+- https://satijalab.org/seurat/archive/v3.1/immune_alignment.html    
+- https://bioinformatics.stackexchange.com/questions/16098/positive-marker-and-negative-marker-in-scrna-seq-datasets  
+- https://github.com/satijalab/seurat/issues/2724   
+- https://hbctraining.github.io/scRNA-seq/lessons/09_merged_SC_marker_identification.html   
+- https://hbctraining.github.io/scRNA-seq/lessons/sc_exercises_integ_marker_identification.html  
+  
+Workflow : we use FindAllMarkers at the beginning to define specific markers for each cluster. If some clusters are really close and we want to distinguish them (for example, attribute a cell type), we can use FindConservedMarkers function (this function accept a single cluster at the time) => not useful here. It is possible that some clusters correspond to the same cell type. After identifying the cell type in the clusters, we want to know whether they have biologically meaningful differences. Sometimes the list of markers returned don’t sufficiently separate some of the clusters so we use FindMarkers function.  
+  
+  
+  
+<br><br><br>
+
+
+
+# FindAllMarkers - Identify cell type
+
+<br>
+
+"This analysis compares each cluster against all others and outputs the genes that are differentially expressed/present. Usually the top markers are relatively trustworthy, but because of inflated p-values, many of the less significant genes are not so trustworthy as markers."    
+  
+In the output, pct.1 is the percentage of cells in the cluster where the gene is detected, while pct.2 is the percentage of cells on average in all the other clusters where the gene is detected. A gene to be considered as an IDEAL cluster marker is expected to be expressed exclusively in that cluster and silenced in all others and thus pct.1 will be more towards 1 and pct.2 towards 0.    
+avg_log2FC > 0 => positive marker => gene overexpressed in the population      
+avg_log2FC < 0 => negative marker => gene underexpressed in the population      
+
+## Extract specific markers for each clusters and select the more relevant
+
+```{r, FindAllMarkers}
+
+Idents(merged_prep) = "clusters"
+
+clust_markers = FindAllMarkers(object = merged_prep,
+                               assay = "SCT",
+                               features = NULL, #use all genes
+                               logfcthreshold = 0.25, #default
+                               test.use = "wilcox", #default
+                               slot = "data",
+                               only.pos = TRUE,
+                               min.pct = 0.1, #default
+                               random.seed = 42)
+
+saveRDS(object = clust_markers, paste0(directory_output, "clust_markers.rds"))
+
+```
+
+```{r, Select relevant markers}
+
+# filter on p value adjusted
+cat("We remove markers with p_val_adj superior to 0.05.")
+clust_markers = clust_markers %>% dplyr::filter(p_val_adj < 0.05)
+
+# Extract top 20 of positive markers based on avg_log2FC only 
+cat("We keep the positive markers with the biggest average_log2FC for each cluster.")
+top20_pos = clust_markers %>%
+  dplyr::filter(avg_log2FC >= 0) %>%
+  dplyr::group_by(cluster) %>%
+  top_n(n=20, wt = avg_log2FC) %>%
+  dplyr::select(cluster, gene, p_val_adj, everything())
+
+# positive markers : calcul the difference between pct1 and pct2
+cat("We filter the positive markers to keep those with a difference > to 0.25 between pct.1 and pct.2.")
+top20_pos_filtered = clust_markers %>% 
+  dplyr::filter(avg_log2FC >= 0) %>%
+  dplyr::mutate(diff = pct.1 - pct.2) %>%
+  dplyr::filter(diff > 0.25) %>%
+  dplyr::group_by(cluster) %>%
+  top_n(n=20, wt = avg_log2FC) %>%
+  dplyr::select(cluster, gene, p_val_adj, everything()) %>%
+  dplyr::select(-diff)
+
+# Summary markers
+summary_clust = data.frame(cluster = 0:16, 
+                           nb_pos_markers = as.vector(table(top20_pos$cluster)),
+                           nb_pos_markers_filtered = as.vector(table(top20_pos_filtered$cluster)))
+
+summary_clust %>% 
+  kable() %>% 
+  kable_styling()
+
+```
+
+## Perform GO on the top 20 positive markers we found 
+
+```{r, GO on markers, results = "hide"}
+
+list_GO_analysis = list()
+
+for (i in 1:length(unique(clust_markers$cluster))) {
+  
+  cat("Cluster", i-1, "\n")
+  
+  # positive markers without filter
+  markers = (top20_pos %>% dplyr::filter(cluster == i-1))$gene
+  GO_clust = GO_clusterProfiler_fun(
+    tab_corr = tab_corr,
+    list_gene = data.frame(markers),
+    gene_universe = gene_universe,
+    title_plot = paste0("PosMarkers no filter - Clust", i-1)
+  )
+  list_GO_analysis$pos_markers[[paste0("cluster_",i)]] = GO_clust
+  
+  # positive markers with filter
+  markers = (top20_pos_filtered %>% dplyr::filter(cluster == i-1))$gene
+  GO_clust = GO_clusterProfiler_fun(
+    tab_corr = tab_corr,
+    list_gene = data.frame(markers),
+    gene_universe = gene_universe,
+    title_plot = paste0("PosMarkers filter - Clust", i-1)
+  )
+  list_GO_analysis$pos_markers_filter[[paste0("cluster_",i)]] = GO_clust
+  
+}
+
+```
+
+```{r, fig.width = 20, fig.height = 60}
+
+list_GO_plot = unlist(unlist(list_GO_analysis,recursive=FALSE),recursive=FALSE)
+list_GO_plot = list_GO_plot[str_detect(names(list_GO_plot), "plot")]
+list_GO_plot = lapply(list_GO_plot, function(x) {x= x+theme(axis.text.y=element_text(size=8))})
+list_GO_barplot = list_GO_plot[str_detect(names(list_GO_plot), "barplot")]
+list_GO_dotplot = list_GO_plot[str_detect(names(list_GO_plot), "dotplot")]
+list_GO_barplot_filter = list_GO_barplot[str_detect(names(list_GO_barplot), "filter")]
+list_GO_dotplot_filter = list_GO_dotplot[str_detect(names(list_GO_dotplot), "filter")]
+list_GO_barplot_nofilter = list_GO_barplot[!names(list_GO_barplot) %in% names(list_GO_barplot_filter)]
+list_GO_dotplot_nofilter = list_GO_dotplot[!names(list_GO_dotplot) %in% names(list_GO_dotplot_filter)]
+  
+do.call("grid.arrange", c(list_GO_dotplot_filter, ncol = 3))
+
+```
+
+## Visualize expression of the top 20 positive markers 
+
+```{r, heatmap,  fig.height = 26, fig.width = 14}
+
+pos_heatmap = DoHeatmap(object = subset(merged_prep, downsample = 200),
+                        features = top20_pos_filtered$gene)
+pos_heatmap
+
+```
+
+```{r, dotplot, fig.height = 30, fig.width = 14}
+
+dotplot = DotPlot(object = merged_prep, 
+                  features = unique(top20_pos_filtered$gene), 
+                  dot.scale = 8) + coord_flip()
+dotplot
+
+```
+
+```{r, violin plot, fig.width = 16, fig.height = 36}
+
+genes = unique(top20_pos_filtered$gene)
+genes1 = genes[1:(length(genes)/4)]
+genes2 = genes[((length(genes)/4)+1):((length(genes)/4)*2)]
+genes3 = genes[((length(genes)/4)*2+1):((length(genes)/4)*3)]
+genes4 = genes[((length(genes)/4)*3+1):length(genes)]
+
+vln_1 = VlnPlot(object = merged_prep, features = genes1)
+vln_2 = VlnPlot(object = merged_prep, features = genes2)
+vln_3 = VlnPlot(object = merged_prep, features = genes3)
+vln_4 = VlnPlot(object = merged_prep, features = genes4)
+
+vln_1
+vln_2
+vln_3
+vln_4
+
+```
+
+```{r, feature plot, fig.width = 24, fig.height = 24}
+
+top2 = top20_pos_filtered %>%
+  dplyr::group_by(cluster) %>%
+  top_n(n=2, wt = avg_log2FC)
+
+featureplot = FeaturePlot(object = merged_prep, features = unique(top2$gene))
+featureplot
+
+```
+
+```{r, fig.show="hide", results="hide"}
+
+write.csv2(clust_markers, file = paste0(directory_output, "clust_markers.csv"), row.names = FALSE)
+write.csv2(top20_pos, file = paste0(directory_output, "top20_pos_markers.csv"), row.names = FALSE)
+write.csv2(top20_pos_filtered, file = paste0(directory_output, "top20_pos_filtered_markers.csv"), row.names = FALSE)
+saveRDS(object = list_GO_analysis, file = paste0(directory_output, "list_GO_clust.rds"))
+
+# Save GO plots
+ggsave(plot = do.call("grid.arrange", c(list_GO_dotplot_nofilter, ncol = 7)),
+       filename = paste0(directory_output, "GO_clust_dotplot_nofilter.svg"),
+       width = 40, height = 34)
+ggsave(plot = do.call("grid.arrange", c(list_GO_dotplot_filter, ncol = 7)),
+       filename = paste0(directory_output, "GO_clust_dotplot_filter.svg"),
+       width = 40, height = 34)
+ggsave(plot = do.call("grid.arrange", c(list_GO_barplot_nofilter, ncol = 7)),
+       filename = paste0(directory_output, "GO_clust_barplot_nofilter.svg"),
+       width = 40, height = 34)
+ggsave(plot = do.call("grid.arrange", c(list_GO_barplot_filter, ncol = 7)),
+       filename = paste0(directory_output, "GO_clust_barplot_filter.svg"),
+       width = 40, height = 34)
+
+## Save markers plots (feature and vln plot too big to be saved)
+ggsave(plot = pos_heatmap, width = 14, height = 24,
+       filename = paste0(directory_output, "clust_pos_markers_heatmap.svg"))
+ggsave(plot = dotplot, width = 16, height = 30,
+       filename = paste0(directory_output, "clust_pos_markers_dotplot.svg"))
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Focus on specific clusters 
+
+## Cluster 11 and 16 (manually added based on visual conditions comparison)
+
+```{r, clust11vs16 calcul}
+
+cluster11vs16.markers = FindMarkers(object = merged_prep,
+                                ident.1 = 11,
+                                ident.2 = 16,
+                                min.pct = 0.1,
+                                assay = "SCT",
+                                slot = "data",
+                                logfc.threshold = 0.25) %>% 
+  rownames_to_column(var = "gene")  %>%
+  dplyr::filter(p_val_adj <= 0.05) %>%
+  dplyr::arrange(p_val_adj)
+
+head(cluster11vs16.markers, n = 10)
+
+```
+
+```{r, clust11vs16 plot, fig.height = 12, fig.width = 16}
+
+cat("Positive markers (cluster 11 overexpressed compared to cluster 16)")
+cluster11vs16.posmarkers = cluster11vs16.markers %>% dplyr::filter(avg_log2FC >= 0)
+head(cluster11vs16.posmarkers, n = 10)
+plot_clust11_vs_16_pos = FeaturePlot(object = merged_prep,
+                                     features = head(cluster11vs16.posmarkers, n = 10)$gene)
+plot_clust11_vs_16_pos
+
+cat("Negative markers (cluster 11 underexpressed compared to cluster 16)")
+cluster11vs16.negmarkers = cluster11vs16.markers %>% dplyr::filter(avg_log2FC < 0)
+head(cluster11vs16.negmarkers, n = 10)
+plot_clust11_vs_16_neg = FeaturePlot(object = merged_prep,
+                                     features = head(cluster11vs16.negmarkers, n = 10)$gene)
+plot_clust11_vs_16_neg
+
+```
+
+```{r, clust11vs16 GO, results = "hide"}
+
+GO_clust_pos = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                  gene_universe = gene_universe,
+                                  list_gene = data.frame(cluster11vs16.posmarkers$gene),
+                                  title_plot = paste0("cluster11_vs_cluster16_posmarkers"))
+GO_clust_neg = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                  gene_universe = gene_universe,
+                                  list_gene = data.frame(cluster11vs16.negmarkers$gene),
+                                  title_plot = paste0("cluster11_vs_cluster16_negmarkers"))
+
+```
+
+```{r, clust11vs16 GO plots, fig.height = 10, fig.width = 20}
+
+g1 = GO_clust_pos$dotplot_25 + theme(axis.text.y = element_text(size = 8))
+g2 = GO_clust_neg$dotplot_25 + theme(axis.text.y = element_text(size = 8))
+
+g1 | g2
+
+```
+
+```{r, save clust 11 vs 16, results ="hide", fig.show="hide"}
+
+ggsave(plot = plot_clust11_vs_16_pos, width = 14, height = 10,
+       filename = paste0(directory_output, "clust11_vs_16_pos_featureplot.svg"))
+ggsave(plot = plot_clust11_vs_16_neg, width = 14, height = 10,
+       filename = paste0(directory_output, "clust11_vs_16_neg_featureplot.svg"))
+ggsave(plot = g1 | g2, width = 16, height = 12,
+       filename = paste0(directory_output, "GO_clust11_vs_16_pos_neg.svg"))
+
+```
+
+
+## Cluster 8, 11, 14 and 15 specific to AOA
+
+**cluster8 against all others**  
+```{r, clust8 calcul}
+
+cluster8_markers <- FindMarkers(object = merged_prep, 
+                                ident.1 = 8,
+                                ident.2 = NULL,
+                                min.pct = 0.1,
+                                assay = "SCT",
+                                slot = "data",
+                                logfc.threshold = 0.25,
+                                only.pos = FALSE) %>%
+  rownames_to_column(var = "gene")  %>%
+  dplyr::filter(p_val_adj <= 0.05) %>%
+  dplyr::arrange(p_val_adj)
+
+head(cluster8_markers, n = 10)
+
+```
+
+```{r, clust8 plot, fig.width = 14, fig.height = 10}
+
+cat("Positive markers (overexpressed in cluster 8)")
+cluster8_posmarkers = cluster8_markers %>% dplyr::filter(avg_log2FC >= 0)
+head(cluster8_posmarkers, n = 10)
+plot_clust8_pos = FeaturePlot(object = merged_prep,
+                        features = head(cluster8_posmarkers, n = 10)$gene)
+plot_clust8_pos
+
+
+cat("Negative markers (underexpressed in cluster 8)")
+cluster8_negmarkers = cluster8_markers %>% dplyr::filter(avg_log2FC < 0)
+head(cluster8_negmarkers, n = 10)
+plot_clust8_neg = FeaturePlot(object = merged_prep,
+                              features = head(cluster8_negmarkers, n = 10)$gene)
+plot_clust8_neg
+
+```
+
+**cluster8 against all others except AOA specific clusters(11,14,15)** 
+```{r, clust8 filter calcul}
+
+cluster8_markers_bis <- FindMarkers(object = merged_prep, 
+                                    ident.1 = 8,
+                                    ident.2 = c(0,1,2,3,4,5,6,7,9,10,12,13,16),
+                                    min.pct = 0.1,
+                                    assay = "SCT",
+                                    slot = "data",
+                                    logfc.threshold = 0.25,
+                                    only.pos = FALSE) %>%
+  rownames_to_column(var = "gene")  %>%
+  dplyr::filter(p_val_adj <= 0.05) %>%
+  dplyr::arrange(p_val_adj)
+
+head(cluster8_markers_bis, n = 10)
+
+# We keep only markers that are highly expressed in cluster8 and not the others
+cluster8_markers_bis = cluster8_markers_bis %>%
+  dplyr::mutate(diff = pct.1 - pct.2) %>%
+  dplyr::filter(diff > 0.25)
+  
+head(cluster8_markers_bis, n = 10)
+
+```
+
+```{r, clust8 filter plot, fig.width = 14, fig.height = 10}
+
+cat("Positive markers (overexpressed in cluster 8)")
+cluster8_posmarkers_bis = cluster8_markers_bis %>% dplyr::filter(avg_log2FC >= 0)
+head(cluster8_posmarkers_bis, n = 10)
+plot_clust8_pos_bis = FeaturePlot(object = merged_prep,
+                                  features = head(cluster8_posmarkers_bis, n = 10)$gene)
+plot_clust8_pos_bis
+
+
+cat("Negative markers (overexpressed in cluster 8)")
+cluster8_negmarkers_bis = cluster8_markers_bis %>% dplyr::filter(avg_log2FC < 0)
+head(cluster8_negmarkers_bis, n = 10)
+cat("No markers")
+
+```
+
+**cluster11 against all others except AOA specific clusters(8,14,15)** 
+```{r, clust11 calcul}
+
+cluster11_markers <- FindMarkers(object = merged_prep, 
+                            ident.1 = 11,
+                            ident.2 = c(0,1,2,3,4,5,6,7,9,10,12,13,16),
+                            min.pct = 0.1,
+                            assay = "SCT",
+                            slot = "data",
+                            logfc.threshold = 0.25,
+                            only.pos = FALSE) %>%
+  rownames_to_column(var = "gene")  %>%
+  dplyr::filter(p_val_adj <= 0.05) %>%
+  dplyr::arrange(p_val_adj)
+
+head(cluster11_markers, n = 10)
+
+```
+
+```{r, clust11 plot,  fig.width = 14, fig.height = 10}
+
+cat("Positive markers (overexpressed in cluster 11)")
+cluster11_posmarkers = cluster11_markers %>% dplyr::filter(avg_log2FC >= 0)
+head(cluster11_posmarkers, n = 10)
+plot_clust11_pos = FeaturePlot(object = merged_prep,
+                               features = head(cluster11_posmarkers, n = 10)$gene)
+plot_clust11_pos
+
+
+cat("Negative markers (overexpressed in cluster 11)")
+cluster11_negmarkers = cluster11_markers %>% dplyr::filter(avg_log2FC < 0)
+head(cluster11_negmarkers, n = 10)
+plot_clust11_neg = FeaturePlot(object = merged_prep,
+                               features = head(cluster11_negmarkers, n = 10)$gene)
+plot_clust11_neg
+
+```
+
+**cluster14 against all others except AOA specific clusters(8,11,15)** 
+```{r, clust14 calcul}
+
+cluster14_markers <- FindMarkers(object = merged_prep, 
+                            ident.1 = 14,
+                            ident.2 = c(0,1,2,3,4,5,6,7,9,10,12,13,16),
+                            min.pct = 0.1,
+                            assay = "SCT",
+                            slot = "data",
+                            logfc.threshold = 0.25,
+                            only.pos = FALSE) %>%
+  rownames_to_column(var = "gene")  %>%
+  dplyr::filter(p_val_adj <= 0.05) %>%
+  dplyr::arrange(p_val_adj)
+
+head(cluster14_markers, n = 10)
+
+```
+
+```{r, clust14 plot, fig.width = 14, fig.height = 10}
+
+cat("Positive markers (overexpressed in cluster 14)")
+cluster14_posmarkers = cluster14_markers %>% dplyr::filter(avg_log2FC >= 0)
+head(cluster14_posmarkers, n = 10)
+plot_clust14_pos = FeaturePlot(object = merged_prep,
+                               features = head(cluster14_posmarkers, n = 10)$gene)
+plot_clust14_pos
+
+
+cat("Negative markers (overexpressed in cluster 14)")
+cluster14_negmarkers = cluster14_markers %>% dplyr::filter(avg_log2FC < 0)
+head(cluster14_negmarkers, n = 10)
+plot_clust14_neg = FeaturePlot(object = merged_prep,
+                               features = head(cluster14_negmarkers, n = 10)$gene)
+plot_clust14_neg
+
+```
+
+**cluster15 against all others except AOA specific clusters(8,11,14)** 
+```{r, clust15 calcul}
+
+cluster15_markers <- FindMarkers(object = merged_prep, 
+                            ident.1 = 15,
+                            ident.2 = c(0,1,2,3,4,5,6,7,9,10,12,13,16),
+                            min.pct = 0.1,
+                            assay = "SCT",
+                            slot = "data",
+                            logfc.threshold = 0.25,
+                            only.pos = FALSE) %>%
+  rownames_to_column(var = "gene")  %>%
+  dplyr::filter(p_val_adj <= 0.05) %>%
+  dplyr::arrange(p_val_adj)
+
+head(cluster15_markers, n = 10)
+
+```
+
+```{r, clust15 plot, fig.width = 14, fig.height = 10}
+
+cat("Positive markers (overexpressed in cluster 15)")
+cluster15_posmarkers = cluster15_markers %>% dplyr::filter(avg_log2FC >= 0)
+head(cluster15_posmarkers, n = 10)
+plot_clust15_pos = FeaturePlot(object = merged_prep,
+                               features = head(cluster15_posmarkers, n = 10)$gene)
+plot_clust15_pos
+
+
+cat("Negative markers (overexpressed in cluster 15)")
+cluster15_negmarkers = cluster15_markers %>% dplyr::filter(avg_log2FC < 0)
+head(cluster15_negmarkers, n = 10)
+plot_clust15_neg = FeaturePlot(object = merged_prep,
+                               features = head(cluster15_negmarkers, n = 10)$gene)
+plot_clust15_neg
+
+```
+
+**search of common positive markers for AOA specific markers (8,11,14,15)** 
+```{r, common pos markers for AOA specific clusters}
+
+a = cluster8_posmarkers$gene
+b = cluster11_posmarkers$gene
+c = cluster14_posmarkers$gene
+d = cluster15_posmarkers$gene
+
+pos_intersect = Reduce(intersect, list(a,b,c,d))
+
+```
+
+```{r, common heatmap, fig.width = 8, fig.height = 6}
+
+common_AOA_ht = DoHeatmap(object = subset(merged_prep, downsample = 200),
+                          features = pos_intersect)
+common_AOA_ht
+
+```
+
+```{r, common vln, fig.width = 14, fig.height = 4}
+
+common_AOA_vln = VlnPlot(object = merged_prep, features = pos_intersect)
+common_AOA_vln
+
+```
+
+```{r, common feature, fig.height=4, fig.width = 14}
+
+common_AOA_ft = FeaturePlot(object = merged_prep, 
+                            features = pos_intersect,
+                            max.cutoff = 5, 
+                            ncol = 3)
+common_AOA_ft
+
+```
+
+**GO on all list of markers**
+```{r, GO, results = "hide"}
+
+GO_clust_8 = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                    gene_universe = gene_universe,
+                                    list_gene = data.frame(cluster8_posmarkers_bis$gene),
+                                    title_plot = paste0("cluster8_posmarkers"))
+GO_clust_11 = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                     gene_universe = gene_universe,
+                                     list_gene = data.frame(cluster11_posmarkers$gene),
+                                     title_plot = paste0("cluster11_posmarkers"))
+GO_clust_14 = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                     gene_universe = gene_universe,
+                                     list_gene = data.frame(cluster14_posmarkers$gene),
+                                     title_plot = paste0("cluster14_posmarkers"))
+GO_clust_15 = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                     gene_universe = gene_universe,
+                                     list_gene = data.frame(cluster15_posmarkers$gene),
+                                     title_plot = paste0("cluster15_posmarkers"))
+GO_common_8_11_14_15 = GO_clusterProfiler_fun(tab_corr = tab_corr,
+                                              gene_universe = gene_universe,
+                                              list_gene = data.frame(pos_intersect),
+                                              title_plot = paste0("common_AOA_posmarkers"))
+
+```
+
+```{r, GO plots all results, fig.width = 18, fig.height=20}
+
+p1 = GO_clust_8$dotplot_25 + theme(axis.text.y = element_text(size = 8))
+p2 = GO_clust_11$dotplot_25 + theme(axis.text.y = element_text(size = 8))
+p3 = GO_clust_14$dotplot_25 + theme(axis.text.y =  element_text(size = 8))
+p4 = GO_clust_15$dotplot_25 + theme(axis.text.y = element_text(size = 8))
+  
+(p1 | p2) / (p3 | p4)
+
+```
+
+```{r, fig.width = 14, fig.height=5}
+
+p5 = GO_common_8_11_14_15$dotplot_25 + 
+  coord_flip() + 
+  theme(axis.text.x = element_text(angle = 90, size = 8))
+p5
+
+```
+
+```{r, save clust AOA specific, results="hide", fig.show = "hide"}
+
+ggsave(plot = plot_clust8_pos, width = 14, height = 10,
+       filename = paste0(directory_output, "clust8_vs_all_posmarkers_featureplot.svg"))
+ggsave(plot = plot_clust8_neg, width = 14, height = 10,
+       filename = paste0(directory_output, "clust8_vs_all_negmarkers_featureplot.svg"))
+ggsave(plot = plot_clust8_pos_bis, width = 14, height = 10,
+       filename = paste0(directory_output, "clust8_vs_allbutAOA_posmarkers_featureplot.svg"))
+ggsave(plot = plot_clust11_pos, width = 14, height = 10,
+       filename = paste0(directory_output, "clust11_vs_allbutAOA_posmarkers_featureplot.svg"))
+ggsave(plot = plot_clust11_neg, width = 14, height = 10,
+       filename = paste0(directory_output, "clust11_vs_allbutAOA_negmarkers_featureplot.svg"))
+ggsave(plot = plot_clust14_pos, width = 14, height = 10,
+       filename = paste0(directory_output, "clust14_vs_allbutAOA_posmarkers_featureplot.svg"))
+ggsave(plot = plot_clust14_neg, width = 14, height = 10,
+       filename = paste0(directory_output, "clust14_vs_allbutAOA_negmarkers_featureplot.svg"))
+ggsave(plot = plot_clust15_pos, width = 14, height = 10,
+       filename = paste0(directory_output, "clust15_vs_allbutAOA_posmarkers_featureplot.svg"))
+ggsave(plot = plot_clust15_neg, width = 14, height = 10,
+       filename = paste0(directory_output, "clust15_vs_allbutAOA_negmarkers_featureplot.svg"))
+
+ggsave(plot = common_AOA_ht, 
+       filename = paste0(directory_output, "common_clustAOA_heatmap.svg"))
+ggsave(plot = common_AOA_vln, width = 14, height = 5,
+       filename = paste0(directory_output, "common_clustAOA_violinplot.svg"))
+ggsave(plot = common_AOA_ft, width = 14, height = 4,
+       filename = paste0(directory_output, "common_clustAOA_featureplot.svg"))
+
+ggsave(plot = (p1 | p2) / (p3 | p4), width = 16, height=24,
+       filename = paste0(directory_output, "GO_clust_AOA_posmarkers.svg"))
+ggsave(plot = p5, width = 14, height = 5,
+       filename = paste0(directory_output, "GO_common_AOA_posmarkers.svg"))
+
+```
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results="hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+

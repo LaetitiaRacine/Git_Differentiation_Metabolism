@@ -49,9 +49,12 @@ Based on documentations :
 - https://github.com/satijalab/seurat/issues/4372      
 - https://github.com/satijalab/seurat/discussions/3998      
 - https://satijalab.org/seurat/archive/v3.1/integration.html      
-- https://blog.bioturing.com/2022/03/24/batch-effect-in-single-cell-rna-seq-frequently-asked-questions-and-answers/      
-Question ask on the github forum : https://github.com/satijalab/seurat/issues/6616    
-    
+- https://blog.bioturing.com/2022/03/24/batch-effect-in-single-cell-rna-seq-frequently-asked-questions-and-answers/  
+  
+We followed here the indications given on the question I asked on the github forum : https://github.com/satijalab/seurat/issues/6616  
+  
+This code doesn't have **output files**, it's only a test code to determine the better option to perform the remaining analysis.  
+
 ```{r, Working directories and external script}
 
 # Load working directories

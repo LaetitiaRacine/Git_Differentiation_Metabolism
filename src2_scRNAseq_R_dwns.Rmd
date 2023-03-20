@@ -1,0 +1,310 @@
+---
+title: "scRNAseq_CITEseq_DWNS_src"
+author: "Laëtitia Racine"
+date: "2023-01-11"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+This script is a "knit_all" document. It allows to run all the scripts from downstream analysis for scRNAseq-CITE-seq dataset and produce the html report in the *report* folder. There is no order between the scripts except for CorrelationADTRNA and STEMNET. Others can be run in any order. The pre-processing steps must be completed before to launch this document. See src1_scRNAseq_R_preprocessing.RmD. 
+  
+# scRNAseq_CITEseq_GenomePosition_GeneNameCountMatrix.Rmd
+
+*OBJECTIVE*  
+- create a correspondence tab with gene symbol, ENsembl_ID and gene position (molecular and cytogenetic informations)  
+
+*INPUTS*    
+- scRNAseq_CTRL_sample_feature_bc_matrix_features.tsv.gz (cf. data)
+- Homo_sapiens.gene_info.gz (cf.data)
+
+*OUTPUT*  
+- scRNAseq_correspondence_tab_EnsemblID_geneName_genomePos.csv  
+
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, 
+                                 "/bin/scRNAseq/", 
+                                 "scRNAseq_CITEseq_GenomePosition_GeneNameCountMatrix.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), 
+                                       '_', 
+                                       "scRNAseq_CITEseq_GenomePosition_GeneNameCountMatrix.html"))
+
+```
+
+
+# scRNAseq_CITEseq_R_DWNS_ClustersStatistics.Rmd
+
+*OBJECTIVES*        
+- visualize cell's distribution in clusters depending on their culture condition  
+- create table with percentage of cells from each condition in each cluster    
+- create table with percentage of cells from each cluster in each condition  
+- create bar plots and pie plots  
+  
+*INPUTS*       
+- merged_all-1-40dim.rds (cf. scRNAseq_CITEseq_R_ReductionDimension.Rmd)  
+- functions_constants.R    
+    
+*OUTPUTS*    
+- tab_number_cells_clusters.csv  
+- tab_number_norm_cells_clusters.csv  
+- bp_clust.svg  
+- bp_cond.svg  
+- bp_number.svg  
+- pie_cond.svg  
+- pie_clust.svg  
+  
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, 
+                                 "/bin/scRNAseq/", 
+                                 "scRNAseq_CITEseq_R_DWNS_ClustersStatistics.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), 
+                                       '_', 
+                                       "scRNAseq_CITEseq_R_DWNS_ClustersStatistics.html"))
+
+```
+
+
+# scRNAseq_CITEseq_R_DWNS_CorrelationADTRNA.Rmd
+
+*OBJECTIVES*  
+ - visualize the proteins distribution in the cell population to identify outliers  
+ - visualize RNA and ADT expression on UMAP per condition to compare  
+ - define groups of cells with high/low level of expression of those proteins  
+ - define groups of cells with high/medium/low level of expression of those proteins
+ - visualize groups of cells on UMAP  
+ - visualize groups of cells in the clusters and in the conditions  
+  
+*INPUTS*       
+- merged_all_1-40dim.rds (cf. scRNAseq_CITEseq_R_ReductionDimension.Rmd)      
+- functions_constants.R  
+    
+*OUTPUTS*  
+- tab_raw_cond_two_groups.csv  
+- tab_norm_cond_two_groups.csv  
+- tab_percent_cond_two_groups.csv  
+- tab_raw_cond_three_groups.csv  
+- tab_norm_cond_three_groups.csv  
+- tab_percent_cond_three_groups.csv  
+- tab_raw_clusters_two_groups.csv  
+- tab_norm_clusters_two_groups.csv  
+- tab_percent_clusters_two_groups.csv  
+- tab_raw_clusters_three_groups.csv  
+- tab_norm_clusters_three_groups.csv  
+- tab_percent_clusters_three_groups.csv  
+- adt_distri_expr.svg  
+- umap_adt_cd34.svg  
+- umap_adt_cd133.svg  
+- umap_rna_cd34.svg  
+- umap_rna_cd133.svg  
+- umap_adt_cd34_twogroups.svg  
+- umap_adt_cd133_twogroups.svg  
+- umap_adt_cd34_threegroups.svg  
+- umap_adt_cd133_threegroups.svg  
+- scatter_plot_adt.svg  
+- umap_adt_clusters_twogroups.svg  
+- umap_adt_clusters_threegroups.svg  
+- vln_adt_clusters.svg  
+- merged_all_CITEgroups.rds  
+  
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, 
+                                 "/bin/scRNAseq/", 
+                                 "scRNAseq_CITEseq_R_DWNS_CorrelationADTRNA.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), 
+                                       '_', 
+                                       "scRNAseq_CITEseq_R_DWNS_CorrelationADTRNA.html"))
+
+```
+
+
+# scRNAseq_CITEseq_R_DWNS_CompareConditions_GO.Rmd
+
+*OBJECTIVES*          
+- transform gene expression matrix into binary matrix (on/off analysis)    
+- extract list of genes lost across conditions    
+- extract list of genes conserved across conditions    
+- extract list of genes expressed in all conditions simultaneously     
+- extract list of genes never expressed simultaneously  
+- extract list of genes expressed only in CTRL  
+- extract list of genes expressed only in AOA  
+- extract list of genes expressed only in 2DG  
+- perform GO on the lists and plot the results  
+- extract visual outliers with qualitative analysis  
+- extract list of genes with FindMarkers qualitative analysis  
+- perform GO on list of genes from qualitative analysis and plot the results  
+
+*INPUTS*      
+- merged_all_prep_1-40dim.rds (cf. scRNAseq_CITEseq_R_ReductionDimension.Rmd)   
+- functions_constants.R  
+- scRNAseq_correspondence_tab_EnsemblID_geneName_genomePos.csv (cf. scRNAseq_CITEseq_R_GenomePosition folder)  
+- scRNAseq_CTRL_sample_feature_bc_matrix_features.tsv.gz (cf. data folder)  
+        
+*OUTPUTS*  
+- list_binary_mat.rds  
+- list_compCond_quali.rds  
+- list_compCond_quali_genes.xlsx  
+- list_compCond_quali_ggo.xlsx  
+- list_compCond_quali_ego.xlsx  
+- [INFORMATION_LIST_GENES]_barplot.svg  
+- [INFORMATION_LIST_GENES]_dotplot.svg  
+- list_CompCond_quanti.rds  
+- list_CompCond_quanti_genes.xlsx  
+- list_CompCond_quanti_ggo.xlsx  
+- list_CompCond_quanti_ego.xlsx  
+
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, 
+                                 "/bin/scRNAseq/", 
+                                 "scRNAseq_CITEseq_R_DWNS_CompareConditions_GO.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), 
+                                       '_', 
+                                       "scRNAseq_CITEseq_R_DWNS_CompareConditions_GO.html"))
+
+```
+
+
+# scRNAseq_CITEseq_R_DWNS_PathwayAnalysis.Rmd
+
+*OBJECTIVES*            
+- extract pathway database and gene associated      
+- define list of interesting pathways to analyze    
+- pathway analysis with ReactomeGSA per cluster and per condition    
+- pathway analysis with SCPA per condition  
+- use AddModuleScore on interesting pathways    
+- visualize expression of selected genes on UMAP and dotplot  
+  
+*INPUTS*          
+- merged_all_prep_1-40dim.rds (cf. scRNAseq_CITEseq_R_ReductionDimension.Rmd)    
+- functions_constants.R    
+    
+*OUTPUTS*      
+- genes_msigdbr.rds  
+- genes_reactome.rds  
+- pathways_database_reactome.csv    
+- pathways_genes_reactome.csv    
+- pathways_database_reactome_format_scpa.rds    
+- pathways_interest_reactome.csv    
+- pathways_genes_interest_reactome.csv
+- pathways_db_ms.csv  
+- RGSA_gsva_result_clusters.rds    
+- RGSA_gsva_result_condition.rds    
+- RGSA_pathway_clusters.csv  
+- RGSA_pathway_conditions.csv    
+- RGSA_foldchange_conditions.csv    
+- RGSA_foldchange_clusters.csv    
+- RGSA_outliers_clusters.svg    
+- RGSA_outliers_conditions.svg    
+- RGSA_relevant_path_clust.svg    
+- RGSA_relevant_path_cond.svg    
+- RGSA_heatmap_clust.pdf    
+- RGSA_heatmap_cond.pdf    
+- RGSA_interest_path_clust.svg    
+- RGSA_interest_path_cond.svg    
+- RGSA_heatmap_interest_clust.pdf    
+- RGSA_heatmap_interest_cond.pdf    
+- SCPA_list_scpa_conditions.rds    
+- SCPA_heatmap_interest_path.pdf    
+- SCPA_enrich_cond.svg    
+- SCPA_interest_enrich_cond.svg    
+- SCPA_rank_cond.svg    
+- AMS_modulescore_clust.svg    
+- AMS_list_modulescore_cond.rds    
+- AMS_modulescore_clust.rds  
+- AMS_dotplot_list_genes_clust.svg    
+- AMS_dotplot_list_genes_cond.svg    
+- AMS_dotplot_list_genes_clust_cond_1.svg    
+- AMS_dotplot_list_genes_clust_cond_2.svg    
+- AMS_dotplot_list_genes_clust_cond_3.svg  
+- GL_dotplot_list_genes_clust.svg  
+- GL_dotplot_list_genes_clust_cond1.svg  
+- GL_dotplot_list_genes_clust_cond2.svg
+- GL_dotplot_list_genes_clust_cond3.svg
+- GL_dotplot_list_genes_cond.svg  
+- GL_violinplot_list_genes_clust_cond_1.svg
+- GL_violinplot_list_genes_clust_cond_2.svg
+- GL_violinplot_list_genes_clust_cond_3.svg
+- GL_violinplot_list_genes_clust_cond_4.svg
+- GL_violinplot_list_genes_clust_cond_5.svg
+
+**Note : the first part of the code is to big to be supported in knit. Run it by hand in external cluster and then launch script n2.**
+
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory,
+                                 "/bin/scRNAseq/",
+                                 "scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis_n2.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(),
+                                       '_',
+                                       "scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis_n2.html"))
+
+```
+
+
+# scRNAseq_CITEseq_R_DWNS_ClustersInvestigation_GO.Rmd
+
+*OBJECTIVES*          
+- FindAllMarkers on clusters  
+- select relevant markers and apply GO analysis  
+- visualize GO results on heatmap, dotplot, violinplot and feature plot  
+- FindMarkers for specific clusters comparisons  
+
+*INPUTS*      
+- merged_all_prep_1-40dim.rds (cf. scRNAseq_CITEseq_R_ReductionDimension.Rmd)      
+- functions_constants.R    
+- scRNAseq_CTRL_sample_feature_bc_matrix_features.tsv.gz (cf.data folder)    
+- scRNAseq_correspondence_tab_EnsemblID_geneName_genomePos.csv (cf. scRNAseq_CITEseq_R_GenomePosition folder)    
+      
+*OUTPUTS*        
+- clust_markers.rds      
+- clust_markers.csv  
+- top20_pos_markers.csv  
+- top20_pos_filtered_markers.csv  
+- list_GO_clust.rds  
+- [INFORMATION_CLUSTER_MARKERS]_GO_barplot.svg  
+- [INFORMATION_CLUSTER_MARKERS]_GO_dotplot.svg 
+- pos_markers_heatmap.svg  
+- pos_markers_dotplot.svg  
+
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, 
+                                 "/bin/scRNAseq/", 
+                                 "scRNAseq_CITEseq_R_DWNS_ClustersInvestigation_GO.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), 
+                                       '_', 
+                                       "scRNAseq_CITEseq_R_DWNS_ClustersInvestigation_GO.html"))
+
+```
+

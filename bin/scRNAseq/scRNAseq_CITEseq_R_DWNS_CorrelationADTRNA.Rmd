@@ -55,17 +55,16 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 
 ```
 
-```{r, Input loading}
 
-dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
-merged_all = readRDS(file = paste0(dir, "/", "merged_all_1-40dim.rds"))
 
-```
+<br><br><br>
+
+
 
 # Overview 
 
 This code aims at :    
-- seing the correlation between RNA and protein for CD34 and CD133    
+- visualizing the correlation between RNA and protein for CD34 and CD133    
 - identifying groups of cells with different protein expression if they exist    
 - observing protein expression among cells clusters    
     
@@ -73,7 +72,17 @@ It is based on :
 https://satijalab.org/seurat/articles/multimodal_vignette.html    
 https://github.com/satijalab/seurat/issues/1080    
   
-We work from the count matrix from seurat object. The **"count"** slot contains raw data whereas the **"data"** slot contains normalized data with CLR algorithm. We use here the normalized data. 
+We work from the count matrix of the pre-processed seurat object (merged_all_1-40dim from scRNAseq_CITEseq_R_ReductionDimension). The **"count"** slot contains raw data whereas the **"data"** slot contains normalized data with CLR algorithm. We use here the normalized data.   
+
+As **output files**, we obtain a seurat object with proteins groups in the meta.data table (merged_all_CITEgroups.rds), tables with cells repartition in groups and cluster and conditions and plots.  
+  
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
+merged_all = readRDS(file = paste0(dir, "/", "merged_all_1-40dim.rds"))
+
+```
+
 ```{r}
 
 cd34_expr = full_join(x = data.frame(merged_all@assays$ADT@counts[1,]) %>%
@@ -101,7 +110,7 @@ prot_expr %>%
 
 <br>
 
-We depicted the data on plots to visualize the proteins' distribution in the population. We can identified outliers.
+We depicted the data on plots to visualize the proteins' distribution in the population. We can identify outliers (i.e. cells expressing the protein much more than the rest of the cell population).
 ```{r, fig.height = 5, fig.width = 12}
 
 print("Statistical distribution of CD34 protein expression : ")
@@ -155,11 +164,14 @@ cd34_expr_distri | cd133_expr_distri
 
 ```
 
-
+<br><br><br>
 
 # Membrane protein vs RNA in each culture condition
 
-For UMAP representation of protein expression (ADT), we set a max cutoff at 2.6 for CD34 and 2.2 for CD133 to have a more readable scale. This means that all values above those cutoffs have the same color on the scale. For RNA expression, we use the predefined max and min cutoff (95% and 5%) because we don't have precise value to provide.
+<br>
+
+For UMAP representation of protein expression (ADT), we used the outliers representation above to choose threshold values. We set a max cutoff at 2.6 for CD34 and 2.2 for CD133 to have a more readable scale. This means that all values above those cutoffs have the same color on the scale. For RNA expression, we use the predefined max and min cutoff (95% and 5%) because we don't have precise value to provide.
+
 ```{r, UMAP ADT RNA}
 
 DefaultAssay(merged_all) = "ADT"
@@ -238,6 +250,8 @@ sc1/sc2
 
 ```
 
+
+<br><br><br>
 
 
 # Membrane protein groups in each culture condition
@@ -764,7 +778,7 @@ Further possible analysis :
 - perform a GO on gene expressed in the cells of each group  
 - see if some interesting categories are linked to the groups  
 
-```{r, Save graphs, fig.show='hide'}
+```{r, Save graphs, fig.show="hide", results="hide"}
 
 # save plots
 ggsave(plot = cd34_expr_distri | cd133_expr_distri, width = 14, height = 6,
@@ -801,7 +815,7 @@ ggsave(plot = umap_cluster|umap_three_cd34|umap_three_cd133, width = 24, height 
 ggsave(plot = vln_cd34/vln_cd133, width = 12, height = 8,
        filename = paste0(directory_output, "vln_adt_clusters.svg"))
 
-
+saveRDS(object = merged_all, paste0(directory_output, "merged_all_CITEgroups.rds"))
 
 ```
 
@@ -810,11 +824,16 @@ ggsave(plot = vln_cd34/vln_cd133, width = 12, height = 8,
 end_time = Sys.time()
 cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
 
-# Clean working space and memory
-rm(list = ls())
-gc()
-
 # Show package version
 sessionInfo()
 
 ```
+
+```{r, fig.show="hide", results="hide"}
+
+# Clean working space and memory
+rm(list = ls())
+gc()
+
+```
+

@@ -72,8 +72,8 @@ features_tab = features_tab %>%
 
 <br>
 
-**Add Gene position (molecular information) to the correspondence tab**    
-https://www.ensembl.org/info/data/biomart/biomart_r_package.html  
+**Add Gene position (molecular information) to the correspondence tab**      
+https://www.ensembl.org/info/data/biomart/biomart_r_package.html    
 ```{r} 
 
 ensembl = useEnsembl(biomart="ensembl", dataset="hsapiens_gene_ensembl") # GRCh38
@@ -92,10 +92,10 @@ features_tab = left_join(features_tab, chr_genes, by = "ensembl_gene_id")
 
 <br>
 
-**Add Gene position (cytogenetic information) to the correspondence tab**  
-https://support.bioconductor.org/p/9142452/     
-ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz    
-https://medlineplus.gov/genetics/understanding/howgeneswork/genelocation/    
+**Add Gene position (cytogenetic information) to the correspondence tab**    
+https://support.bioconductor.org/p/9142452/       
+ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz      
+https://medlineplus.gov/genetics/understanding/howgeneswork/genelocation/      
 ```{r}
 
 db_list = read.delim(paste0(directory, "data/Homo_sapiens.gene_info.gz"))
@@ -131,9 +131,9 @@ write.csv2(x = features_tab,
 <br>
 
 200 genes don't have the position information (chromosome_name, start, end) when we use biomaRt and org.Hs.eg.db.    
-We can find those genes with a manual research on ensembl.org website. It's GRcH37 information but we can also see the corresponding GRcH38 coordinates in the description (ex : ENSG00000271895 => This gene maps to 20,184,242-20,186,486 in GRCh38 coordinates). To complete the tab, a manual research has to be done.   
-http://grch37.ensembl.org/Homo_sapiens/Gene/Summary?g=ENSG00000271895;r=1:11089716-11090585;t=ENST00000607145  
-http://grch37.ensembl.org/Homo_sapiens/Gene/Summary?g=ENSG00000225986;r=1:20510735-20512979;t=ENST00000442226  
+We can find those genes with a manual research on ensembl.org website. It's GRcH37 information but we can also see the corresponding GRcH38 coordinates in the description (ex : ENSG00000271895 => This gene maps to 20,184,242-20,186,486 in GRCh38 coordinates). To complete the tab, a manual research has to be done.     
+http://grch37.ensembl.org/Homo_sapiens/Gene/Summary?g=ENSG00000271895;r=1:11089716-11090585;t=ENST00000607145    
+http://grch37.ensembl.org/Homo_sapiens/Gene/Summary?g=ENSG00000225986;r=1:20510735-20512979;t=ENST00000442226    
   
 ```{r, Rsession}
 

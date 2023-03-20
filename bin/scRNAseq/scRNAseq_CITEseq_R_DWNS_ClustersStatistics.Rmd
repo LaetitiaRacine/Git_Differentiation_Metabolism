@@ -36,16 +36,24 @@ library(ggrepel)
 
 ```
 
+
+
+<br><br><br>
+
+
+
 # Overview 
 
-This code aims at : 
-- analyzing cell clusters' composition (which drug condition in which cluster and in which proportion)  
-- identifying interesting clusters for further investigation   
+This code aims at :   
+- analyzing cell clusters' composition (which drug condition in which cluster and in which proportion)    
+- identifying interesting clusters for further investigation     
     
 Based on documentations for plots :           
 - http://www.sthda.com/english/wiki/ggplot2-pie-chart-quick-start-guide-r-software-and-data-visualization    
-- https://r-charts.com/part-whole/pie-chart-labels-outside-ggplot2/         
-        
+- https://r-charts.com/part-whole/pie-chart-labels-outside-ggplot2/           
+         
+We work with the output file of the last script of pre-processing steps (scRNAseq_CITEseq_R_ReductionDimension) : *merged_all_1-40dim.rds*. As **output files**, we obtain descriptive tables and plots with percentage or number of cells from each condition in each cluster.  
+      
 ```{r, Working directories and external script}
 
 # Load working directories
@@ -163,7 +171,9 @@ tab_number %>%
 
 ```
 
-We don't start with the same number of cells in each condition. A normalization step based on the initial number of cells per condition is required to be able to compare the conditions.
+<br>
+
+We don't start with the same number of cells in each condition. A **normalization step** based on the initial number of cells per condition is required to be able to compare the conditions.
 
 ```{r, Clusters statistics - tab number normalized}
 
@@ -184,6 +194,8 @@ tab_number_norm %>%
   scroll_box(height = "250px", width = "100%")
 
 ```
+
+<br>
 
 Then we study the data in two alternative ways :  
 - the condition composition : percentages of each cluster for a condition (tab_percent_cond)  
@@ -384,10 +396,10 @@ bp_number_drugs
 
 ```
   
-Interesting clusters :  
-- AOA : 15,14, 13, 11, 8
-- 2DG : 2, 10    
-  
+Interesting clusters :    
+- AOA : 15,14, 13, 11, 8  
+- 2DG : 2, 10      
+    
 ```{r, Save outputs, fig.show ='hide'}
 
 write.csv2(x = tab_number, 
@@ -400,13 +412,14 @@ write.csv2(x = tab_number_norm,
 ggsave(plot = bp_clust, filename = paste0(directory_output, "bp_clust.svg"))
 ggsave(plot = bp_cond, filename = paste0(directory_output, "bp_cond.svg"))
 ggsave(plot = bp_number, filename = paste0(directory_output, "bp_number.svg"))
+ggsave(plot = bp_number_drugs, filename = paste0(directory_output, "bp_number_4drugs.svg"))
 
 ggsave(plot = do.call("grid.arrange", c(list_cond_pie, ncol = 3)),
        filename = paste0(directory_output, "pie_cond.svg"),
        height = 18, width = 20)
 ggsave(plot = do.call("grid.arrange", c(list_clust_pie, ncol = 3)),
        filename = paste0(directory_output, "pie_clust.svg"),
-       height = 18, width = 20)
+       height = 22, width = 24)
 
 ```
 

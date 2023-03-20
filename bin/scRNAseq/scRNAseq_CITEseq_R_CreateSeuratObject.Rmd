@@ -97,7 +97,7 @@ The CellRanger output folder contains three files needed to create the count mat
 - matrix.mtx file : contains a matrix of the UMI counts but without row/col names    
 - barcodes.tsv file : contains a list of the cells of the analysis (one barcode = one cell)    
 - features.tsv file : contains a table with three columns with the "features" of the analysis = Ensembl_Id, Gene/Antibody_Name, Feature_Category (Gene Expression / Antibody Capture / Multiplexing Capture)    
-To create the count matrix, we gather the three files to put cell barcodes as colnames of the matrix and features name or Ensembl_ID as rownames. **Please note : it is worth mentioning that multiple rows can have the same gene_name in the features files (see : https://www.biostars.org/p/327922/). Indeed, some genes have the same name but different Ensembl_ID (usually when they overlap). To avoid problem with duplicates, R add .1 in the name of the duplicate gene (parameter unique.features). A correspondance tab between Ensembl_ID and Gene_Name is available on the Git folder. Example : to easily distinguish the gene (assay = RNA) from the protein (assay = ADT) for the CD34 marker, protein detection is indicated under CD34.1. For CD133 marker, there is no problem because the associated gene has a different name known as PROM1.**     
+To create the count matrix, we gather the three files to put cell barcodes as colnames of the matrix and features' names or Ensembl_ID as rownames. **Please note : it is worth mentioning that multiple rows can have the same gene_name in the features files (see : https://www.biostars.org/p/327922/). Indeed, some genes have the same name but different Ensembl_ID (usually when they overlap). To avoid problem with duplicates, R add .1 in the name of the duplicate gene (parameter unique.features). A correspondance tab between Ensembl_ID and Gene_Name is available on the Git folder. Example : to easily distinguish the gene (assay = RNA) from the protein (assay = ADT) for the CD34 marker, protein detection is indicated under CD34.1. For CD133 marker, there is no problem because the associated gene has a different name known as PROM1.**     
 
 ```{r, Create Individual Seurat Object - function definition}
 
@@ -163,7 +163,7 @@ for (i in 1:number_condition) {
 
 <br>
 
-A verification of the objects we just created was made. As we can see, each one has two assays. The ADT assay contains two features : CD34.1 and CD133. The RNA assay contains 36601 features (or genes), it corresponds to the total number of genes in the GRCh38 database. Caution, the created matrix contain a row for each gene of the database but it doesn't mean that all those genes are detected in the corresponding sample. Some genes may have zero UMI for all the cells. It's up to us to remove them during the filtering steps. There is a different number of cells depending on the condition we study. This means we sometimes may need to normalize the number of cells to allow comparison between conditions.  
+A verification of the objects we just created was made. As we can see, each one has two assays. The ADT assay contains two features : CD34.1 and CD133. The RNA assay contains 36601 features (or genes), it corresponds to the total number of genes in the GRCh38 database. Caution, the created matrix contains a row for each gene of the database but it doesn't mean that all those genes are detected in the corresponding sample. Some genes may have zero UMI for all the cells. It's up to us to remove them during the filtering steps. There is a different number of cells depending on the condition we study. This means we sometimes may need to normalize the number of cells to allow comparison between conditions.  
 
 ```{r, Create Individual Seurat Object - check outputs}
 
@@ -183,34 +183,48 @@ for (i in 1:number_condition) {
 <br>
 
 As an example, we extract CTRL seurat objet of the list and describe its structure :  
-  
+
+<br>
+
 **Global structure**  
 ```{r}
 list_seurat_obj["CTRL"]
 ```
+
+<br>
+
 **Meta.data table**  
 ```{r}
 data.frame(list_seurat_obj[["CTRL"]]@meta.data[1:10,]) %>% 
   kable() %>%
   kable_styling()
 ```
+
+<br>
+
 **RNA assay with the genes**  
 ```{r}
 list_seurat_obj[["CTRL"]]@assays$RNA
 ```
-**Raw count matrix store in counts.slot (first 10 rows and column)**  
+
+<br>
+
+**Raw count matrix store in counts.slot (first 10 rows and 5 columns)**  
 ```{r}
 data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@counts[1:10, 1:5]) %>% 
   kable() %>%
   kable_styling()
 ```
-**Normalized count matrix store in data.slot (first 10 rows and column)**  
+
+<br>
+
+**Normalized count matrix store in data.slot (first 10 rows and 5 columns)**  
 ```{r}
 data.frame(list_seurat_obj[["CTRL"]]@assays$RNA@data[1:10, 1:5]) %>% 
   kable() %>%
   kable_styling()
 ```
-When creating seurat objects, the raw counts are stored in both the counts and data slot at the beginning. Then, the NormalizeData() function will work off of the counts slots and overwrite the data slot when the counts slot will still contain the raw data.  
+When creating seurat objects, the raw counts are stored in both *counts* and *data* slots at the beginning. Then, the NormalizeData() function will work off of the *counts* slots and overwrite the *data* slot when the *counts* slot will still contain the raw data.  
 
 ```{r, Save outputs}
 

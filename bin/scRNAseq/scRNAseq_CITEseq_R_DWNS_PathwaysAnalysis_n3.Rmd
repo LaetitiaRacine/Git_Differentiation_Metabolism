@@ -1,0 +1,587 @@
+---
+title: "scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis_n3"
+author: "Laëtitia Racine"
+date: "2023-01-25"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+   BiocStyle::html_document
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Global dependencies}
+
+library(Seurat)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(kableExtra)
+library(gridExtra)
+library(ggrepel) # geom_text_repel() function
+library(RColorBrewer)
+library(cowplot) # plot_grid() function
+library(viridis)
+
+```
+
+```{r, Working directories and external script}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
+merged_prep = readRDS(file = paste0(dir, "/", "merged_all_prep_1-40dim.rds"))
+
+combination = list(c("CTRL","AOA"), c("CTRL","2DG"), c("CTRL","DON"),
+                   c("CTRL", "VPA"), c("CTRL","CTRLaK"), c("2DG","2DGaK"),
+                   c("DON","DONaK"), c("AOA","AOAaK"), c("CTRLaK","2DGaK"),
+                   c("CTRLaK","AOAaK"), c("CTRLaK","DONaK"))
+
+```
+
+<br>
+
+**See scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis_n1 and n2 for the beginning of the analysis.** 
+
+<br>
+
+```{r}
+
+# load objects from script n°1
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/"))
+pathways_db_list = readRDS(paste0(dir, "/", "pathways_database_reactome_format_scpa.rds"))
+pathways_db = read.csv2(paste0(dir, "/", "pathways_database_reactome.csv"))
+pathways_interest_tab = read.csv2(paste0(dir, "/", "pathways_interest_reactome.csv"))
+genes_interest_tab = read.csv2(paste0(dir, "/", "pathways_genes_interest_reactome.csv"))
+
+pathways_of_interest = c("R-HSA-15869","R-HSA-70171","R-HSA-70221","R-HSA-70263",
+                         "R-HSA-70268","R-HSA-70326","R-HSA-70350","R-HSA-70370",
+                         "R-HSA-70635","R-HSA-70688","R-HSA-70895","R-HSA-70921",
+                         "R-HSA-71032","R-HSA-71064","R-HSA-71240","R-HSA-71262",
+                         "R-HSA-71288","R-HSA-71291","R-HSA-71336","R-HSA-71384",
+                         "R-HSA-71387","R-HSA-71403","R-HSA-71406","R-HSA-73817",
+                         "R-HSA-75105","R-HSA-77286","R-HSA-77288","R-HSA-77289",
+                         "R-HSA-163685","R-HSA-174403","R-HSA-189445","R-HSA-189451",
+                         "R-HSA-189483","R-HSA-352230","R-HSA-2262752","R-HSA-9711097",
+                         "R-HSA-9711123","R-HSA-3247509","R-HSA-5334118","R-HSA-156581",
+                         "R-HSA-156582","R-HSA-212165","R-HSA-8964539")
+
+```
+
+
+
+<br><br><br>
+
+# "Manual" pathways and genes analysis
+
+<br>
+
+Documentation :  
+- https://satijalab.org/seurat/reference/addmodulescore  
+- https://www.waltermuskovic.com/2021/04/15/seurat-s-addmodulescore-function/  
+- https://github.com/satijalab/seurat/issues/1342  
+- https://github.com/satijalab/seurat/issues/261  
+- https://github.com/satijalab/seurat/issues/4881  
+- https://github.com/satijalab/seurat/issues/2495  
+
+<br>
+
+## AddModuleScore with gene set from Reactome database
+
+We compute a module score for each cluster or condition for each interesting pathway (43 pathways selected). Then, we visualize the results on umap representations. 
+
+```{r, results='hold'}
+
+list_modulescore_clust = list()
+list_modulescore_cond = list()
+
+for (i in 1:length(unique(genes_interest_tab$pathway_id))) {
+  
+  pathway = unique(genes_interest_tab$pathway_id)[i]
+  tab_pathway = genes_interest_tab %>% dplyr::filter(pathway_id == pathway)
+  ms.features = list(as.vector(tab_pathway$gene))
+  name = str_extract(string = pathway, pattern = "(?<=R-HSA-)[:digit:]+")
+  name = paste0("RHSA", name, "_")
+  
+  merged_prep = AddModuleScore(object = merged_prep, 
+                               features = ms.features, 
+                               pool = NULL, #default
+                               nbin = 24, #default
+                               ctrl = 5, #vignette example
+                               k = FALSE, #default
+                               assay = "RNA",
+                               name = name,
+                               seed = 42,
+                               search = TRUE)
+  
+  plot_clust = FeaturePlot(object = merged_prep,
+                           features = paste0(name, "1"),
+                           reduction = "umap",
+                           cols = rev(brewer.pal(n = 11, name = "RdBu")))
+  
+  plot_cond = FeaturePlot(object = merged_prep,
+                          features = paste0(name, "1"),
+                          reduction = "umap",
+                          split.by = "orig.ident",
+                          keep.scale = "feature",
+                          combine = FALSE, 
+                          cols = rev(brewer.pal(n = 11, name = "RdBu"))) 
+  
+  list_modulescore_clust[[pathway]] = plot_clust
+  list_modulescore_cond[[pathway]] = plot_cond 
+
+}
+
+```
+
+<br>
+
+**Module score per cluster** 
+
+```{r, fig.width=14, fig.height=26, results='hold'}
+
+do.call("grid.arrange", c(list_modulescore_clust, ncol = 4))
+
+```
+
+<br>
+
+**Module score per condition**
+
+```{r, fig.width=14, fig.height=10, results='hold'}
+
+for (i in 1:length(list_modulescore_cond)){
+  print(plot_grid(plotlist = list_modulescore_cond[[i]], ncol = 3))
+}
+
+```
+
+```{r, fig.show='hide'}
+
+ggsave(plot = do.call("grid.arrange", c(list_modulescore_clust, ncol = 4)),
+       filename = paste0(directory_output, "AMS_modulescore_clust.svg"))
+
+saveRDS(object = list_modulescore_cond, 
+        file = paste0(directory_output, "AMS_list_modulescore_cond.rds"))
+saveRDS(object = list_modulescore_clust, 
+        file = paste0(directory_output, "AMS_list_modulescore_clust.rds"))
+
+```
+
+<br>
+
+## Visualize expression of specific genes manually selected
+
+<br>
+
+Futhermore, we want to visualize the expression of interesting list of genes (manually selected) in the cell population. First, we visualize the expression of the genes, all cells from all conditions pooled, to see differences between clusters. Secondly, we split the cells per condition.
+
+```{r}
+
+plot_gene_fun = function(seurat_obj, list, choice){
+  
+  plot_cl_list = list() 
+  
+  for (i in 1:length(list)) {
+    
+    gene = list[i]
+    
+    if (choice == "clust") {
+      
+      plot_cl = FeaturePlot(object = seurat_obj,
+                            features = gene,
+                            reduction = "umap",
+                            cols = rev(brewer.pal(n = 11, name = "RdBu")))
+      plot_cl_list[[i]] = plot_cl
+      
+    }
+    
+    if (choice == "cond") {
+      
+       plot_cond = FeaturePlot(object = seurat_obj,
+                            features = gene,
+                            reduction = "umap",
+                            split.by = "orig.ident",
+                            keep.scale = "feature",
+                            combine = FALSE,
+                            cols = rev(brewer.pal(n = 11, name = "RdBu"))) 
+    
+      print(plot_grid(plotlist = plot_cond, ncol = 3))
+ 
+    }
+    
+    if (choice != "clust" & choice != "cond") {
+      
+      print("Wrong parameter value.")
+      
+    }
+
+  }
+  
+  if (length(plot_cl_list) != 0) {
+    print(plot_grid(plotlist = plot_cl_list, ncol = 3))
+  }
+  
+}
+
+```
+
+```{r}
+
+cat("\n List genes global metabo :", list_genes_metabo, "\n",
+    "\n List genes metabo glutaminolysis :", list_genes_metabo_glut, "\n",
+    "\n List genes metabo glycolysis :", list_genes_metabo_glycolysis, "\n",
+    "\n List genes metabo TCA :", list_genes_metabo_tca, "\n",
+    "\n List genes hematopoietic transcription factor :", list_genes_TH_hemato, "\n",
+    "\n We only keep those expressed in our cells population.")
+
+```
+
+<br>
+
+**UMAP - Gene expression in clusters (all cells from every conditions)**
+
+<br>
+
+```{r, results="hold", fig.width=14, fig.height=8}
+
+# Global metabolic genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo, rownames(merged_prep)), "clust") 
+# TCA genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_tca, rownames(merged_prep)), "clust") 
+
+```
+
+```{r, results="hold", fig.width=14, fig.height=10}
+
+# Glycolysis genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_glycolysis, rownames(merged_prep)), "clust")
+
+```
+
+```{r, results="hold", fig.width=12, fig.height=4}
+
+# Glutaminolysis genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_glut, rownames(merged_prep)), "clust") 
+
+```
+
+```{r, results="hold", fig.width=14, fig.height=14}
+
+# Hematopoietic Transcription Factors
+plot_gene_fun(merged_prep, intersect(list_genes_TH_hemato, rownames(merged_prep)), "clust") 
+
+```
+
+<br>
+
+**UMAP - Gene expression in conditions**
+
+<br>
+
+```{r, results="hold", fig.width=14, fig.height=10}
+
+# Global metabolic genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo, rownames(merged_prep)), "cond") 
+# Glutaminolysis genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_glut, rownames(merged_prep)), "cond") 
+# Glycolysis genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_glycolysis, rownames(merged_prep)), "cond")
+# TCA genes
+plot_gene_fun(merged_prep, intersect(list_genes_metabo_tca, rownames(merged_prep)), "cond") 
+# Hematopoietic Transcription Factors
+plot_gene_fun(merged_prep, intersect(list_genes_TH_hemato, rownames(merged_prep)), "cond") 
+
+```
+
+<br>
+
+**DotPlot - Gene expression in clusters**
+
+<br>
+
+```{r, fig.width = 14, fig.height = 10}
+
+# Cluster only 
+Idents(merged_prep) = "clusters"
+
+p1 = DotPlot(merged_prep,
+        features = list_genes_metabo,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p2 = DotPlot(merged_prep,
+        features = list_genes_metabo_glut,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p3 = DotPlot(merged_prep,
+        features = list_genes_metabo_glycolysis,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p4 = DotPlot(merged_prep,
+        features = list_genes_metabo_tca,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p5 = DotPlot(merged_prep,
+        features = list_genes_TH_hemato,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+(p1 | p2 | p3) / (p4 | p5)
+
+```
+
+<br>
+
+**DotPlot - Gene expression in conditions**
+
+<br>
+
+```{r, fig.width = 14, fig.height = 10}
+
+# Conditions only
+Idents(merged_prep) = "orig.ident"
+
+p6 = DotPlot(merged_prep,
+        features = list_genes_metabo,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p7 = DotPlot(merged_prep,
+        features = list_genes_metabo_glut,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p8 = DotPlot(merged_prep,
+        features = list_genes_metabo_glycolysis,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p9 = DotPlot(merged_prep,
+        features = list_genes_metabo_tca,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+p10 = DotPlot(merged_prep,
+        features = list_genes_TH_hemato,
+        cols = plasma(2),
+        dot.scale = 8) +
+  RotatedAxis()
+
+(p6 | p7 | p8) / (p9 | p10)
+
+```
+
+<br>
+
+**DotPlot - Gene expression per cluster per conditions**
+
+<br>
+
+```{r, fig.width = 14, fig.height = 40}
+
+# Clusters and conditions
+Idents(merged_prep) = "orig.ident"
+
+p11 = DotPlot(merged_prep,
+        features = list_genes_metabo,
+        cols = plasma(18),
+        dot.scale = 8,
+        split.by = "clusters") +
+  RotatedAxis()
+
+p12 = DotPlot(merged_prep,
+        features = list_genes_metabo_glut,
+        cols = plasma(18),
+        dot.scale = 8,
+        split.by = "clusters") +
+  RotatedAxis()
+
+p13 = DotPlot(merged_prep,
+        features = list_genes_metabo_glycolysis,
+        cols = plasma(18),
+        dot.scale = 8,
+        split.by = "clusters") +
+  RotatedAxis()
+
+p14 = DotPlot(merged_prep,
+        features = list_genes_metabo_tca,
+        cols = plasma(18),
+        dot.scale = 8,
+        split.by = "clusters") +
+  RotatedAxis()
+
+p15 = DotPlot(merged_prep,
+        features = list_genes_TH_hemato,
+        cols = plasma(18),
+        dot.scale = 8,
+        split.by = "clusters") +
+  RotatedAxis()
+
+(p11 | p12 | p13) / (p14 | p15)
+
+```
+
+```{r, fig.show="hide", results="hide"}
+
+ggsave(plot = (p1 | p2 | p3) / (p4 | p5), width = 20, height = 16,
+       filename = paste0(directory_output, "GL_dotplot_list_genes_clust.svg"))
+ggsave(plot = (p6 | p7 | p8) / (p9 | p10), width = 20, height = 16,
+       filename = paste0(directory_output, "GL_dotplot_list_genes_cond.svg"))
+ggsave(plot = p11 | p12, width = 20, height = 22,
+       filename = paste0(directory_output, "GL_dotplot_list_genes_clust_cond_1.svg"))
+ggsave(plot = p13 | p14, width = 20, height = 22,
+       filename = paste0(directory_output, "GL_dotplot_list_genes_clust_cond_2.svg"))
+ggsave(plot = p15, width = 10, height = 22,
+       filename = paste0(directory_output, "GL_dotplot_list_genes_clust_cond_3.svg"))
+
+```
+
+<br>
+
+**ViolinPlot - Gene expression per cluster per conditions**
+
+<br>
+
+```{r, fig.width = 18, fig.height = 6}
+
+v1 = VlnPlot(merged_prep,
+             features = list_genes_metabo,
+             cols = plasma(18),
+             group.by = "orig.ident",
+             split.by = "clusters",
+             ncol = 1, 
+             combine = FALSE)
+
+v2 = VlnPlot(merged_prep,
+             features = list_genes_metabo_glut,
+             cols = plasma(18),
+             group.by = "orig.ident",
+             split.by = "clusters",
+             ncol = 1, 
+             combine = FALSE)
+
+v3 = VlnPlot(merged_prep,
+             features = list_genes_metabo_glycolysis,
+             cols = plasma(18),
+             group.by = "orig.ident",
+             split.by = "clusters",
+             ncol = 1, 
+             combine = FALSE)
+
+v4 = VlnPlot(merged_prep,
+             features = list_genes_metabo_tca,
+             cols = plasma(18),
+             group.by = "orig.ident",
+             split.by = "clusters",
+             ncol = 1, 
+             combine = FALSE)
+
+v5 = VlnPlot(merged_prep,
+             features = list_genes_TH_hemato,
+             cols = plasma(18),
+             group.by = "orig.ident",
+             split.by = "clusters",
+             ncol = 1, 
+             combine = FALSE)
+
+```
+
+```{r, fig.height = 20, fig.width = 20}
+
+do.call("grid.arrange", c(v1, nrow = length(v1)))
+
+```
+
+```{r, fig.height = 5, fig.width = 20}
+
+do.call("grid.arrange", c(v2, nrow = length(v2)))
+
+```
+
+```{r, fig.height = 20, fig.width = 20}
+
+do.call("grid.arrange", c(v3, nrow = length(v3)))
+do.call("grid.arrange", c(v4, nrow = length(v4)))
+
+```
+
+```{r, fig.height = 40, fig.width = 20}
+
+do.call("grid.arrange", c(v5, nrow = length(v5)))
+
+```
+
+```{r, results="hide", fig.show="hide"}
+
+ggsave(plot = do.call("grid.arrange", c(v1, nrow = length(v1))), width = 25, height = 22,
+       filename = paste0(directory_output, "GL_violinplot_list_genes_clust_cond_1.svg"))
+ggsave(plot = do.call("grid.arrange", c(v2, nrow = length(v2))), width = 25, height = 10,
+       filename = paste0(directory_output, "GL_violinplot_list_genes_clust_cond_2.svg"))
+ggsave(plot = do.call("grid.arrange", c(v3, nrow = length(v3))), width = 25, height = 28,
+       filename = paste0(directory_output, "GL_violinplot_list_genes_clust_cond_3.svg"))
+ggsave(plot = do.call("grid.arrange", c(v4, nrow = length(v4))), width = 25, height = 28,
+       filename = paste0(directory_output, "GL_violinplot_list_genes_clust_cond_4.svg"))
+ggsave(plot = do.call("grid.arrange", c(v5, nrow = length(v5))), width = 25, height = 40,
+       filename = paste0(directory_output, "GL_violinplot_list_genes_clust_cond_5.svg"))
+
+```
+
+
+<br><br><br>
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results='hide'}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+

@@ -70,10 +70,16 @@ Based on :
 - https://github.com/satijalab/seurat/issues/5135 
 - https://github.com/satijalab/seurat/issues/5761  
   
+As output file, we obtain a seurat object with merged conditions, normalized and reduced with the optimal number of dimensions and resolution (merged_all_1-40dim). We also have the same object prepared for SCT FindMarkers function (merged_all_prep_1-40dim). We finally create lots of plots with dimension choice, PCA or UMAP. Each time, we worked with the SCT normalized object with cell cycle regression and without cell cycle regression to keep the choice for downstream analysis. 
+  
 # Analysis on the SCT normalized object WITHOUT cell cycle regression
+
+<br>
 
 This part includes function definition of the analysis and the application on the normalized object without cell cycle regression.  
 If we want to study the normalized object with cell cycle regression, see part II.   
+
+## Merge conditions into one seurat object
 
 ```{r, Input loading}
 
@@ -112,7 +118,6 @@ merged_all@meta.data = metadata
 ## Perform linear dimensional reduction and determine the "dimensionality" (PCA)
 
 Jackstraw method is time consuming for large dataset. We choose to use only the heuristic elbow plot method to determine the dimensionality. Dimensions are ordered according to their implication in the global variance. To keep only the dimensions that explain the most the variance, we identify the bend on the elbow plot.  
-
 https://github.com/satijalab/seurat/issues/2295  
 https://satijalab.org/seurat/reference/runpca  
 RunPCA uses the variable features only with features = NULL (default).   
@@ -172,6 +177,12 @@ merged_all = dim_seurat_obj$obj
 ```{r, PCA plot, fig.width = 20, fig.height=18}
 
 (dim_seurat_obj$elb_plot | dim_seurat_obj$pca_plot) / dim_seurat_obj$pca_split_plot
+dim_seurat_obj$pca_dim
+
+```
+
+```{r, fig.width = 20, fig.height=22}
+
 dim_seurat_obj$pca_dim
 
 ```
@@ -269,7 +280,7 @@ umap_seurat_obj$umap_plot / umap_seurat_obj$umap_split_plot
 ```
 
 NB : Not the same graph as in BatchEffectCorrection script because we didn't choose the same dimensions. If we change the dimensions in 1:30, we obtain the same graph.  
-For latter downstream analysis, we choose to use the merged object without cc and the SCT normalization with 1-40 dimensions.  
+**For latter downstream analysis, we choose to use the merged object without cc and the SCT normalization with 1-40 dimensions.**  
 
 ```{r, UMAP plot2, fig.width = 22, fig.height = 20}
 
@@ -514,13 +525,22 @@ merged_cc = dim_seurat_obj_cc$obj
 
 ```
 
-```{r, fig.height = 20, fig.width = 24}
+```{r, fig.height = 20, fig.width = 18}
 
 (dim_seurat_obj_cc$elb_plot | dim_seurat_obj_cc$pca_plot) / dim_seurat_obj_cc$pca_split_plot
+
+```
+
+```{r, fig.height = 20, fig.width = 22}
+
 dim_seurat_obj_cc$pca_dim
 
 print("We chose dimensions 1 --> 40 for downstream analysis.")
 dim_choice = c(1:40)
+
+```
+
+```{r}
 
 umap_seurat_obj_cc = umap_fun(merged_cc, "SCT", dim_choice, color_code)
 merged_cc = umap_seurat_obj_cc$obj

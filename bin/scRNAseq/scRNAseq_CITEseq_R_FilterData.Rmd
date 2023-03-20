@@ -39,13 +39,18 @@ library(stringr)
 
 
 
+<br><br><br>
+
+
+
 # Overview 
 
 This code aims at :        
 - filtering out cells based on their number of detected genes    
 - filtering out cells based on their mitochondrial RNA percentage    
 - filtering out cells based on their ribosomal RNA percentage    
-- filtering out genes to remove mitochondrial ones    
+- filtering out genes to remove mitochondrial ones  
+- filtering out genes detected in less than 3 cells  
 - summarizing the number of cells/genes rejected by each filter    
 - analyzing the data structure      
   
@@ -53,7 +58,7 @@ Based on documentations :
 - https://satijalab.org/seurat/articles/pbmc3k_tutorial.html       
 - https://nbisweden.github.io/workshop-scRNAseq/labs/compiled/seurat/seurat_01_qc.html         
         
-We obtain as **output documents** : a list of filtered seurat objects (one per condition) with all the cumulative filters applied, a list of lists (one list per condition) with seurat objects after each filter and multiple summary dataframes. Careful, the filters are cumulative which means that the code has to be launched manually to apply only one filter at a time without the others.  
+We obtain as **output documents** : a list of filtered seurat objects (one per condition) with all the cumulative filters applied, a list of lists (one list per condition) with seurat objects after each filter and multiple summary dataframes and plots. Careful, the filters are cumulative which means that the code has to be launched manually to apply only one filter at a time without the others.  
   
 ```{r, Working directories and external script}
 
@@ -166,7 +171,7 @@ grid.arrange(grobs = plot_feature_graphs,
 ```
 
 <br>
-Based on those graphics, we can place a threshold. By doing so we decide to disregard all the cells with less than *1000 genes and those with more than 6500 genes*. The median number for genes detected per cell is between 2731 and 3880 genes depending on the condition cf. results websummary CellRanger), this is a positive indication to the threshold we established. We can be quite drastic with this threshold since we are not looking for a rare population. 
+Based on those plots, we can place a threshold. By doing so, we decide to disregard all the cells with less than *1000 genes and those with more than 6500 genes*. The median number for genes detected per cell is between 2731 and 3880 genes depending on the condition (cf. results websummary CellRanger), this is a positive indication to the threshold we established. We can be quite drastic with this threshold since we are not looking for a rare population. 
 
 ```{r, Filter_nbG}
 
@@ -185,7 +190,7 @@ for (i in 1:number_conditions) {
 
 ## Cells - Filter_pMT & Filter_pRB : keep cells with **less than 25% of mRNA** and **more than 5% of rRNA**
 
-Cells presenting a high percentage of mitochondrial RNA and a lower percentage of ribosomal RNA are either dead or dying. When we trace the scatter plot percent.ribo vs percent.mt, we can see two distinct populations: a first one on the left with a low percentage of of mitochondrial RNA and a percentage of ribosomal RNA between 10 and 50% indicating living cells, and a second population on the right characterized by a high percentage of mitochondrial RNA and a lower percentage of ribosomal RNA. In order to remove most of the dead cells and still maintain a sufficient amount of data we apply a filter with the following parameters: keep the cells **less than 25% of mitochondrial RNA** and **more than 5% of ribosomal RNA**. 
+Cells presenting a high percentage of mitochondrial RNA and a low percentage of ribosomal RNA are either dead or dying. When we trace the scatter plot percent.ribo vs percent.mt, we can see two distinct populations: a first one on the left with a low percentage of mitochondrial RNA and a percentage of ribosomal RNA between 10 and 50% indicating living cells, and a second population on the right characterized by a high percentage of mitochondrial RNA and a low percentage of ribosomal RNA. In order to remove most of the dead cells and still maintain a sufficient amount of data we apply a filter with the following parameters: keep the cells with **less than 25% of mitochondrial RNA** and **more than 5% of ribosomal RNA**. 
 
 ```{r, Percentages RNA, fig.width=16, fig.height=20, fig.fullwidth=TRUE}
 
@@ -289,9 +294,9 @@ for (i in 1:number_conditions) {
 
 ```
 
-## Genes - Filter_nbCG : keep genes detected in more than 3 cells
+## Genes - Filter_nbCG : keep genes detected in **more than 3 cells**
 
-As we are not searching for rare population, we decided to remove genes expressed in less than 3 cells. 
+As we are not searching for rare population, we decide to remove genes expressed in less than 3 cells. 
 
 ```{r, Filter_rmCG}
 
@@ -350,6 +355,10 @@ gc()
 
 
 # Summarize the number of cells/genes rejected by each filter    
+
+<br>
+
+We check the characteristic of each filtered object. As we can see now, the objects don't present the same number of genes (initially they were all at 36601) and the number of cells is slower than the initial ones (cf. 2023-03-13_scRNAseq_CITEseq_R_CreateSeuratObject). We will dig deeper in the objects to appreciate the number of cells/genes removed by each filter. 
 
 ```{r}
 

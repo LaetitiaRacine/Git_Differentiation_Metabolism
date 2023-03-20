@@ -1,0 +1,349 @@
+---
+title: "scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis_n1"
+author: "Laëtitia Racine"
+date: "2023-01-25"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  BiocStyle::html_document
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Global dependencies}
+
+library(Seurat)
+library(dplyr)
+# library(stringr)
+library(ggplot2)
+library(kableExtra)
+library(gridExtra)
+library(ggrepel) # geom_text_repel() function
+library(RColorBrewer)
+library(cowplot) # plot_grid() function
+library(viridis)
+
+```
+
+```{r, Working directories and external script}
+
+# Load working directories
+## working on personal computer
+# directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+# working on cluster
+directory = "/shared/ifbstor1/home/lracine/"
+  
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+# dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/"))
+# dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis/", current_date, "/")
+
+# Load external script with functions and constants
+# source(file = paste0(directory, "bin/", "functions_constants.R"))
+source(file = paste0(directory, "functions_constants.R"))
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Overview 
+
+This code aims at :  
+- performing pathway enrichment analysis on clusters and conditions with ReactomeGSA  
+- performing pathway variation analysis on conditions with SCPA  
+- performing pathway score analysis on interesting pathways with AddModuleScore  
+- visualizing specific gene expression in clusters and conditions  
+  
+We work with the output file of the last script of pre-processing steps *merged_all_prep_1-40dim.rds* from scRNAseq_CITEseq_R_ReductionDimension.  
+The code is split in 4 scripts because the html output files was too big. The first code must be run by hand because it's not working with the knit button (eval = FALSE for multiple chunks to avoid large html file).   
+
+```{r, Input loading}
+
+# dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
+merged_prep = readRDS(file = paste0(directory, "merged_all_prep_1-40dim.rds"))
+
+combination = list(c("CTRL","AOA"), c("CTRL","2DG"), c("CTRL","DON"),
+                   c("CTRL", "VPA"), c("CTRL","CTRLaK"), c("2DG","2DGaK"),
+                   c("DON","DONaK"), c("AOA","AOAaK"), c("CTRLaK","2DGaK"),
+                   c("CTRLaK","AOAaK"), c("CTRLaK","DONaK"))
+
+```
+
+As a reminder, here are the clusters we identified in the dataset.
+
+```{r, Show clusters, fig.width = 6, fig.height = 4}
+
+DimPlot(merged_prep,
+        label = TRUE,
+        reduction = "umap",
+        group.by = "clusters")
+
+```
+
+As **output files**, we obtain a list of pathways with associated genes of the Reactome database, plots and tables from the ReactomeGSA analysis (files names starting with RGSA_), plots and tables from the SCPA analysis (files names starting with SCPA_), and plots from AddModuleScore and Gene List analysis (files names starting by AMS_ or GL_).  
+
+
+
+<br><br><br>
+
+
+
+# Gene set generation : identify interesting pathways to analyze 
+
+To perform pathway analysis on our scRNAseq dataset, we need to compare our genes expression to gene set (list of genes connected to pathway). To do so, there are multiple packages available depending on the final result we want : ReactomeGSA, SCPA, GAGE, Pathview.... We decided to try two of them, ReactomeGSA and SCPA. To do so, the first step is to extract the gene set to allow the comparison and the gene set enrichment analysis. Based on documentation, we tried two packages (ReactomeContentService4R and msigdbr) to extract gene set from Reactome database. We compared the output and selected the best for further analysis.  
+- https://bioconductor.org/packages/devel/bioc/vignettes/ReactomeContentService4R/inst/doc/ReactomeContentService4R.html  
+- https://jackbibby1.github.io/SCPA/articles/quick_start.html  
+- https://github.com/igordot/msigdbr/issues/4  
+- https://www.gsea-msigdb.org/gsea/msigdb/human/genesets.jsp?collection=CP:REACTOME  
+  
+## Extract list of pathways with package ReactomeContentService4R
+
+```{r}
+library(ReactomeContentService4R)
+```
+
+```{r}
+
+## Fetch all human pathway available in the Reactome database
+
+pathways_db = getSchemaClass(class= "Pathway", species= "human", all= TRUE)
+pathways_db = data.frame(pathways_db) %>% dplyr::select(displayName, stId)
+colnames(pathways_db) = c("pathway_name", "pathway_id")
+
+## Extract genes associated to the pathways of the Reactome database
+
+genes_pathways = list()
+for (i in 1:nrow(pathways_db)) {
+  #cat("Extract pathway", i, "/", nrow(pathways_db), "\n")
+  path = pathways_db$pathway_id[i]
+  genes = event2Ids(path)$geneSymbol
+  if (is.null(genes)) {
+    cat("No gene associated to pathway", path, "\n")
+  } else {
+      genes_pathways[[path]] = data.frame(pathway_id = path, gene = genes)
+    }
+}
+genes_pathways = do.call(rbind, genes_pathways)
+
+```
+
+```{r}
+
+write.csv2(x = pathways_db, row.names = FALSE,
+           file = paste0(directory_output, "pathways_database_reactome.csv"))
+write.csv2(x = genes_pathways, row.names = FALSE,
+           file = paste0(directory_output, "pathways_genes_reactome.csv"))
+
+```
+
+```{r, eval = TRUE}
+
+pathways_db[1:10,] %>%
+  kable(caption = "10 first rows of the table") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+
+## Extract list of pathways with package msigdbr
+
+```{r}
+library(msigdbr)
+```
+
+```{r}
+
+pathways_db_ms <- msigdbr(species = "Homo sapiens", 
+                          category = "C2",
+                          subcategory = "CP:REACTOME") 
+
+```
+
+```{r}
+
+write.csv2(x = pathways_db_ms, row.names = FALSE,
+           file = paste0(directory_output, "pathways_db_ms.csv"))
+
+```
+
+```{r}
+
+pathways_db_ms[1:10,] %>%
+  kable(caption = "10 first rows of the table") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+## Compare packages 
+
+```{r, eval = TRUE}
+
+cat("The ReactomeContentService4R allowed us to extract : ", 
+    nrow(pathways_db), "gene sets from the Reactome database. \n",
+    "The msigdbr allowed us to extract :", 
+    length(unique(pathways_db_ms$gs_name)), "gene sets from the Reactome database. \n") 
+
+# intersection
+common = intersect(pathways_db_ms$gs_exact_source, pathways_db$pathway_id)
+# elements in pathways_db_ms not in pathways_db
+diff_msigdbr = setdiff(pathways_db_ms$gs_exact_source, pathways_db$pathway_id)
+# elements in pathways_db not in pathways_db_ms
+diff_react = setdiff(pathways_db$pathway_id, pathways_db_ms$gs_exact_source)
+
+cat("We found", length(common), "pathways in common between the two lists. \n",
+    "Only", length(diff_msigdbr), "pathway from msigdbr is not in the bigger list of pathways from ReactomeContent.",
+    "ReactomeContent allow us to extract", length(diff_react), "more pathways. \n",
+    "We will now compare the common gene set to see if they are equals.")
+
+```
+
+```{r}
+
+# compare gene list for one gene set
+path = pathways_db_ms$gs_exact_source[[1]]
+if(path %in% pathways_db$pathway_id) { print("TRUE")}
+genes_msigdbr = (pathways_db_ms %>% dplyr::filter(gs_exact_source == path))$gene_symbol
+genes_reactome = (genes_pathways %>% dplyr::filter(pathway_id == path))$gene 
+
+```
+
+```{r, eval = TRUE}
+
+intersect(genes_msigdbr, genes_reactome)
+setdiff(genes_msigdbr, genes_reactome)
+setdiff(genes_reactome, genes_msigdbr)
+cat("For pathway", path, "we have", length(genes_msigdbr),
+    "genes associated for msigdbr package and", length(genes_reactome),
+    "genes associated for reactome package.", 
+    "All the genes from msigdbr list are in the reactome list.", 
+    "The others names are associated proteins or synonyms of the gene.")
+# G22P1 = XRCC6
+# G22P2 = XRCC5
+# HMGIY est la protéine codée par HMGA1
+# BAF = BCRG1 = BANF1
+# DFS70 = LEDGF = PSIP2 = PSIP1 
+
+```
+
+To summarize, by accessing the same database (Reactome) but with different packages (msigdbr and ReactomeContentService4R), the results are not totally equals. Msigdbr package is less precise and we are missing some information (pathways and gene synonyms) so we decided to use the ReactomeContentService4R gene set list for further analysis. We just have to format the data in a specific way (one list par pathway containing a tab with pathway name/id in column 1 and gene name in column 2).
+
+```{r}
+
+pathways_db_list = list()
+
+for (i in 1:length(unique(genes_pathways$pathway_id))){
+  #cat(i, "/", length(unique(genes_pathways$pathway_id)), "\n")
+  path = unique(genes_pathways$pathway_id)[i]
+  temp = genes_pathways %>% dplyr::filter(pathway_id == path)
+  colnames(temp) = c("Pathway", "Genes")
+  pathways_db_list[[path]] = temp
+}
+
+```
+
+```{r}
+
+saveRDS(object = pathways_db_list, file = paste0(directory_output, "pathways_database_reactome_format_scpa.rds"))
+
+```
+
+## Select interesting pathways for our study 
+
+```{r, eval = TRUE}
+
+pathways_of_interest = c("R-HSA-15869","R-HSA-70171","R-HSA-70221","R-HSA-70263",
+                         "R-HSA-70268","R-HSA-70326","R-HSA-70350","R-HSA-70370",
+                         "R-HSA-70635","R-HSA-70688","R-HSA-70895","R-HSA-70921",
+                         "R-HSA-71032","R-HSA-71064","R-HSA-71240","R-HSA-71262",
+                         "R-HSA-71288","R-HSA-71291","R-HSA-71336","R-HSA-71384",
+                         "R-HSA-71387","R-HSA-71403","R-HSA-71406","R-HSA-73817",
+                         "R-HSA-75105","R-HSA-77286","R-HSA-77288","R-HSA-77289",
+                         "R-HSA-163685","R-HSA-174403","R-HSA-189445","R-HSA-189451",
+                         "R-HSA-189483","R-HSA-352230","R-HSA-2262752","R-HSA-9711097",
+                         "R-HSA-9711123","R-HSA-3247509","R-HSA-5334118","R-HSA-156581",
+                         "R-HSA-156582","R-HSA-212165","R-HSA-8964539")
+
+pathways_interest_tab = pathways_db %>% 
+  dplyr::filter(pathway_id %in% pathways_of_interest) %>%
+  dplyr::mutate(Pathway = paste(pathway_name, pathway_id, sep =" - "))
+
+pathways_interest_tab %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+```{r}
+
+write.csv2(x = pathways_interest_tab, row.names = FALSE,
+           file = paste0(directory_output, "pathways_interest_reactome.csv"))
+
+```
+
+```{r}
+
+# Extract all gene names associated to each pathway
+# Keep only gene name present in our dataset  (lots of synonyms to remove)
+genes_interest_tab = genes_pathways %>%
+  dplyr::filter(pathway_id %in% pathways_of_interest) %>%
+  dplyr::filter(gene %in% rownames(merged_prep))
+ 
+write.csv2(x = genes_interest_tab, row.names = FALSE,
+           file = paste0(directory_output, "pathways_genes_interest_reactome.csv"))
+
+```
+
+```{r}
+
+genes_interest_tab[1:10,] %>%
+  kable(caption = "10 first rows of the table") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+
+
+<br><br><br>
+
+
+**See scRNAseq_CITEseq_R_DWNS_PathwaysAnalysis_n2 for the follow-up.**  
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results='hide'}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+
