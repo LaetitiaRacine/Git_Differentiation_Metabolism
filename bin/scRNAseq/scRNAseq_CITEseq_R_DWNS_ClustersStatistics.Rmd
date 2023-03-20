@@ -62,9 +62,9 @@ start_time = Sys.time()
 
 # Create a unique folder for output corresponding to the date of the day
 current_date = format(Sys.time(), "%Y%m%d")
-dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersStatistics/"))
-dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersStatistics/", current_date))
-directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersStatistics/", current_date, "/")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersStatistics_TestDownsampling/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersStatistics_TestDownsampling/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_ClustersStatistics_TestDownsampling/", current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
@@ -73,7 +73,7 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 
 ```{r, Input loading}
 
-dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension_TestDownsampling/"))
 merged_all = readRDS(file = paste0(dir, "/", "merged_all_1-40dim.rds"))
 
 ```

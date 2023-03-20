@@ -44,9 +44,9 @@ start_time = Sys.time()
 
 # Create a unique folder for output corresponding to the date of the day
 current_date = format(Sys.time(), "%Y%m%d")
-dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_ReductionDimension/"))
-dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_ReductionDimension/", current_date))
-directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_ReductionDimension/", current_date, "/")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_ReductionDimension_TestDownsampling/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_ReductionDimension_TestDownsampling/", current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_ReductionDimension_TestDownsampling/", current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
@@ -70,16 +70,11 @@ Based on :
 - https://github.com/satijalab/seurat/issues/5135 
 - https://github.com/satijalab/seurat/issues/5761  
   
-As output file, we obtain a seurat object with merged conditions, normalized and reduced with the optimal number of dimensions and resolution (merged_all_1-40dim). We also have the same object prepared for SCT FindMarkers function (merged_all_prep_1-40dim). We finally create lots of plots with dimension choice, PCA or UMAP. Each time, we worked with the SCT normalized object with cell cycle regression and without cell cycle regression to keep the choice for downstream analysis. 
-  
 # Analysis on the SCT normalized object WITHOUT cell cycle regression
 
-<br>
-
 This part includes function definition of the analysis and the application on the normalized object without cell cycle regression.  
-If we want to study the normalized object with cell cycle regression, see part II.   
-
-## Merge conditions into one seurat object
+If we want to study the normalized object with cell cycle regression, see part II.     
+As we decided there were no batch effect, we can consider CTRL and CTRL2 as one unique sample. We update meta.data with a new orig.ident. The original one is already stored in the column old.ident.   
 
 ```{r, Input loading}
 
@@ -87,30 +82,59 @@ dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_NormalizeData/"
 
 # Objects without cc regression
 list_seurat = readRDS(paste0(dir, "/", "list_seurat_obj_qc_norm.rds"))
-merged_all = merge(x = list_seurat[["CTRL"]], 
-                   y = c(list_seurat[["CTRLaK"]], list_seurat[["DON"]], 
-                         list_seurat[["DONaK"]], list_seurat[["2DG"]], 
-                         list_seurat[["2DGaK"]], list_seurat[["VPA"]], 
-                         list_seurat[["CTRL2"]], list_seurat[["AOA"]], 
-                         list_seurat[["AOAaK"]]),
+
+# Compute the length of cells to sample
+# Downsampling every conditions to have the same number of cells 
+number_down = min(unlist(lapply(list_seurat, FUN = ncol)))
+# list_seurat_obj = lapply(list_seurat, function(x) {
+#       subset(x, cells = sample(colnames(x), number_down))
+# })
+# lapply(list_seurat_obj, FUN = ncol)
+
+# Merge conditions
+merged_all = merge(x = list_seurat_obj[["CTRL"]], 
+                   y = c(list_seurat_obj[["CTRLaK"]], list_seurat_obj[["DON"]], 
+                         list_seurat_obj[["DONaK"]], list_seurat_obj[["2DG"]], 
+                         list_seurat_obj[["2DGaK"]], list_seurat_obj[["VPA"]], 
+                         list_seurat_obj[["CTRL2"]], list_seurat_obj[["AOA"]], 
+                         list_seurat_obj[["AOAaK"]]),
                    add.cell.ids = c("CTRL", "CTRLaK", "DON", "DONaK", "DDG", 
                                     "2DGaK", "VPA", "CTRL2", "AOA", "AOAaK"),
                    merge.data = TRUE)
 
-features_scale = rownames(merged_all[["SCT"]]@scale.data)
-VariableFeatures(merged_all, assay = "SCT") = features_scale
-rm(list_seurat, features_scale)
-
-```
-
-As we decided there were no batch effect, we can consider CTRL and CTRL2 as one unique sample. We update meta.data with a new orig.ident. The original one is already stored in the column old.ident. 
-
-```{r, Merged control ident}
-
+# Merge control conditions and keep the same number of cells as every other condition
 metadata = data.frame(merged_all@meta.data) %>%
   dplyr::mutate(orig.ident = ifelse(old.ident %in% c("CTRL", "CTRL2"), "CTRL", old.ident))
-
 merged_all@meta.data = metadata
+
+# Sample cells for each object 
+sampled.cells = c(
+  sample(str_subset(colnames(merged_all), pattern = "CTRL_"), number_down),
+  sample(str_subset(colnames(merged_all), pattern = "AOA_"), number_down),
+  sample(str_subset(colnames(merged_all), pattern = "DDG_"), number_down),
+  sample(str_subset(colnames(merged_all), pattern = "DON_"), number_down),
+  sample(str_subset(colnames(merged_all), pattern = "CTRLaK_"), number_down),
+  sample(str_subset(colnames(merged_all), pattern = "2DGaK_"), number_down),
+  sample(str_subset(colnames(merged_all), pattern = "DONaK_"), number_down),
+  sample(str_subset(colnames(merged_all), pattern = "VPA_"), number_down),
+  sample(str_subset(colnames(merged_all), pattern = "AOAaK_"), number_down)
+  )
+
+test <- subset(x = merged_all, cells = sampled.cells)
+
+test = subset(merged_all, cells = str_subset(colnames(merged_all), pattern = "AOA|DDG|DON|CTRLaK|2DGaK|DONaK|VPA|AOAaK"))
+test1 = subset(merged_all, cells = str_subset(colnames(merged_all), pattern = "DDG"))
+
+
+merged_all = subset(merged_all, 
+               cells = c(str_subset(colnames(merged_all), pattern = "AOA|DDG|DON|CTRLaK|2DGaK|DONaK|VPA|AOAaK"),
+                         sample(str_subset(colnames(merged_all), pattern = "CTRL_"), number_down)))
+table(merged_all$orig.ident)
+
+# Variable features
+features_scale = rownames(merged_all[["SCT"]]@scale.data)
+VariableFeatures(merged_all, assay = "SCT") = features_scale
+rm(list_seurat_obj, features_scale)
 
 ```
 
@@ -118,6 +142,7 @@ merged_all@meta.data = metadata
 ## Perform linear dimensional reduction and determine the "dimensionality" (PCA)
 
 Jackstraw method is time consuming for large dataset. We choose to use only the heuristic elbow plot method to determine the dimensionality. Dimensions are ordered according to their implication in the global variance. To keep only the dimensions that explain the most the variance, we identify the bend on the elbow plot.  
+
 https://github.com/satijalab/seurat/issues/2295  
 https://satijalab.org/seurat/reference/runpca  
 RunPCA uses the variable features only with features = NULL (default).   
@@ -177,12 +202,6 @@ merged_all = dim_seurat_obj$obj
 ```{r, PCA plot, fig.width = 20, fig.height=18}
 
 (dim_seurat_obj$elb_plot | dim_seurat_obj$pca_plot) / dim_seurat_obj$pca_split_plot
-dim_seurat_obj$pca_dim
-
-```
-
-```{r, fig.width = 20, fig.height=22}
-
 dim_seurat_obj$pca_dim
 
 ```
@@ -280,7 +299,7 @@ umap_seurat_obj$umap_plot / umap_seurat_obj$umap_split_plot
 ```
 
 NB : Not the same graph as in BatchEffectCorrection script because we didn't choose the same dimensions. If we change the dimensions in 1:30, we obtain the same graph.  
-**For latter downstream analysis, we choose to use the merged object without cc and the SCT normalization with 1-40 dimensions.**  
+For latter downstream analysis, we choose to use the merged object without cc and the SCT normalization with 1-40 dimensions.  
 
 ```{r, UMAP plot2, fig.width = 22, fig.height = 20}
 
@@ -388,75 +407,7 @@ To help in the decision, we used the clustree package : https://cran.r-project.o
 
 clustree(merged_all@meta.data, prefix = "SCT_snn_res.")
 
-print("Based on the conditions we want to analyze and the confirmation of the tree, resolution 0.6 seems the best for our study. However, clusters 15 and 17 from resolutions 0.7 are also interesting  because they allow to separate conditions. We are going to add them manually to the clustering by extracting the cells from cluster 11 and do a reclustering.")
-
-```
-
-```{r, Reclustering cluster 12, fig.width = 20, fig.height = 10}
-
-# extract cells from cluster 12
-merged_all = SetIdent(object = merged_all, value = "SCT_snn_res.0.6")
-obj = subset(merged_all, idents = "11")
-obj = FindNeighbors(object = obj, 
-                    assay = "SCT",
-                    dims = dim_choice,
-                    verbose = FALSE)
-# reclusterise the cells in order to have two clusters
-for (res in c(0.01, 0.05, 0.1, 0.5, 1)) {
-    obj <- FindClusters(
-      object = obj, 
-      resolution = res, 
-      algorithm = 3,
-      verbose = FALSE)
-  }
-
-# visualize the different resolutions to choose the best one
-plot = plot_grid(ncol = 3, 
-                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.01") + ggtitle("Resolution_0.01"),
-                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.05") + ggtitle("Resolution_0.05"),
-                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.1") + ggtitle("Resolution_0.1"),
-                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.0.5") + ggtitle("Resolution_0.5"),
-                 DimPlot(obj, label = TRUE, reduction = "umap", group.by = "SCT_snn_res.1") + ggtitle("Resolution_1"))
-plot
-print("Resolution 0.05 is the best to reclusterize those cells.")
-
-```
-
-NB : if the reclustering had failed, we would have worked with the raw data => Extract the cells we want to recluster, normalize and find their specific variable features and then apply a new clustering.  
-
-```{r, Add reclustering info to seurat object}
-
-# Create new column of clustering
-new_clust = obj@meta.data %>% 
-  dplyr::select("SCT_snn_res.0.05") %>% 
-  dplyr::rename("new_clusters" = "SCT_snn_res.0.05") %>%
-  dplyr::mutate(new_clusters = ifelse(new_clusters == 0, 11, 16))
-
-old_clust = merged_all@meta.data %>% dplyr::select(SCT_snn_res.0.6)
-old_clust$SCT_snn_res.0.6 = as.numeric(levels(old_clust$SCT_snn_res.0.6))[old_clust$SCT_snn_res.0.6]
-# Attention ! utiliser as.integer() change la valeur dans le tableau...
-
-new_clust = full_join(x = old_clust %>% tibble::rownames_to_column(var = "cell"), 
-                      y = new_clust %>% tibble::rownames_to_column(var = "cell"), 
-                      by = "cell") %>%
-  dplyr::mutate(clusters = ifelse(is.na(new_clusters), SCT_snn_res.0.6, new_clusters)) %>%
-  dplyr::select(-new_clusters, -SCT_snn_res.0.6)
-
-# Add new clustering information in seurat object metadata
-metadata_seurat = merged_all@meta.data %>%
-  dplyr::select(-SCT_snn_res.0.01,-SCT_snn_res.0.02,-SCT_snn_res.0.03,
-                -SCT_snn_res.0.04,-SCT_snn_res.0.05,-SCT_snn_res.0.06, 
-                -SCT_snn_res.0.07,-SCT_snn_res.0.08,-SCT_snn_res.0.09,
-                -SCT_snn_res.0.1,-SCT_snn_res.0.2,-SCT_snn_res.0.3,
-                -SCT_snn_res.0.4,-SCT_snn_res.0.5,-SCT_snn_res.0.6, 
-                -SCT_snn_res.0.7,-SCT_snn_res.0.8,-SCT_snn_res.0.9,
-                -SCT_snn_res.1,-seurat_clusters) %>%
-  dplyr::mutate(clusters = new_clust$clusters)
-metadata_seurat$clusters = as.factor(metadata_seurat$clusters)
-
-merged_all@meta.data = metadata_seurat
-res_choice = DimPlot(merged_all, label = TRUE, reduction = "umap", group.by = "clusters")
-print(res_choice)
+print("Based on the conditions we want to analyze and the confirmation of the tree, resolution 0.6 seems the best for our study.")
 
 ```
 
@@ -464,7 +415,7 @@ print(res_choice)
 
 merged_all = SetIdent(merged_all, value = "clusters")
 DefaultAssay(merged_all) = "SCT"
-merged_prep = PrepSCTFindMarkers(merged_all)
+merged_prep = PrepSCTFindMarkers(merged_all, assay = "SCT")
 
 ```
 
@@ -507,15 +458,36 @@ The object *merged_all_prep_1-40dim.rds* is ready to use for further downstream 
 
 # Object with cc regression
 list_seurat_cc = readRDS(paste0(dir, "/", "list_seurat_obj_qc_norm_ccr.rds"))
-merged_cc = merge(x = list_seurat_cc[["CTRL"]],
-                  y = c(list_seurat_cc[["CTRLaK"]], list_seurat_cc[["DON"]],
-                        list_seurat_cc[["DONaK"]], list_seurat_cc[["2DG"]],
-                        list_seurat_cc[["2DGaK"]], list_seurat_cc[["VPA"]],
-                        list_seurat_cc[["CTRL2"]], list_seurat_cc[["AOA"]],
-                        list_seurat_cc[["AOAaK"]]),
-                  add.cell.ids = c("CTRL", "CTRLaK", "DON", "DONaK", "DDG", 
+
+# Downsampling every conditions to have the same number of cells 
+number_down = min(unlist(lapply(list_seurat_cc, FUN = ncol)))
+list_seurat_obj_cc = lapply(list_seurat_cc, function(x) {
+      subset(x, cells = sample(colnames(x), number_down))
+})
+lapply(list_seurat_obj_cc, FUN = ncol)
+
+# Merge conditions
+merged_cc = merge(x = list_seurat_obj_cc[["CTRL"]], 
+                   y = c(list_seurat_obj_cc[["CTRLaK"]], list_seurat_obj_cc[["DON"]], 
+                         list_seurat_obj_cc[["DONaK"]], list_seurat_obj_cc[["2DG"]], 
+                         list_seurat_obj_cc[["2DGaK"]], list_seurat_obj_cc[["VPA"]], 
+                         list_seurat_obj_cc[["CTRL2"]], list_seurat_obj_cc[["AOA"]], 
+                         list_seurat_obj_cc[["AOAaK"]]),
+                   add.cell.ids = c("CTRL", "CTRLaK", "DON", "DONaK", "DDG", 
                                     "2DGaK", "VPA", "CTRL2", "AOA", "AOAaK"),
-                  merge.data = TRUE)
+                   merge.data = TRUE)
+
+# Merge control conditions and keep the same number of cells as every other condition
+metadata = data.frame(merged_cc@meta.data) %>%
+  dplyr::mutate(orig.ident = ifelse(old.ident %in% c("CTRL", "CTRL2"), "CTRL", old.ident))
+merged_cc@meta.data = metadata
+
+merged_cc = subset(merged_cc, 
+               cells = c(str_subset(colnames(merged_cc), pattern = "AOA|DDG|DON|CTRLaK|2DGaK|DONaK|VPA|AOAaK"),
+                         sample(str_subset(colnames(merged_cc), pattern = "CTRL_"), number_down)))
+table(merged_cc$orig.ident)
+
+# Variable features
 features_all_cc = rownames(merged_cc[["SCT"]]@scale.data)
 VariableFeatures(merged_cc, assay = "SCT") = features_all_cc
 rm(list_seurat_cc, features_all_cc)
@@ -525,22 +497,13 @@ merged_cc = dim_seurat_obj_cc$obj
 
 ```
 
-```{r, fig.height = 20, fig.width = 18}
+```{r, fig.height = 20, fig.width = 24}
 
 (dim_seurat_obj_cc$elb_plot | dim_seurat_obj_cc$pca_plot) / dim_seurat_obj_cc$pca_split_plot
-
-```
-
-```{r, fig.height = 20, fig.width = 22}
-
 dim_seurat_obj_cc$pca_dim
 
 print("We chose dimensions 1 --> 40 for downstream analysis.")
 dim_choice = c(1:40)
-
-```
-
-```{r}
 
 umap_seurat_obj_cc = umap_fun(merged_cc, "SCT", dim_choice, color_code)
 merged_cc = umap_seurat_obj_cc$obj
