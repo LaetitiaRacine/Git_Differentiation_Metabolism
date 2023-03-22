@@ -17,13 +17,6 @@ Options:
 
 library(docopt)
 arguments <- docopt(doc)
-# arguments <- list(cond="2DG",
-#                  seurat_obj="exp/scATACseq_SKMK_preprocessing/2DG_seurat.rds",
-#                  output_seurat="exp/scATACseq_SKMK_preprocessing/2DG_seurat_qc.rds",
-#                  output_seurat_filtered="exp/scATACseq_SKMK_preprocessing/2DG_seurat__qc_filter.rds",
-#                  output_plots_panel ="exp/scATACseq_SKMK_preprocessing/2DG_plot_quality_control.svg",
-#                  output_plots_list ="exp/scATACseq_SKMK_preprocessing/2DG_plots_list.rds",
-#                  output_tab="exp/scATACseq_SKMK_preprocessing/2DG_tab_filter.csv")
 
 #*************
 # Dependencies
@@ -164,55 +157,68 @@ saveRDS(object = list_graphs, file = arguments$output_plots_list)
 saveRDS(object = seurat_obj, file = arguments$output_seurat)
 
 
-#**************************************************************
-# Number of cells after QC filtering  and remove outlier cells
-#**************************************************************
+#***********************************
+# Number of cells after QC filtering  
+#***********************************
 
 # Initialize summary df with initial numbers of cells and peaks
 vec_cell = c(paste0(name_cond, "_NbCells"))
 vec_peak = c(paste0(name_cond, "_NbPeaks"))
 df_filter = data.frame(
   "Condition" = c(vec_cell, vec_peak),
-  "Initial" = c(df_summary$Initial_Cell_Number, df_summary$Initial_Peak_Number))
+  "CreateChromatinAssay_filter" = c(df_summary$Initial_Cell_Number, 
+                                    df_summary$Initial_Peak_Number))
 
-# Apply first filter on nucleosome signal 
+# Apply first cell filter on nucleosome signal 
 seurat_obj = subset(x = seurat_obj, subset = nucleosome_signal < 2)
 df_filter$Nucleosome_filter = c(ncol(seurat_obj), nrow(seurat_obj))
 
-# Apply filter on number of fragments in cell
-seurat_obj =  subset(x = seurat_obj, subset = peak_region_fragments > 3000 & 
+# Apply cell filter on number of fragments in cell
+seurat_obj =  subset(x = seurat_obj, 
+                     subset = peak_region_fragments > 3000 & 
                        peak_region_fragments < 50000)
 df_filter$Fragments_filter =  c(ncol(seurat_obj), nrow(seurat_obj))
 
-# Apply filter on percentage of fragments in peaks
+# Apply cell filter on percentage of fragments in peaks
 seurat_obj =  subset(x = seurat_obj, subset = pct_reads_in_peaks > 50)
 df_filter$PctReads_filter =  c(ncol(seurat_obj), nrow(seurat_obj))
 
-# Apply filter on blacklist fragments
+# Apply cell filter on blacklist fragments
 seurat_obj =  subset(x = seurat_obj, subset = blacklist_ratio < 0.05)
 df_filter$Blacklist_filter =  c(ncol(seurat_obj), nrow(seurat_obj))
 
-# Apply filter on TSS enrichment score
+# Apply cell filter on TSS enrichment score
 seurat_obj =  subset(x = seurat_obj, subset = TSS.enrichment > 2)
 df_filter$TSS_filter =  c(ncol(seurat_obj), nrow(seurat_obj))
 
+
+#***********************************
+# Number of peaks after QC filtering  
+#***********************************
+
 ## Clean chromosome list - Keep only standard chromosomes
+# Filter in the Grange object
 seurat_obj@assays$peaks@ranges = tidyChromosomes(gr = seurat_obj@assays$peaks@ranges,
                                                  keep.X = TRUE,
                                                  keep.Y = TRUE,
                                                  keep.M = FALSE,
                                                  keep.nonstandard = FALSE,
                                                  genome = "hg38")
-list_peak_clean = seurat_obj@assays$peaks@ranges$peak_name
-seurat_obj = subset(x = seurat_obj, features = list_peak_clean) 
+# Subset in the Count matrix as well
+list_peak_clean = unlist(as.vector(seurat_obj@assays$peaks@ranges$peaks_name))
+table(rownames(seurat_obj) %in% list_peak_clean) # we need to remove the FALSE peaks
+seurat_obj = subset(seurat_obj, features = list_peak_clean) # works only because we have only one assay
+table(rownames(seurat_obj) %in% list_peak_clean)
 df_filter$Chromosome_filter = c(ncol(seurat_obj), nrow(seurat_obj))
+
 
 #**********************
 # Save filtered output
 #**********************
 
 saveRDS(object = seurat_obj, file = arguments$output_seurat_filtered)
-write.table(x = df_filter, file = arguments$output_tab)
+write.table(x = df_filter, file = arguments$output_tab, row.names = FALSE)
+
 
 #**********
 # Rsession

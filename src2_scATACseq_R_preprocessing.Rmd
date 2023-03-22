@@ -21,44 +21,51 @@ library(stringr)
 ```
 
 
+
+
 # scATACseq_R-SKMK_ReportCreate&Quality = Summary of snakemake scripts
 
-*OBJECTIVE*  
-Create a html report with command lines of snakemake rules and html report.     
-The two R scripts called in snakemake allow to :   
---> create a usable R object from Cell Ranger outputs  
-- load cell ranger output files  
-- create seurat object with chromatin assay for each condition  
-- add genomic annotations from EnsDB.Hsapiens.v86 database  
-- update orig.ident with the name of the condition  
---> check quality of cells and fragments detected and filter the dataset     
-- filter on nucleosome banding pattern    
-- filter on fragments and blaklist reads    
-- filter on TSS enrichment score     
-- keep only standard chromosomes    
-- create QC plots
-The Rmd script will display the code without running it and expose some examples (CTRL objects).  
-
-*INPUTS of Snakemake files*         
-- [DRUG]_filtered_peak_bc_matrix.h5      
-- [DRUG]_singlecell.csv      
-- [DRUG]_fragments.tsv.gz      
-- [DRUG]_seurat.rds
-
-*OUTPUTS of Snakemake files*     
-- [DRUG]_seurat.rds  
-- [DRUG]_seurat_qc.rds    
-- [DRUG]_plots_qc_list.rds    
-- [DRUG]_seurat_qc_filter.rds    
-- [DRUG]_plots_quality_control.svg    
-- [DRUG]_df_filter.csv
-
-*INPUTS of Rmd*  
-All the outputs of snakemake files.  
+*OBJECTIVE*    
+Create a html report with command lines of snakemake rules.       
+The two R scripts called in snakemake allow to :     
+--> create a usable R object from Cell Ranger outputs    
+- load cell ranger output files    
+- create seurat object with chromatin assay for each condition    
+- add genomic annotations from EnsDB.Hsapiens.v86 (hg38) database    
+- update orig.ident with the name of the condition    
+- add peak name in grange metadata    
+--> check quality of cells and fragments detected and filter the dataset       
+- filter on nucleosome banding pattern        
+- filter on fragments and blacklist reads        
+- filter on TSS enrichment score       
+- keep only standard chromosomes      
+- create QC plots  
+The Rmd script will display the code without running it and expose some examples.      
   
-*OUTPUT of Rmd*    
-An html file.  
+*script scATACseq_SKMK_CreateSeuratObject.R*    
+*INPUTS*    
+- [DRUG]_filtered_peak_bc_matrix.h5        
+- [DRUG]_singlecell.csv        
+- [DRUG]_fragments.tsv.gz        
+*OUTPUT*       
+- [DRUG]_seurat.rds : Seurat object with two filters and database annotations info    
+    
+*script scATACseq_SKMK_QualityControl.R*  
+*INPUT*    
+- [DRUG]_seurat.rds (cf. scATACseq_SKMK_CreateSeuratObject.R)    
+*OUTPUTS*     
+- [DRUG]_seurat_qc.rds : Seurat object with QC parameters in metadata but no new filter applied       
+- [DRUG]_plots_qc_list.rds        
+- [DRUG]_seurat_qc_filter.rds : Seurat object with QC parameters and filters applied        
+- [DRUG]_plots_quality_control.svg      
+- [DRUG]_df_filter.csv  
   
+*script scATACseq_R-SKMK_ReportCreate&Quality.Rmd*  
+*INPUTS*  
+All the outputs of snakemake files.    
+*OUTPUTS*      
+An html and .csv files with list of peaks for each condition after QC filters.    
+    
 ```{r, snakemake report}
 
 directory = getwd()
@@ -69,6 +76,8 @@ rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATACseq_R-SKMK
                   output_file = paste0(Sys.Date(), '_', "scATACseq_R-SKMK_ReportCreateQuality.html"))
 
 ```
+
+
 
 
 

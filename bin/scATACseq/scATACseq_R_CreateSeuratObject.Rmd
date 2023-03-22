@@ -155,6 +155,20 @@ list_seurat_obj[["CTRL"]]@meta.data
 
 ```
 
+```{r, Add peak_name}
+
+for (i in 1:number_condition) {
+  
+  seurat_obj = list_seurat_obj[[i]]
+  peaks_name = data.frame(paste0(seurat_obj@assays$peaks@ranges@seqnames, "-", seurat_obj@assays$peaks@ranges@ranges))
+  colnames(peaks_name) = "peaks_name"
+  mcols(seurat_obj@assays$peaks@ranges)$peaks_name = peaks_name
+  list_seurat_obj[[i]] = seurat_obj
+  
+}
+
+```
+
 ```{r, Save output}
 
 saveRDS(object = list_seurat_obj, 
@@ -166,10 +180,17 @@ saveRDS(object = list_seurat_obj,
 
 end_time = Sys.time()
 cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
-# Clean working space and memory 
-rm(list = ls())
-gc()
+
 # Show package version
 sessionInfo()
 
 ```
+
+```{r, results="hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+
