@@ -1,0 +1,600 @@
+---
+title: "scATACseq_bulkATACseq_R_Overlap"
+author: "Laëtitia Racine"
+date: "2023-03-22"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: false
+    toc_float: false
+    theme: journal
+---
+
+
+<style>
+body {text-align: justify}
+div.beige {background-color:#FFE0B2; border-radius: 5px; padding: 8px;}
+</style>
+
+
+```{r, Setup, include=F}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(knitr)
+library(stringr)
+library(GenomicRanges)
+library(tibble)
+library(dplyr)
+library(ggplot2)
+library(kableExtra)
+library(patchwork)
+
+```
+
+```{r, Working directory}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+directory_data = paste0(directory, "data/scATACseq/")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scATACseq_bulkATACseq_R_Overlap/"))
+dir.create(path = paste0(directory, "exp/scATACseq_bulkATACseq_R_Overlap/", current_date))
+directory_output = paste0(directory, "exp/scATACseq_bulkATACseq_R_Overlap/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+<br><br><br>
+
+# Overview
+
+1)  scATACseq data : .bed file from CellRanger output folder\
+    initially mapped on hg38 genome\
+    lift over hg19 genome with <https://genome.ucsc.edu/cgi-bin/hgLiftOver> website\
+    transform into **granges** and add annotations in scATACseq_bulkATACseq_R\_SwitchGenome.Rmd script
+
+2)  bulkATACseq data : **granges** from genomic ranges folder from bloc2 analysis\
+    mapped on hg19 genome\
+    update annotations to use the same annotation file as scATACseq in bulkATACseq_ChangeAnnotation.Rmd script
+
+```{r, Input loading}
+
+dir_sc = pic_last_dir(paste0(directory, "exp/", "scATACseq_bulkATACseq_R_SwitchGenome/"))
+sc_gr = readRDS(paste0(dir_sc, "/", "list_hg19_gr_ann.rds"))
+  
+dir_bulk = paste0(pic_last_dir(paste0(directory, "exp/", "bulkATACseq_R_ChangeAnnotation/")), "/")
+bulk_gr = list.files(dir_bulk, pattern = "update_annot.gr.rds")
+bulk_gr = paste0(dir_bulk, bulk_gr)  
+cond_time = str_extract(bulk_gr, pattern = "(?<=/)[:alnum:]+_[:digit:]{2}h(?=_D)")
+bulk_gr = lapply(bulk_gr, readRDS)
+names(bulk_gr) = cond_time
+
+```
+
+<br>
+
+**Isolate common conditions**\
+We have 15 conditions in bulk ATACseq and 4 conditions in scATACseq.\
+We need to isolate the common conditions to do the comparison (DON, 2DG, AOA, CTRL at 24h).\
+Note : sometimes CTRL is indicated with MP
+
+```{r}
+
+# Keep only common condition
+cond_to_keep = paste0(names(sc_gr), "_24h")
+cond_to_keep = c(cond_to_keep, "MP_24h")
+bulk_gr = bulk_gr[names(bulk_gr) %in% cond_to_keep]
+
+# Create table
+sc_df = lapply(sc_gr, as_tibble)
+bulk_df = lapply(bulk_gr, as_tibble)
+
+```
+
+<br>
+
+**Calculate the overlap between peaks from bulk and peaks from single cell**\
+Questions we ask : how many peaks of bulk are present in sc ? How many peaks of sc are present in bulk ?\
+Note : when we calculate the overlap, one peak from one method can overlap multiple peaks in the other method.
+
+```{r, function definition}
+
+overlap_method = function(peaks_gr1, peaks_gr2, tab1, tab2, title1, title2, cond) {
+
+  # Compute the overlap between peaks from method 1 and method 2
+  overlap = findOverlaps(
+    query = peaks_gr1,
+    subject = peaks_gr2
+  )
+  
+  # Retrieve peaks from method1 dataset positive for an overlap with the peaks in method2 dataset
+  index_method1 = unique(queryHits(overlap))
+  method1_overlap = as.data.frame(peaks_gr1[index_method1,])
+  method1_overlap = distinct(method1_overlap)
+  method1_overlap$peak_name = str_c(method1_overlap$seqnames,
+                                    method1_overlap$start,
+                                    method1_overlap$end,
+                                    sep = "_")
+  method1_overlap = method1_overlap$peak_name
+  
+  # Retrieve peaks from method2 dataset positive for an overlap with the peaks in method1 dataset
+  index_method2 = subjectHits(overlap)
+  method2_overlap = as.data.frame(peaks_gr2[index_method2,])
+  method2_overlap = distinct(method2_overlap)
+  method2_overlap$peak_name = str_c(method2_overlap$seqnames,
+                                    method2_overlap$start,
+                                    method2_overlap$end, sep = "_")
+  method2_overlap = method2_overlap$peak_name
+  
+  # Add peak_name in the table
+  tab1$peak_name = str_c(tab1$seqnames, tab1$start, tab1$end, sep = "_")
+  tab2$peak_name = str_c(tab2$seqnames, tab2$start, tab2$end, sep = "_")
+  tab2$test = str_c(tab2$seqnames, tab2$start, tab2$end, sep = "_")
+  
+  # Add a column to indicate if the peak overlap with the other method
+  tab1$overlap = ifelse(tab1$peak_name %in% method1_overlap, "Shared peaks", "Not shared peaks")
+  tab2$overlap = ifelse(tab2$peak_name %in% method2_overlap, "Shared peaks", "Not shared peaks") 
+
+  ### All peaks 
+  
+  # Summarize the results
+  tab1_summary = as.data.frame(table(tab1$overlap)) %>%
+    dplyr::rename("Peak_category" = "Var1", "NumberOfPeaks" = "Freq") %>%
+    dplyr::mutate(PercentagePeak = (NumberOfPeaks/nrow(tab1))*100)
+  tab2_summary = as.data.frame(table(tab2$overlap)) %>%
+    dplyr::rename("Peak_category" = "Var1", "NumberOfPeaks" = "Freq") %>%
+    dplyr::mutate(PercentagePeak = (NumberOfPeaks/nrow(tab2))*100)
+  
+  # Plot the results
+  plot1 = ggplot(tab1, aes(x = overlap)) +
+    geom_bar(fill = c("#D5269D", "#A9D23D")) +
+    geom_text(stat='count', aes(label=..count..), vjust = 0) +
+    ggtitle(paste(title1, cond, "- All peaks"))
+  plot2 = ggplot(tab2, aes(x = overlap)) +
+    geom_bar(fill = c("#D5269D", "#A9D23D")) +
+    geom_text(stat='count', aes(label=..count..), vjust = 0) +
+    ggtitle(paste(title2, cond, "- All peaks"))
+  
+  ### Promoters peaks
+  tab1_prom = tab1 %>% dplyr::filter(hg19_genes_promoters == TRUE)
+  tab2_prom = tab2 %>% dplyr::filter(hg19_genes_promoters == TRUE)
+  
+   # Summarize the results
+  tab1_summary_prom = as.data.frame(table(tab1_prom$overlap)) %>%
+    dplyr::rename("Peak_category" = "Var1", "NumberOfPeaks" = "Freq") %>%
+    dplyr::mutate(PercentagePeak = (NumberOfPeaks/nrow(tab1_prom))*100)
+  tab2_summary_prom = as.data.frame(table(tab2_prom$overlap)) %>%
+    dplyr::rename("Peak_category" = "Var1", "NumberOfPeaks" = "Freq") %>%
+    dplyr::mutate(PercentagePeak = (NumberOfPeaks/nrow(tab2_prom))*100)
+  
+  # Plot the results
+  plot1_prom = ggplot(tab1_prom, aes(x = overlap)) +
+    geom_bar(fill = c("#D5269D", "#A9D23D")) +
+    geom_text(stat='count', aes(label=..count..), vjust = 0) +
+    ggtitle(paste(title1, cond, "- Promoter peaks"))
+  plot2_prom = ggplot(tab2_prom, aes(x = overlap)) +
+    geom_bar(fill = c("#D5269D", "#A9D23D")) +
+    geom_text(stat='count', aes(label=..count..), vjust = 0) +
+    ggtitle(paste(title2, cond, "- Promoter peaks"))
+  
+  ### Intergenic peaks
+  tab1_inter = tab1 %>% dplyr::filter(hg19_genes_intergenic == TRUE)
+  tab2_inter = tab2 %>% dplyr::filter(hg19_genes_intergenic == TRUE)
+  
+   # Summarize the results
+  tab1_summary_inter = as.data.frame(table(tab1_inter$overlap)) %>%
+    dplyr::rename("Peak_category" = "Var1", "NumberOfPeaks" = "Freq") %>%
+    dplyr::mutate(PercentagePeak = (NumberOfPeaks/nrow(tab1_inter))*100)
+  tab2_summary_inter = as.data.frame(table(tab2_inter$overlap)) %>%
+    dplyr::rename("Peak_category" = "Var1", "NumberOfPeaks" = "Freq") %>%
+    dplyr::mutate(PercentagePeak = (NumberOfPeaks/nrow(tab2_inter))*100)
+  
+  # Plot the results
+  plot1_inter = ggplot(tab1_inter, aes(x = overlap)) +
+    geom_bar(fill = c("#D5269D", "#A9D23D")) +
+    geom_text(stat='count', aes(label=..count..), vjust = 0) +
+    ggtitle(paste(title1, cond, "- Intergenic peaks"))
+  plot2_inter = ggplot(tab2_inter, aes(x = overlap)) +
+    geom_bar(fill = c("#D5269D", "#A9D23D")) +
+    geom_text(stat='count', aes(label=..count..), vjust = 0) +
+    ggtitle(paste(title2, cond, "- Intergenic peaks"))
+  
+  # Output of the function
+  results = list(tab1 = tab1,
+                 tab2 = tab2,
+                 tab1_summary = tab1_summary,
+                 tab2_summary = tab2_summary,
+                 plot1 = plot1,
+                 plot2 = plot2,
+                 tab1_summary_prom = tab1_summary_prom,
+                 tab2_summary_prom = tab2_summary_prom,
+                 plot1_prom = plot1_prom,
+                 plot2_prom = plot2_prom,
+                 tab1_summary_inter = tab1_summary_inter,
+                 tab2_summary_inter = tab2_summary_inter,
+                 plot1_inter = plot1_inter,
+                 plot2_inter = plot2_inter)
+  return(results)
+  
+}
+
+```
+
+```{r, call function}
+
+CTRL_overlap = overlap_method(peaks_gr1 = bulk_gr[["MP_24h"]], 
+                              peaks_gr2 = sc_gr[["CTRL"]], 
+                              tab1 = bulk_df[["MP_24h"]], 
+                              tab2 = sc_df[["CTRL"]], 
+                              title1 = "bulkATACseq dataset", 
+                              title2 = "scATACseq dataset",
+                              cond = "CTRL")
+
+DON_overlap = overlap_method(peaks_gr1 = bulk_gr[["DON_24h"]], 
+                             peaks_gr2 = sc_gr[["DON"]], 
+                             tab1 = bulk_df[["DON_24h"]], 
+                             tab2 = sc_df[["DON"]], 
+                             title1 = "bulkATACseq dataset", 
+                             title2 = "scATACseq dataset",
+                             cond = "DON")
+
+DDG_overlap = overlap_method(peaks_gr1 = bulk_gr[["2DG_24h"]], 
+                             peaks_gr2 = sc_gr[["2DG"]], 
+                             tab1 = bulk_df[["2DG_24h"]], 
+                             tab2 = sc_df[["2DG"]], 
+                             title1 = "bulkATACseq dataset", 
+                             title2 = "scATACseq dataset",
+                             cond = "2DG")
+
+AOA_overlap = overlap_method(peaks_gr1 = bulk_gr[["AOA_24h"]], 
+                             peaks_gr2 = sc_gr[["AOA"]], 
+                             tab1 = bulk_df[["AOA_24h"]], 
+                             tab2 = sc_df[["AOA"]], 
+                             title1 = "bulkATACseq dataset", 
+                             title2 = "scATACseq dataset",
+                             cond = "AOA")
+
+```
+
+```{r, all peaks, fig.width = 16, fig.height = 4, results = "hold"}
+
+# Visualize summary
+cat("Peaks of bulkATACseq")
+CTRL_overlap$tab1_summary %>%
+  kable(caption = "CTRL - All peaks") %>%
+  kable_styling()
+DON_overlap$tab1_summary %>%
+  kable(caption = "DON - All peaks") %>%
+  kable_styling()
+DDG_overlap$tab1_summary %>%
+  kable(caption = "2DG - All peaks") %>%
+  kable_styling()
+AOA_overlap$tab1_summary %>%
+  kable(caption = "AOA - All peaks") %>%
+  kable_styling()
+
+cat("Peaks of scATACseq")
+CTRL_overlap$tab2_summary %>%
+  kable(caption = "CTRL - All peaks") %>%
+  kable_styling()
+DON_overlap$tab2_summary %>%
+  kable(caption = "DON - All peaks") %>%
+  kable_styling()
+DDG_overlap$tab2_summary %>%
+  kable(caption = "2DG - All peaks") %>%
+  kable_styling()
+AOA_overlap$tab2_summary %>%
+  kable(caption = "AOA - All peaks") %>%
+  kable_styling()
+
+# Show plots
+CTRL_overlap$plot1 | DON_overlap$plot1 | DDG_overlap$plot1 | AOA_overlap$plot1
+CTRL_overlap$plot2 | DON_overlap$plot2 | DDG_overlap$plot2 | AOA_overlap$plot2
+
+```
+
+```{r, promoter peaks, fig.width = 16, fig.height = 4, results = "hold"}
+
+# Visualize summary
+cat("Peaks of bulkATACseq")
+CTRL_overlap$tab1_summary_prom %>%
+  kable(caption = "CTRL - Promoters peaks") %>%
+  kable_styling()
+DON_overlap$tab1_summary_prom %>%
+  kable(caption = "DON - Promoters peaks") %>%
+  kable_styling()
+DDG_overlap$tab1_summary_prom %>%
+  kable(caption = "2DG - Promoters peaks") %>%
+  kable_styling()
+AOA_overlap$tab1_summary_prom %>%
+  kable(caption = "AOA - Promoters peaks") %>%
+  kable_styling()
+
+cat("Peaks of scATACseq")
+CTRL_overlap$tab2_summary_prom %>%
+  kable(caption = "CTRL - Promoters peaks") %>%
+  kable_styling()
+DON_overlap$tab2_summary_prom %>%
+  kable(caption = "DON - Promoters peaks") %>%
+  kable_styling()
+DDG_overlap$tab2_summary_prom %>%
+  kable(caption = "2DG - Promoters peaks") %>%
+  kable_styling()
+AOA_overlap$tab2_summary_prom %>%
+  kable(caption = "AOA - Promoters peaks") %>%
+  kable_styling()
+
+# Show plots
+CTRL_overlap$plot1_prom | DON_overlap$plot1_prom | DDG_overlap$plot1_prom | AOA_overlap$plot1_prom
+CTRL_overlap$plot2_prom | DON_overlap$plot2_prom | DDG_overlap$plot2_prom | AOA_overlap$plot2_prom
+
+```
+
+```{r, intergenic peaks, fig.width = 16, fig.height = 4, results = "hold"}
+
+# Visualize summary
+cat("Peaks of bulkATACseq")
+CTRL_overlap$tab1_summary_inter %>%
+  kable(caption = "CTRL - Intergenic peaks") %>%
+  kable_styling()
+DON_overlap$tab1_summary_inter %>%
+  kable(caption = "DON - Intergenic peaks") %>%
+  kable_styling()
+DDG_overlap$tab1_summary_inter %>%
+  kable(caption = "2DG - Intergenic peaks") %>%
+  kable_styling()
+AOA_overlap$tab1_summary_inter %>%
+  kable(caption = "AOA - Intergenic peaks") %>%
+  kable_styling()
+
+cat("Peaks of scATACseq")
+CTRL_overlap$tab1_summary_inter %>%
+  kable(caption = "CTRL - Intergenic peaks") %>%
+  kable_styling()
+DON_overlap$tab1_summary_inter %>%
+  kable(caption = "DON - Intergenic peaks") %>%
+  kable_styling()
+DDG_overlap$tab1_summary_inter %>%
+  kable(caption = "2DG - Intergenic peaks") %>%
+  kable_styling()
+AOA_overlap$tab1_summary_inter %>%
+  kable(caption = "AOA - Intergenic peaks") %>%
+  kable_styling()
+
+# Show plots
+CTRL_overlap$plot1_inter | DON_overlap$plot1_inter | DDG_overlap$plot1_inter | AOA_overlap$plot1_inter
+CTRL_overlap$plot2_inter | DON_overlap$plot2_inter | DDG_overlap$plot2_inter | AOA_overlap$plot2_inter
+
+```
+
+```{r, save outputs, fig.show="hide"}
+
+plot_bulk = (CTRL_overlap$plot1 | DON_overlap$plot1 | DDG_overlap$plot1 | AOA_overlap$plot1) /
+  (CTRL_overlap$plot1_prom | DON_overlap$plot1_prom | DDG_overlap$plot1_prom | AOA_overlap$plot1_prom) /
+  (CTRL_overlap$plot1_inter | DON_overlap$plot1_inter | DDG_overlap$plot1_inter | AOA_overlap$plot1_inter)
+
+plot_sc = (CTRL_overlap$plot2 | DON_overlap$plot2 | DDG_overlap$plot2 | AOA_overlap$plot2) /
+  (CTRL_overlap$plot2_prom | DON_overlap$plot2_prom | DDG_overlap$plot2_prom | AOA_overlap$plot2_prom) /
+  (CTRL_overlap$plot2_inter | DON_overlap$plot2_inter | DDG_overlap$plot2_inter | AOA_overlap$plot2_inter)
+
+ggsave(plot = plot_bulk, width = 18, height = 12,
+       filename = paste0(directory_output, "plot_compare_bulkpeaks.svg"))
+ggsave(plot = plot_sc, width = 18, height = 12,
+       filename = paste0(directory_output, "plot_compare_singlecellpeaks.svg"))
+rm(plot_bulk, plot_sc)
+
+bk_all = bind_rows(CTRL_overlap$tab1_summary %>% dplyr::mutate(Condition = "CTRL"),
+                   DON_overlap$tab1_summary %>% dplyr::mutate(Condition = "DON"),
+                   DDG_overlap$tab1_summary %>% dplyr::mutate(Condition = "2DG"),
+                   AOA_overlap$tab1_summary %>% dplyr::mutate(Condition = "AOA")
+) %>% dplyr::mutate(Method = "bulk", Peaks_category = "all peaks")
+
+sc_all = bind_rows(CTRL_overlap$tab2_summary %>% dplyr::mutate(Condition = "CTRL"),
+                   DON_overlap$tab2_summary %>% dplyr::mutate(Condition = "DON"),
+                   DDG_overlap$tab2_summary %>% dplyr::mutate(Condition = "2DG"),
+                   AOA_overlap$tab2_summary %>% dplyr::mutate(Condition = "AOA")
+) %>% dplyr::mutate(Method = "single cell", Peaks_category = "all peaks")
+
+bk_prom = bind_rows(CTRL_overlap$tab1_summary_prom %>% dplyr::mutate(Condition = "CTRL"),
+                    DON_overlap$tab1_summary_prom %>% dplyr::mutate(Condition = "DON"),
+                    DDG_overlap$tab1_summary_prom %>% dplyr::mutate(Condition = "2DG"),
+                    AOA_overlap$tab1_summary_prom %>% dplyr::mutate(Condition = "AOA")
+) %>% dplyr::mutate(Method = "bulk", Peaks_category = "promoter peaks")
+
+sc_prom = bind_rows(CTRL_overlap$tab2_summary_prom %>% dplyr::mutate(Condition = "CTRL"),
+                    DON_overlap$tab2_summary_prom %>% dplyr::mutate(Condition = "DON"),
+                    DDG_overlap$tab2_summary_prom %>% dplyr::mutate(Condition = "2DG"),
+                    AOA_overlap$tab2_summary_prom %>% dplyr::mutate(Condition = "AOA")
+) %>% dplyr::mutate(Method = "single cell", Peaks_category = "promoter peaks")
+
+bk_inter = bind_rows(CTRL_overlap$tab1_summary_inter %>% dplyr::mutate(Condition = "CTRL"),
+                     DON_overlap$tab1_summary_inter %>% dplyr::mutate(Condition = "DON"),
+                     DDG_overlap$tab1_summary_inter %>% dplyr::mutate(Condition = "2DG"),
+                     AOA_overlap$tab1_summary_inter %>% dplyr::mutate(Condition = "AOA")
+) %>% dplyr::mutate(Method = "bulk", Peaks_category = "intergenic peaks")
+
+sc_inter = bind_rows(CTRL_overlap$tab2_summary_inter %>% dplyr::mutate(Condition = "CTRL"),
+                     DON_overlap$tab2_summary_inter %>% dplyr::mutate(Condition = "DON"),
+                     DDG_overlap$tab2_summary_inter %>% dplyr::mutate(Condition = "2DG"),
+                     AOA_overlap$tab2_summary_inter %>% dplyr::mutate(Condition = "AOA")
+) %>% dplyr::mutate(Method = "single cell", Peaks_category = "intergenic peaks")
+
+tab_glob = bind_rows(bk_all, sc_all, bk_prom, sc_prom, bk_inter, sc_inter)
+rm(bk_all, sc_all, bk_prom, sc_prom, bk_inter, sc_inter)
+write.csv2(x = tab_glob, row.names = FALSE,
+           file = paste0(directory_output, "tab_percentage_peaks_shared.csv"))
+
+```
+
+
+<br>
+
+<div class = "beige">
+Most of bulkATACseq peaks have an equivalent in the scATACseq dataset (80% of all peaks and more than 90% of promoter peaks).\
+However, when we look at the scATACseq peaks we have more not shared peaks than shared peaks except for promoters where shared peaks are predominant. We want to investigate a little bit further on scATACseq peaks to understand the particularity of the peaks that we can't detect with the bulk method.
+</div>
+
+<br>
+
+**Investigate not shared peaks for scATACseq**\
+How many cells of scATACseq are sharing the peaks that we can't detect in bulk ATACseq ? Those peaks correspond to which genomic annotation ?
+```{r, eval = FALSE}
+
+### !!! Extremely long !!!
+
+# Load the matrix of counts
+dir =  pic_last_dir(paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/"))
+list_mtx_hg19 = readRDS(paste0(dir, "/", "list_mtx_hg19.rds"))
+
+# Transform matrices into a binary one : detected/no detected
+list_mtx_hg19_bin = list()
+for (i in 1:length(list_mtx_hg19)) {
+  mtx = list_mtx_hg19[[i]]
+  mtx[mtx>0] = 1
+  list_mtx_hg19_bin[[i]] = mtx
+}
+names(list_mtx_hg19_bin) = names(list_mtx_hg19)
+rm(list_mtx_hg19)
+saveRDS(list_mtx_hg19_bin, file = paste0(directory_output, "list_mtx_hg19_binary.rds"))
+
+```
+
+```{r}
+
+list_mtx_hg19_bin = readRDS(paste0(directory_output, "list_mtx_hg19_binary.rds"))
+
+```
+
+```{r, fig.width = 16, fig.height = 4}
+
+# Function definition : How much the peaks are shared among cells ?
+peaks_nbcells_fun = function(bin_mtx, cond) {
+  # Summing rows to count number of cells sharing a peak
+  df = as.data.frame(rowSums(bin_mtx)) 
+  colnames(df) = "nb_cells_sharing_this_peak"
+  df$peak_name = rownames(df)
+  # Histogram of number of peaks (= freq) shared by n cells
+  plot = ggplot(data = df, aes(x = nb_cells_sharing_this_peak)) +
+    geom_histogram(bins = 50) +
+    ggtitle(label = paste(cond, "Distribution - Nb cell sharing a peak"))
+  # Function outputs
+  return(list(df = df, plot = plot))
+}
+
+# Call the function
+CTRL_peaks_shared = peaks_nbcells_fun(list_mtx_hg19_bin[["CTRL"]], "CTRL")
+DON_peaks_shared = peaks_nbcells_fun(list_mtx_hg19_bin[["DON"]], "DON")
+DDG_peaks_shared = peaks_nbcells_fun(list_mtx_hg19_bin[["2DG"]], "2DG")
+AOA_peaks_shared = peaks_nbcells_fun(list_mtx_hg19_bin[["AOA"]], "AOA")
+
+# Visualize the plots
+CTRL_peaks_shared$plot | DON_peaks_shared$plot | DDG_peaks_shared$plot | AOA_peaks_shared$plot
+
+```
+
+```{r, fig.width = 16, fig.height = 16}
+
+# Create summary table (scATACseq peaks are in tab2)
+CTRL_over_tab = full_join(x = CTRL_overlap$tab2, y = CTRL_peaks_shared$df, by = "peak_name")
+DON_over_tab = full_join(x = DON_overlap$tab2, y = DON_peaks_shared$df, by = "peak_name")
+DDG_over_tab = full_join(x = DDG_overlap$tab2, y = DDG_peaks_shared$df, by = "peak_name")
+AOA_over_tab = full_join(x = AOA_overlap$tab2, y = AOA_peaks_shared$df, by = "peak_name")
+
+# Function definition : number of cells sharing the peaks depending if they are shared or not
+plot_shared_cells_fun = function(tab_recap, annotation, cond) {
+  # Subset tab if necessary
+  if (!annotation %in% c("all", "promoter", "intergenic")) { 
+    print("annotation not recognize")
+  } else {
+    if (annotation == "all") { tab_recap = tab_recap }
+    if (annotation == "promoter") { tab_recap = tab_recap %>% dplyr::filter(hg19_genes_promoters == TRUE) }
+    if (annotation == "intergenic") { tab_recap = tab_recap %>% dplyr::filter(hg19_genes_intergenic == TRUE)} 
+    }
+  # Calculate the median of nb cells sharing a peak per group
+  tab_recap = tab_recap %>%
+    dplyr::group_by(overlap) %>%
+    dplyr::mutate(sharing_cell_med = median(nb_cells_sharing_this_peak))
+  # plot the graph
+  median_shared = unique((tab_recap %>% dplyr::filter(overlap == "Shared peaks"))$sharing_cell_med)
+  median_noshared = unique((tab_recap %>% dplyr::filter(overlap == "Not shared peaks"))$sharing_cell_med)
+  plot = ggplot(tab_recap, aes(x = nb_cells_sharing_this_peak, color = overlap)) +
+    geom_histogram(aes(fill = overlap), alpha = 0.3, position = "identity", binwidth = 300) +
+    geom_vline(aes(xintercept=sharing_cell_med, color=overlap),linetype="dashed") +
+    scale_discrete_manual(aesthetics = c("fill", "col"), values = c('Shared peaks'= "#D5269D", 'Not shared peaks'="#A9D23D")) +
+    ggtitle(label = paste(cond, "Distribution - Nb cells sharing peaks"),
+            subtitle = paste("Total number of peaks :", nrow(tab_recap), "\n",
+                           "Peaks genomic category :", annotation, "\n",
+                           "Median peaks common bulk/single cell :", median_shared, "cells sharing the peak \n",
+                           "Median peaks only single cell :", median_noshared, "cells sharing the peak \n"))
+  # output function
+  return(plot)
+}
+
+# Call the function
+CTRL_all = plot_shared_cells_fun(CTRL_over_tab, "all", "CTRL")
+CTRL_prom = plot_shared_cells_fun(CTRL_over_tab, "promoter", "CTRL")
+CTRL_inter = plot_shared_cells_fun(CTRL_over_tab, "intergenic", "CTRL")
+DON_all = plot_shared_cells_fun(CTRL_over_tab, "all", "DON")
+DON_prom = plot_shared_cells_fun(CTRL_over_tab, "promoter", "DON")
+DON_inter = plot_shared_cells_fun(CTRL_over_tab, "intergenic", "DON")
+DDG_all = plot_shared_cells_fun(CTRL_over_tab, "all", "2DG")
+DDG_prom = plot_shared_cells_fun(CTRL_over_tab, "promoter", "2DG")
+DDG_inter = plot_shared_cells_fun(CTRL_over_tab, "intergenic", "2DG")
+AOA_all = plot_shared_cells_fun(CTRL_over_tab, "all", "AOA")
+AOA_prom = plot_shared_cells_fun(CTRL_over_tab, "promoter", "AOA")
+AOA_inter = plot_shared_cells_fun(CTRL_over_tab, "intergenic", "AOA")
+
+# Show plot 
+plot_grid = (CTRL_all | CTRL_prom | CTRL_inter) /
+  (DON_all | DON_prom | DON_inter) /
+  (DDG_all | DDG_prom | DDG_inter) /
+  (AOA_all | AOA_prom | AOA_inter) 
+plot_grid
+
+```
+
+```{r, fig.show = "hide"}
+
+ggsave(plot = (CTRL_peaks_shared$plot | DON_peaks_shared$plot | 
+                 DDG_peaks_shared$plot | AOA_peaks_shared$plot),
+       width = 18, height = 8,
+       filename = paste0(directory_output, "plots_scATAC_shared_peaks.svg"))
+
+ggsave(plot = plot_grid, width = 18, height = 16,
+       filename = paste0(directory_output, "plots_overlap_shared_peaks.svg"))
+
+```
+
+
+<br>
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results="hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```

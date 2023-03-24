@@ -1,0 +1,298 @@
+---
+title: "scATACseq_bulkATACseq_R_SwitchGenome"
+author: "Laëtitia Racine"
+date: "2023-03-22"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+
+```{r, Setup, include=F}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyr)
+library(Seurat) # as.sparse function
+library(GenomicRanges)
+library(kableExtra)
+
+```
+
+```{r, Working directory }
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/"))
+dir.create(path = paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/", current_date))
+directory_output = paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+<br><br><br>
+
+# Overview
+
+scATACseq peaks lists are initially mapped on hg38 genome (Cell Ranger output).\
+We want to compare them to bulkATACseq peaks lists that were mapped on hg19.\
+We need to have all list mapped on the same genome to allow the comparison.
+  
+We decided to convert scATACseq list of peaks on hg19 genome (less files so easier).\
+To do so, we used the liftOver application : <https://genome.ucsc.edu/cgi-bin/hgLiftOver>\
+We obtained a file with new seqnames, start and end for hg19 genome and corresponding old peaks of hg38. We also have a failure conversion file indicating peaks from hg38 that couldn't be converted.\
+  
+This code aims at :\
+- creating granges with new hg19 peaks\
+- annotating the new granges\
+- converting the count matrix with hg19 peaks and removing the failed conversion.\
+To do so, we need to load the initial hg38 matrix, the corresponding hg19 list of peaks and the failure file.\
+
+<br>
+
+**Initial list of peaks vs new list of peaks**\
+Some peaks are lost during the conversion while others are split. The .bed file that we obtained with the LiftOver tool is composed of the new peak from hg19 genome and the old peak of hg38 (start+1). Here, we apply start-1 to recover the real name of old hg38 peak.  
+```{r}
+
+# Initial list of hg38 peaks - directory and loading
+features_hg38_list = list.files(path = paste0(directory, "data/scATACseq/"), pattern = "_filtered_peak_bc_matrix_peaks.bed")
+features_hg38_list = paste0(directory, "data/scATACseq/", features_hg38_list)
+names(features_hg38_list) = str_extract(features_hg38_list, pattern = "(?<=scATACseq/)[:alnum:]+(?=_filtered)")
+features_hg38_bed = lapply(features_hg38_list, function(x) {
+  read_table(x, col_names = FALSE, col_types = list("c", "c", "c"))})
+
+# Corresponding list of hg19 peak - loading
+dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_bulkATACseq_R_SwitchGenome_LiftOver/"))
+features_hg19_list = list.files(path = paste0(dir, "/"), pattern = "_hg19_peaks.bed")
+features_hg19_list = paste0(paste0(dir, "/"), features_hg19_list)
+names(features_hg19_list) = str_extract(features_hg19_list, pattern = "(?<=24h_)[:alnum:]+(?=_hg19)")
+# !!! read_table use the scientific notation that change peak start if we don't precise the col_types !!!
+features_hg19_list = lapply(features_hg19_list, function(x) {
+  x = read_table(file = x, col_names = FALSE, col_types = list("c", "c", "c", "c", "c"))
+  x = x %>%
+  dplyr::mutate(peak_hg19 = str_c(X1, X2, X3, sep = "_")) %>%
+  tidyr::separate(col = X4, into = c("chr", "temp"), sep = ":") %>%
+  tidyr::separate(col = temp, into = c("start", "end"), sep = "-") %>%
+  dplyr::mutate(start = as.integer(start)) %>%
+  dplyr::mutate(start = start - 1) %>%
+  dplyr::mutate(peak_hg38 = str_c(chr, start, end, sep = "_"))
+})
+
+# Compare number of peaks
+tab_comp = full_join(
+  x = data.frame(unlist(lapply(features_hg38_bed, nrow))) %>% tibble::rownames_to_column("condition"),
+  y = data.frame(unlist(lapply(features_hg19_list, nrow))) %>% tibble::rownames_to_column("condition"),
+  by = "condition")
+colnames(tab_comp) = c("condition", "nbpeaks_hg38", "nbpeaks_hg19")
+
+tab_comp %>%
+  kable() %>%
+  kable_styling()
+
+# We decide to remove non standard chromosome in hg19 peaks for further analysis
+standard_chr = c("chr1", "chr2", "chr3", "chr4", "chr5", "chr6", "chr7", "chr8",
+                 "chr9", "chr10", "chr11", "chr12", "chr13", "chr14", "chr15",
+                 "chr16", "chr17", "chr18", "chr19", "chr20", "chr21", "chr22",
+                 "chrX", "chrY")
+features_hg19_list = lapply(features_hg19_list, function(x) {
+  x = x %>%
+  dplyr::filter(X1 %in% standard_chr) %>%
+  dplyr::select(peak_hg38, peak_hg19)
+})
+
+```
+
+<br>
+
+**Transform hg19 list of peaks into Grange**
+
+```{r}
+
+# Loop to create Grange
+list_hg19_gr = list()
+
+for (i in 1:length(features_hg19_list)) {
+
+  name_cond = names(features_hg19_list)[i]
+
+  list_peaks = features_hg19_list[[i]] %>%
+    dplyr::select(peak_hg19) %>%
+    tidyr::separate(col = peak_hg19, into = c("seqnames", "start", "end"), remove = FALSE) %>%
+    dplyr::mutate(start = as.integer(start), end = as.integer(end)) %>%
+    dplyr::rename("peak_name" = "peak_hg19")
+
+  peaks_gr =  GRanges(seqnames = list_peaks$seqnames,
+                      ranges = IRanges(start = list_peaks$start,
+                                       end = list_peaks$end))
+  mcols(peaks_gr) = data.frame(peak_name = list_peaks$peak_name)
+  
+  list_hg19_gr[[name_cond]] = peaks_gr
+
+}
+
+saveRDS(list_hg19_gr, paste0(directory_output, "list_hg19_gr.rds"))
+
+```
+
+<br>
+
+**Add hg19 annotations**
+
+```{r}
+
+# Load grange with hg19 annotations
+dir_annot = pic_last_dir(paste0(directory, "exp/", "AnnotationsFiles_createGrange/"))
+hg19_annotations = readRDS(paste0(dir_annot, "/", "hg19_annotations_gr.rds"))
+
+# Loop to add annotations
+list_hg19_gr_ann = list()
+
+for (i in 1:length(list_hg19_gr)) {
+
+  name_cond = names(list_hg19_gr)[i]
+  grange = list_hg19_gr[[i]]
+  
+  # Save old metadata tab
+  meta_save = data.frame(mcols(grange))
+  
+  # First a matrix is created filled with FALSE and added to the Grange
+  annotations_types = levels(factor(hg19_annotations$type))
+  metadata = matrix(FALSE, ncol = length(annotations_types), nrow = length(seqnames(grange)))
+  colnames(metadata) = annotations_types
+  mcols(grange) = metadata
+
+  # An overlap is calculated and used to assigned the peak as TRUE when overlapping with the annotation
+  for (i in 1:ncol(metadata)){
+    sub_annot = hg19_annotations[hg19_annotations$type == annotations_types[i]]
+    overlaps = findOverlaps(grange, sub_annot)
+    mcols(grange)[queryHits(overlaps),i] = TRUE
+  }
+  
+  # Merge old metadata frame and new
+   mcols(grange) = cbind(mcols(grange), meta_save)
+
+  list_hg19_gr_ann[[name_cond]] = grange
+
+}
+
+saveRDS(list_hg19_gr_ann, paste0(directory_output, "list_hg19_gr_ann.rds"))
+
+```
+
+<br>
+
+**Load the original matrix of scATAseq hg38 dataset**\
+NB : we are not using the seurat object created in scATACseq_CreateSeuratObject because some peaks are absent due to filters.\
+We used the initial .bed file.
+
+```{r, eval = FALSE}
+
+# List directions
+barcode_list = list.files(path = paste0(directory, "data/scATACseq/"), pattern = "_filtered_peak_bc_matrix_barcodes.tsv")
+barcode_list = paste0(directory, "data/scATACseq/", barcode_list)
+mtx_list = list.files(path = paste0(directory, "data/scATACseq/"), pattern = "_filtered_peak_bc_matrix_matrix.mtx")
+mtx_list = paste0(directory, "data/scATACseq/", mtx_list)
+
+# Create matrices
+list_mtx_hg38 = list()
+
+for (i in 1:length(features_hg38_list)) { # really long !!!
+
+  # Condition
+  name_cond = str_extract(features_hg38_list[i], pattern = "(?<=scATACseq/)[:alnum:]+(?=_filtered)")
+
+  # Peaks mapped on hg38
+  features_hg38 = readr::read_tsv(features_hg38_list[i], col_names = F) %>%
+    tidyr::unite(features)
+
+  # Cells barcodes
+  barcodes = readr::read_tsv(barcode_list[i], col_names = F) %>%
+    tidyr::unite(barcode)
+
+  # Load the original matrix (hg38) in a dataframe
+  mtx = Matrix::readMM(mtx_list[i]) %>%
+    magrittr::set_rownames(features_hg38$features) %>%
+    magrittr::set_colnames(barcodes$barcode)
+
+  # Format conversion
+  mtx_sp = as.sparse(mtx)
+  mtx_df_hg38 = as.data.frame(mtx)
+
+  # Save matrix
+  list_mtx_hg38[[name_cond]] = mtx_df_hg38
+
+}
+
+saveRDS(list_mtx_hg38, paste0(directory_output, "list_mtx_hg38.rds"))
+
+```
+
+<br>
+
+**Switch peaks position in matrix from hg38 to hg19 and remove errors**\   
+```{r}
+
+list_mtx_hg19 = list()
+
+for (i in 1:length(features_hg19_list)) {
+
+  cond = names(features_hg19_list)[i]
+  features_hg19 = features_hg19_list[[cond]]
+  mtx_df_hg38 = list_mtx_hg38[[cond]]
+
+  mtx_df_hg19 = mtx_df_hg38 %>% tibble::rownames_to_column("peak_hg38")
+  mtx_df_hg19 = left_join(features_hg19, mtx_df_hg19, by = "peak_hg38")
+  mtx_df_hg19 = mtx_df_hg19 %>%
+    tibble::column_to_rownames("peak_hg19") %>%
+    dplyr::select(-peak_hg38)
+
+  list_mtx_hg19[[cond]] = mtx_df_hg19
+
+}
+
+saveRDS(list_mtx_hg19, file = paste0(directory_output, "list_mtx_hg19.rds"))
+
+```
+
+<br>
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results="hide"}
+
+# Clean working space and memory
+rm(list = ls())
+gc()
+
+```
