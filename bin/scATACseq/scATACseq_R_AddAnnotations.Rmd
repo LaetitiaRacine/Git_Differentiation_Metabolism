@@ -6,10 +6,14 @@ subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
     code_folding: "hide"
-    toc: true
+    toc: false
     toc_float: false
     theme: journal
 ---
+
+<style>
+body {text-align: justify}
+</style>
 
 ```{r, Setup, include=FALSE}
 
@@ -24,6 +28,8 @@ knitr::opts_chunk$set(message = FALSE)
 library(EnsDb.Hsapiens.v86)   # v.86 = hg38 | v.75 = hg19
 library(GenomeInfoDb)
 library(knitr)
+library(stringr)
+library(Signac)
 
 ```
 
@@ -55,6 +61,10 @@ hg38_annotations = readRDS(paste0(dir_annot, "/", "hg38_annotations_gr.rds"))
 
 ```
 
+
+<br><br><br>
+
+**Add annotations database in the annotations slot**
 ```{r, Add annotations database}
 
 # Extract annotations from EnsDb database
@@ -67,6 +77,9 @@ Annotation(seurat_common_merged) = annotations
 
 ```
 
+<br>
+
+**Add peak_name in the metadata**
 ```{r, Add peak_name metadata}
 
 add_peak_name = function(seurat_obj) {
@@ -81,17 +94,22 @@ seurat_common_merged = add_peak_name(seurat_common_merged)
 
 ```
 
+<br>
+
+**Add peaks annotation in the metadata**
 ```{r, Add peaks annotations}
 
 add_peak_annot = function(seurat_obj, annotations_gr) {
   
   # First a matrix is created filled with FALSE and added to the Grange
   annotations_types = levels(factor(annotations_gr$type))
-  metadata = matrix(FALSE, ncol = length(annotations_types), nrow = length(seurat_obj@assays$peaks@ranges))
+  metadata = matrix(FALSE, ncol = length(annotations_types), 
+                    nrow = length(seurat_obj@assays$peaks@ranges))
   colnames(metadata) = annotations_types
   mcols(seurat_obj@assays$peaks@ranges) = append(mcols(seurat_obj@assays$peaks@ranges), metadata) 
   
-  # For each of the annotations types an overlap is calculated and used to assigned the peak as TRUE when overlapping with the annotation
+  # For each of the annotations types an overlap is calculated 
+  # and used to assigned the peak as TRUE when overlapping with the annotation
   for (i in 1:ncol(metadata)){
     sub_annot = annotations_gr[annotations_gr$type == annotations_types[i]]
     overlaps = findOverlaps(seurat_obj@assays$peaks@ranges, sub_annot)
@@ -108,22 +126,34 @@ print(seurat_common_merged@assays$peaks@ranges)
 
 ```
 
+<br>
+
 ```{r, Save outputs}
 
 saveRDS(seurat_common_merged, paste0(directory_output, "merged_seurat_qc_filter_annot.rds"))
 
 ```
 
+
+<br><br><br>
+
+
 ```{r, Rsession}
 
 end_time = Sys.time()
 cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
 
-# Clean working space and memory 
-rm(list = ls())
-gc()
-
 # Show package version
 sessionInfo()
 
 ```
+
+```{r, results="hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+
+```
+
