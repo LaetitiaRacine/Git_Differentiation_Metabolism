@@ -11,6 +11,10 @@ output:
     theme: journal
 ---
 
+<style>
+body {text-align: justify}
+</style>
+
 ```{r, Setup, include=FALSE}
 
 knitr::opts_chunk$set(echo = TRUE)
@@ -59,17 +63,12 @@ fragment_list = list.files(path = directory_data, pattern = "fragments.tsv.gz$")
 ```
 
 
-Il faut merger les conditions AVANT de normaliser les fichiers.
-Après le merge, les normalisations et réductions qui avaient été appliquées ont disparues. 
-Si on normalise les fichiers individuels, c'est pour faire une étude individuelle sans comparaison entre les conditions.
-L'étude indiviuelle peut éventuellement être possible à partir du fichier merged.
+<br><br><br>
 
-https://satijalab.org/signac/articles/merging.html
 
-On veut garder les filtres qualité qui ont été appliqués sur les objets individuels.
-On part donc des granges des objets seurat : peaks filtrés pour garder seulement les chromosomes standards. 
-On part aussi de la matrice de count qui est dans l'objet seurat pour extraire le nom des cellules et garder seulement celles qu'on a décidé. 
-We chose to use reduce function. 
+To allow comparison of the different conditions, we need to merge the different seurat object. As the peaks were identified independently in each experiment (peak calling on each sample), the peaks are unlikely to be exactly the same. We therefore need to create a common set of peaks across all the datasets to be merged and quantify this peak set in each experiment prior to merging the objects. We decided to use the reduce() function to merge all the intersecting peaks into one. We used the filtered Grange (QC applied and keep only standard chromosomes).
+https://stuartlab.org/signac/articles/merging.html    
+
 
 ```{r, Number of peaks before merging}
 
@@ -107,7 +106,9 @@ list_seurat_combined = list()
 for (i in 1:length(list_seurat_obj)) {
   
   frags <- CreateFragmentObject(
-    path = paste0(directory_data, str_subset(string = fragment_list, pattern = names(list_seurat_obj[i]))),
+    path = paste0(directory_data, 
+                  str_subset(string = fragment_list, 
+                             pattern = names(list_seurat_obj[i]))),
     cells = colnames(list_seurat_obj[[i]])
     )
   
@@ -122,7 +123,7 @@ for (i in 1:length(list_seurat_obj)) {
                                genome = "hg38")
   
   seurat = CreateSeuratObject(counts = assay,
-                              assay = "peaks", # not a good idea to change the name, it complicates the use of functions
+                              assay = "peaks", # don"t change the name
                               meta.data = list_seurat_obj[[i]]@meta.data)
   
   seurat$orig.ident = names(list_seurat_obj[i])
@@ -144,6 +145,7 @@ cat("Total number of cells in dataset : ", ncol(seurat_common_merged), "\n",
     "Total number of peaks in common set of features : ", nrow(seurat_common_merged))
 
 ```
+
 ```{r, Save outputs}
 
 saveRDS(object = seurat_common_merged, 
@@ -151,18 +153,24 @@ saveRDS(object = seurat_common_merged,
 
 ```
 
+
+<br><br><br>
+
+
 ```{r, Rsession}
 
 end_time = Sys.time()
 cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
-
-# Clean working space and memory 
-rm(list = ls())
-gc()
 
 # Show package version
 sessionInfo()
 
 ```
 
+```{r, results="hide"}
 
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
