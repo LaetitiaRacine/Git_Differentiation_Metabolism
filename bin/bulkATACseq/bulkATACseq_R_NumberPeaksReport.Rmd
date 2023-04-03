@@ -1,0 +1,475 @@
+---
+title: "bulkATACseq_R_NumberPeaksReport"
+author: "Laëtitia Racine"
+date: "2023-03-24"
+
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: false
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r, Setup, include=F}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(knitr)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(kableExtra)
+library(gridExtra) # grid.arrange() function
+library(tidyverse) # pivot_longer() function
+library(ggupset) # scale_x_upset() function
+library(grid) # grid.text() function
+library(UpSetR)
+
+```
+
+```{r, Working directory }
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/bulkATACseq_R_NumberPeaksReport/"))
+dir.create(path = paste0(directory, "exp/bulkATACseq_R_NumberPeaksReport/", current_date))
+directory_output = paste0(directory, "exp/bulkATACseq_R_NumberPeaksReport/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+# Load grange objects 
+dir = pic_last_dir(paste0(directory, "exp/bulkATACseq_R_ChangeAnnotation/"))
+gr_ann_list = list.files(path = paste0(dir, "/"), pattern = "update_annot.gr.rds")
+name_list = str_extract(gr_ann_list, pattern = "[:graph:]+(?=_update_annot.gr.rds)")
+gr_ann_list = paste0(dir, "/", gr_ann_list)
+gr_ann_list = lapply(gr_ann_list, readRDS)
+names(gr_ann_list) = name_list
+  
+```
+
+
+<br><br><br>
+
+
+# Overview
+
+This code aims at performing a quantitative analysis of bulkATACseq dataset by counting the total number of peaks or the number of peaks per annotation depending on the condition and the time point. It takes as input files the *grange* files from bloc2 (preprocessing steps with threshold 10 on minimum number of reads per peak) and annotated in bulkATACseq_R_ChangeAnnotation.   
+*Outputs* : \
+- global table with number of peaks per condition and per annotation \
+- bar plots with total number of peaks per condition per time point \
+- bar plots with number of peaks per annotation per condition per time point \
+- line plot with number of peaks per annotation per condition over time \
+- upset plots with combination of annotations \
+- upset plots focus on the 50 more important categories \
+NB : copy and adaptation of the previous code ATAC_plot_peaks_annotation.Rmd (also compatible with snakemake) 
+
+<br><br><br> 
+
+
+**Create global table with number of peaks per condition and per annotation**  
+```{r}
+
+df_peaks_annotation = data.frame()
+
+for (i in 1:length(gr_ann_list)) {
+  temp = as.data.frame(gr_ann_list[[i]])
+  temp = temp %>% dplyr::select(-seqnames, -start, -end, -width, -strand) %>%
+    dplyr::mutate(sample = names(gr_ann_list)[[i]])
+  temp2 = temp %>% 
+    dplyr::group_by(sample) %>%
+    dplyr::summarise(across(.cols = 1:(ncol(temp)-2), .fns = sum)) %>%
+    tidyr::separate(col = sample, into = c("condition","time","donor"), sep = "_", remove = TRUE) %>%
+    dplyr::mutate(condition = str_replace(condition, "MP", "CTRL")) %>%
+    dplyr::mutate(total_nbpeaks = nrow(temp), .after = time)
+  df_peaks_annotation = rbind(df_peaks_annotation, temp2)
+}
+
+# Add levels to define order legend in plots
+df_peaks_annotation$condition = factor(df_peaks_annotation$condition, levels = c("Xvivo", "CTRL", "2DG", "DON", "AOA", "CTRLaK", "VPA"))
+df_peaks_annotation$time = factor(df_peaks_annotation$time, levels = c("00h", "03h", "12h", "24h"))
+
+df_peaks_annotation %>%
+  kable() %>% 
+  kable_styling(bootstrap_options = "striped") %>% 
+  scroll_box(width = "100%", height = "250px")
+
+write.csv2(x = df_peaks_annotation, row.names = FALSE,
+           file = paste0(directory_output, "tab_nbpeaks_percond_perannot.csv")) 
+
+
+# Remove aK and VPA conditions for some plots
+df_peaks_annotation_filter = df_peaks_annotation %>% 
+  dplyr::filter(condition != "CTRLaK" & condition != "VPA")
+
+# Pivot du tableau
+df_peaks_annotation_l = df_peaks_annotation %>% dplyr::select(-donor) 
+df_peaks_annotation_l = df_peaks_annotation_l %>%
+  tidyr::pivot_longer(cols = 3:ncol(df_peaks_annotation_l), 
+                      names_to = "annotation", 
+                      values_to = "count")
+
+df_peaks_annotation_l_filter = df_peaks_annotation_l %>% 
+  dplyr::filter(condition != "CTRLaK" & condition != "VPA")
+
+```
+
+<br>
+
+**Display total number of peaks per condition - bar plots**  
+```{r, out.width="100%", fig.width=18, fig.height=4, results='hold'}
+
+# Plot with time on x axis
+nbpeaks_pertime = ggplot(df_peaks_annotation, aes(x = time,  y = total_nbpeaks, label = total_nbpeaks, fill = condition)) +
+  geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
+  geom_text(position = position_dodge2(width = 0.9, preserve = "single"), angle = 90, hjust=1.5) +
+  theme(legend.position = "right", 
+        plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
+        strip.text.x = element_text(size=11, color="black", face="bold.italic"),
+        axis.line.y = element_line(colour = "black"),
+        axis.text.y = element_text(size = 11, colour = "black"),
+        axis.ticks.y = element_line() ,
+        axis.title.y = element_text(vjust = 1 ,size = 14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(vjust = -0.5, size = 11, colour = "black"),
+        axis.ticks = element_blank()) +
+  scale_fill_manual(values = color_code, 
+                    breaks = unique(df_peaks_annotation$condition)) +
+  labs(y = "Number of peaks detected")
+
+# Plot with condition on x axis
+nbpeaks_percond = ggplot(df_peaks_annotation,aes(x = condition,  y = total_nbpeaks, label = total_nbpeaks, fill = time)) +
+  geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
+  geom_text(position = position_dodge2(width = 0.9, preserve = "single"), angle = 90, hjust=1.5) +
+  theme(legend.position = "right", 
+        plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
+        strip.text.x = element_text(size=11, color="black", face="bold.italic"),
+        axis.line.y = element_line(colour = "black"),
+        axis.text.y = element_text(size = 11, colour = "black"),
+        axis.ticks.y = element_line() ,
+        axis.title.y = element_text(vjust = 1 ,size = 14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(vjust = -0.5, size = 11, colour = "black"),
+        axis.ticks = element_blank()) +
+  labs(y = "Number of peaks detected")
+
+# Show plots
+grid.arrange(grobs = list(nbpeaks_percond, nbpeaks_pertime), ncol = 2, nrow = 1)
+
+# Save plots
+ggsave(plot = nbpeaks_pertime, width = 16*0.75, height = 9*0.75,
+       filename = paste0(directory_output, "plot_nbpeaks_pertime.svg"))
+ggsave(plot = nbpeaks_percond, width = 16*0.75, height = 9*0.75,
+       filename = paste0(directory_output, "plot_nbpeaks_percond.svg"))
+
+```
+
+```{r, out.width="100%", fig.width=18, fig.height=4, results = 'hold'}
+
+# Plot with time on x axis
+nbpeaks_pertime_filter = ggplot(df_peaks_annotation_filter, aes(x = time,  y = total_nbpeaks, label = total_nbpeaks, fill = condition)) +
+  geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
+  geom_text(position = position_dodge2(width = 0.9, preserve = "single"), angle = 90, hjust=1.5) +
+  theme(legend.position = "right", 
+        plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
+        strip.text.x = element_text(size=11, color="black", face="bold.italic"),
+        axis.line.y = element_line(colour = "black"),
+        axis.text.y = element_text(size = 11, colour = "black"),
+        axis.ticks.y = element_line() ,
+        axis.title.y = element_text(vjust = 1 ,size = 14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(vjust = -0.5, size = 11, colour = "black"),
+        axis.ticks = element_blank()) +
+  scale_fill_manual(values = color_code, 
+                    breaks = unique(df_peaks_annotation$condition)) +
+  labs(y = "Number of peaks detected")
+
+# Plot with condition on x axis
+nbpeaks_percond_filter = ggplot(df_peaks_annotation_filter ,aes(x = condition,  y = total_nbpeaks, label = total_nbpeaks, fill = time)) +
+  geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
+  geom_text(position = position_dodge2(width = 0.9, preserve = "single"), angle = 90, hjust=1.5) +
+  theme(legend.position = "right", 
+        plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
+        strip.text.x = element_text(size=11, color="black", face="bold.italic"),
+        axis.line.y = element_line(colour = "black"),
+        axis.text.y = element_text(size = 11, colour = "black"),
+        axis.ticks.y = element_line() ,
+        axis.title.y = element_text(vjust = 1 ,size = 14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(vjust = -0.5, size = 11, colour = "black"),
+        axis.ticks = element_blank()) +
+  labs(y = "Number of peaks detected")
+
+# Show plots
+grid.arrange(grobs = list(nbpeaks_percond_filter, nbpeaks_pertime_filter), ncol = 2, nrow = 1)
+
+# save plots
+ggsave(plot = nbpeaks_pertime, width = 16*0.75, height = 9*0.75,
+       filename = paste0(directory_output, "plot_nbpeaks_pertime_filter.svg"))
+ggsave(plot = nbpeaks_percond, width = 16*0.75, height = 9*0.75,
+       filename = paste0(directory_output, "plot_nbpeaks_percond_filter.svg"))
+
+```
+
+<br>
+
+**Display total number of peaks per condition per annotation - bar plots**  
+```{r, out.width="100%", fig.width=18, fig.height=14, results = 'hold'}
+
+# Plot with time on x axis
+annot_pertime = ggplot(df_peaks_annotation_l, aes(x = time,  y = count, fill = condition)) +
+  geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
+  theme(legend.position = "right", 
+        plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
+        strip.text.x = element_text(size=11, color="black", face="bold.italic"),
+        axis.line.y = element_line(colour = "black"),
+        axis.text.y = element_text(size = 11, colour = "black"),
+        axis.ticks.y = element_line() ,
+        axis.title.y = element_text(vjust = 1 ,size = 14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(vjust = -0.5, size = 11, colour = "black")) +
+  scale_fill_manual(values = color_code, 
+                    breaks=unique(df_peaks_annotation$condition)) +
+  facet_wrap(annotation~., scale = "free_x")
+
+# Plot with condition on x axis 
+annot_percond = ggplot(df_peaks_annotation_l,aes(x = condition,  y = count, fill = time)) +
+  geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
+  theme(legend.position = "right", 
+        plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
+        strip.text.x = element_text(size=11, color="black", face="bold.italic"),
+        axis.line.y = element_line(colour = "black"),
+        axis.text.y = element_text(size = 11, colour = "black"),
+        axis.ticks.y = element_line() ,
+        axis.title.y = element_text(vjust = 1 ,size = 14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(vjust = -0.5, size = 11, colour = "black")) +
+  facet_wrap(annotation~., scale = "free_x")
+
+# Show plots
+grid.arrange(grobs = list(annot_percond, annot_pertime), ncol = 1, nrow = 2)
+
+# Save plots
+ggsave(plot = annot_pertime, width = 18*0.75, height = 12*0.75,
+       filename = paste0(directory_output, "plot_nbpeaks_annotation_pertime.svg"))
+ggsave(plot = annot_percond, width = 22*0.75, height = 14*0.75,
+       filename = paste0(directory_output, "plot_nbpeaks_annotation_percond.svg"))
+
+```
+
+```{r, out.width="100%", fig.width=18, fig.height=14, results='hold'}
+
+# Plot with time on x axis
+annot_pertime_filter = ggplot(df_peaks_annotation_l_filter, aes(x = time,  y = count, fill = condition)) +
+  geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
+  theme(legend.position = "right", 
+        plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
+        strip.text.x = element_text(size=11, color="black", face="bold.italic"),
+        axis.line.y = element_line(colour = "black"),
+        axis.text.y = element_text(size = 11, colour = "black"),
+        axis.ticks.y = element_line() ,
+        axis.title.y = element_text(vjust = 1 ,size = 14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(vjust = -0.5, size = 11, colour = "black")) +
+  scale_fill_manual(values = color_code, 
+                    breaks=unique(df_peaks_annotation$condition)) +
+  facet_wrap(annotation~., scale = "free_x")
+
+# Plot with condition on x axis 
+annot_percond_filter = ggplot(df_peaks_annotation_l_filter,aes(x = condition,  y = count, fill = time)) +
+  geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
+  theme(legend.position = "right", 
+        plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
+        strip.text.x = element_text(size=11, color="black", face="bold.italic"),
+        axis.line.y = element_line(colour = "black"),
+        axis.text.y = element_text(size = 11, colour = "black"),
+        axis.ticks.y = element_line() ,
+        axis.title.y = element_text(vjust = 1 ,size = 14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(vjust = -0.5, size = 11, colour = "black")) +
+  facet_wrap(annotation~., scale = "free_x")
+
+# Show plots
+grid.arrange(grobs = list(annot_percond_filter, annot_pertime_filter), ncol = 1, nrow = 2)
+
+# Save plots
+ggsave(plot = annot_pertime_filter, width = 16*0.75, height = 9*0.75,
+       filename = paste0(directory_output, "plot_nbpeaks_annotation_pertime_filter.svg"))
+ggsave(plot = annot_percond_filter, width = 16*0.75, height = 9*0.75,
+       filename = paste0(directory_output, "plot_nbpeaks_annotation_percond_filter.svg"))
+
+```
+
+<br>
+
+**Display chronological modification in number of peaks per annotation - line plot**
+```{r, out.width="100%", fig.width=18, fig.height=14, results='hold'}
+
+# Keep only conditions with multiple time points
+df_chrono = data_frame()  
+for (i in 1:length(unique(df_peaks_annotation_l$condition))) {
+  df_temp = df_peaks_annotation_l %>% dplyr::filter(condition == unique(df_peaks_annotation_l$condition)[i])
+  if (length(unique(df_temp$time))>1) df_chrono = rbind(df_temp, df_chrono) 
+}
+
+line_report = ggplot(df_chrono, aes(x = time, y = count, group = condition)) +
+  geom_line(aes(color = condition), linewidth = 1)+
+  geom_point(aes(color = condition), size = 2)+
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
+        strip.text.x = element_text(size=11, color="black", face="bold.italic"),
+        axis.line.y = element_line(colour = "black"),
+        axis.text.y = element_text(size = 11, colour = "black"),
+        axis.ticks.y = element_line() ,
+        axis.title.y = element_text(vjust = 1 ,size = 14),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(vjust = -0.5, size = 11, colour = "black"),
+        axis.ticks = element_blank()) +
+  facet_grid(condition~annotation, scales = "free_x") +
+  labs(title = "Overtime progression") +
+  ylab(label = "Number of peaks detected") +
+  scale_discrete_manual(aesthetics = c("fill", "colour"), 
+                        values = color_code, 
+                        breaks=unique(df_chrono$condition))
+line_report
+
+ggsave(plot = line_report, width = 28*0.75, height = 14*0.75,
+       filename = paste0(directory_output, "plot_nbpeaks_annotation_chrono.svg"))
+
+```
+
+<br>
+
+**Display peaks annotation distribution - upset plot**  
+```{r, out.width="100%", fig.width=18, fig.height=12, results="hide"}
+
+for (i in 1:length(gr_ann_list)){
+  
+  # Extract Grange and name
+  gr_file = gr_ann_list[[i]]
+  name_sample = str_extract(string = names(gr_ann_list)[i], 
+                            pattern = "[:alnum:]+_[:digit:]{2}h")
+  name_cond = str_extract(string = names(gr_ann_list)[i], 
+                            pattern = "[:alnum:]+(?=_[:digit:]{2}h)")
+  
+  # Organize dataframe for plotting
+  peaks_ann = as.data.frame(gr_file) %>% 
+    dplyr::select(-seqnames, -start, -end, -width, -strand, -peak_name) %>%
+    tibble::rownames_to_column(var = "peakID") 
+  
+  peaks_pivot = pivot_longer(data = peaks_ann, 
+                             cols = colnames(peaks_ann)[-1], 
+                             names_to = "annotation", 
+                             values_to = "value") %>%
+    dplyr::filter(value == TRUE) %>%
+    dplyr::select(-value)
+
+  peaks_group_anno = peaks_pivot %>%
+    dplyr::group_by(peakID) %>%
+    dplyr::summarize(annotations = list(annotation)) 
+
+  # simple upset plot
+  plot_glob = ggplot(peaks_group_anno, aes(x = annotations)) +
+    geom_bar(fill = color_code[name_cond], color = "black") +
+    ggtitle(paste0("Peaks distribution in genomic features - ", name_sample)) +
+    ylab("Number of peaks") +
+    scale_x_upset()
+  
+  # minimize maximum number of intersections displayed
+  plot_zoom = ggplot(peaks_group_anno, aes(x = annotations)) +
+    geom_bar(fill = color_code[name_cond], color = "black") +
+    ggtitle(paste0("Peaks distribution in genomic features - ", name_sample)) +
+    ylab("Number of peaks") +
+    scale_x_upset(n_intersection = 50)
+  
+  print(grid.arrange(grobs = list(plot_glob, plot_zoom), ncol = 1, nrow = 2))
+  
+  ggsave(plot = plot_glob, width = 22*0.75, height = 9*0.75,
+         filename = paste0(directory_output, "plot_upset_", name_sample, ".svg"))
+  ggsave(plot = plot_zoom, width = 16*0.75, height = 9*0.75,
+         filename = paste0(directory_output, "plot_upset_zoom_", name_sample, ".svg"))
+
+  # upset plot with size 
+  png(filename = paste0(directory_output, "plot_upset_setsize_", name_sample, ".png"), 
+      width = 2000, height = 1000)
+  print(peaks_pivot %>%
+          unnest(cols = annotation) %>%
+          mutate(annotMember=1) %>%
+          pivot_wider(names_from = annotation, 
+                      values_from = annotMember, 
+                      values_fill = list(annotMember = 0)) %>%
+          as.data.frame() %>%
+          UpSetR::upset(sets = colnames(peaks_ann)[-1],
+                        empty.intersections = NULL,
+                        nintersects = NA,
+                        order.by = "freq",
+                        main.bar.color = color_code[name_cond])
+  )
+  grid.text(paste0("Peaks distribution in genomic features - ", name_sample), 
+            x = 0.65, y=0.95, gp=gpar(fontsize=20))
+  dev.off()
+  
+  png(filename = paste0(directory_output, "plot_upset_zoom_setsize_", name_sample, ".png"), 
+      width = 2000, height = 1000)
+  print(peaks_pivot %>%
+          unnest(cols = annotation) %>%
+          mutate(annotMember=1) %>%
+          pivot_wider(names_from = annotation, 
+                      values_from = annotMember, 
+                      values_fill = list(annotMember = 0)) %>%
+          as.data.frame() %>%
+          UpSetR::upset(sets = colnames(peaks_ann)[-1],
+                        empty.intersections = NULL,
+                        nintersects = 50,
+                        order.by = "freq",
+                        main.bar.color = color_code[name_cond])
+  )
+  grid.text(paste0("Peaks distribution in genomic features - ", name_sample), 
+            x = 0.65, y=0.95, gp=gpar(fontsize=20))
+  dev.off()
+  
+}
+
+```
+
+
+<br><br><br>
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results="hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
