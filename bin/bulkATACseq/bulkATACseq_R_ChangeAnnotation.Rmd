@@ -118,7 +118,7 @@ for (i in 1:length(gr_list_update)) {
   } else {
     print(name) 
   }
-  saveRDS(gr, paste0(directory_output, name, "_update_annot.gr.rds"))
+  saveRDS(gr, paste0(directory_output, name, "_threshold_10_update_annot.gr.rds"))
   
 }
 
