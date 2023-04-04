@@ -1,0 +1,606 @@
+---
+title: "bulkATACseq_R_GenomeDistribution_GeneCoverage"
+author: "Laëtitia Racine"
+date: "2023-03-24"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+
+```{r, Setup, include=F}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(knitr)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(kableExtra)
+library(karyoploteR)
+library(Gviz)
+library(ggplotify)
+library(gridExtra)
+
+```
+
+```{r, Working directory}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/bulkATACseq_R_GenomeDistribution_GeneCoverage/"))
+dir.create(path = paste0(directory, "exp/bulkATACseq_R_GenomeDistribution_GeneCoverage/", current_date))
+directory_output = paste0(directory, "exp/bulkATACseq_R_GenomeDistribution_GeneCoverage/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+# Load grange objects 
+dir = pic_last_dir(paste0(directory, "exp/bulkATACseq_R_ChangeAnnotation/"))
+gr_ann_list = list.files(path = paste0(dir, "/"), pattern = "update_annot.gr.rds")
+name_list = str_extract(gr_ann_list, pattern = "[:graph:]+(?=_threshold_10_update_annot.gr.rds)")
+gr_ann_list = paste0(dir, "/", gr_ann_list)
+gr_ann_list = lapply(gr_ann_list, readRDS)
+names(gr_ann_list) = name_list
+
+# Extract bam file list 
+dir_data = paste0(directory, "data/bulkATACseq/downsampled_bam_merged/")
+bam_list = list.files(path = dir_data, pattern = "_downsampled.bam$")
+bam_list = paste0(dir_data, bam_list)
+
+# Extract promoter localisation from hg19 annotation gr (see annotationsFiles_createGrange.Rmd)
+dir = pic_last_dir(paste0(directory, "exp/AnnotationsFiles_createGrange/"))
+annot_hg19 = readRDS(paste0(dir, "/", "hg19_annotations_gr.rds"))
+prom_hg19 = annot_hg19[annot_hg19$type == "hg19_genes_promoters"]
+prom_hg19 = prom_hg19[!is.na(prom_hg19$symbol)]
+
+# Select list of interesting genes to study
+list_gene = unique(c(list_genes_metabo,
+                     list_genes_metabo_glut,
+                     list_genes_metabo_glycolysis,
+                     list_genes_metabo_tca,
+                     list_genes_TH_hemato))
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Peaks distribution across chromosomes
+
+Using karyoplotR package :   
+https://bernatgel.github.io/karyoploter_tutorial/  
+https://github.com/bernatgel/karyoploteR/issues/51  
+
+<br>
+
+## One plot per sample with all chromosomes
+
+```{r, fig.show = "hide"}
+
+list_sample_chr = list()
+
+for( i in 1:length(gr_ann_list)) {
+  
+    gr = gr_ann_list[[i]]
+    name_sample = str_extract(string = names(gr_ann_list)[i], 
+                            pattern = "[:alnum:]+_[:digit:]{2}h")
+    name_cond = str_extract(string = names(gr_ann_list)[i], 
+                              pattern = "[:alnum:]+(?=_[:digit:]{2}h)")
+    
+    # visualize on html file
+    list_sample_chr[[i]] = as.ggplot(expression(
+      plotKaryotype(genome = "hg19", plot.type = 2) %>%
+        kpPlotRegions(data=gr, avoid.overlapping = FALSE, col = color_code[name_cond]) %>%
+        kpAddMainTitle(main = paste0("Peaks distribution on hg19 genome from ", name_sample), cex = 1.5) %>%
+        kpPlotDensity(data=gr, data.panel = 2)
+      ))
+  
+   # save the plot
+   png(filename = paste0(directory_output, "plot_allchr_", name_sample, ".png"),
+       width = 1000, height = 1400)
+   kp = plotKaryotype(genome = "hg19", plot.type = 2) %>%
+     kpPlotRegions(data=gr, avoid.overlapping = FALSE, col = color_code[name_cond]) %>%
+     kpAddMainTitle(main = paste0("Peaks distribution on hg19 genome from ", name_sample), cex = 1.5) %>%
+     kpPlotDensity(data=gr, data.panel = 2)
+  dev.off()
+  
+}
+
+```
+
+```{r, fig.width = 30, fig.height = 65}
+
+do.call("grid.arrange", c(list_sample_chr, ncol = 3))
+
+```
+
+<br>
+
+## One plot per chromosome with all samples
+
+```{r, fig.width = 16, fig.height = 10}
+
+chromosomes = c("chr1", "chr2", "chr3", "chr4", "chr5", "chr6", "chr7", "chr8", 
+                "chr9", "chr10", "chr11", "chr12", "chr13", "chr14", "chr15", 
+                "chr16", "chr17", "chr18", "chr19", "chr20", "chr21", "chr22", 
+                "chrX", "chrY")
+
+# Display settings : https://bernatgel.github.io/karyoploter_tutorial//Tutorial/PlotParams/PlotParams.html 
+pp = getDefaultPlotParams(plot.type=1)
+pp$data1height = 10
+pp$ideogramheight = 6
+pp$bottommargin = 6
+pp$data1inmargin = 6
+
+for (i in 1:length(chromosomes)) { 
+
+  # visualize on html file
+    kp = plotKaryotype(plot.type = 1, chromosomes=chromosomes[i], plot.params = pp)
+    for (j in 1:length(gr_ann_list)) {
+      name_cond = str_extract(string = names(gr_ann_list)[j], 
+                              pattern = "[:alnum:]+(?=_[:digit:]{2}h)")
+      name_sample = str_extract(string = names(gr_ann_list)[j], 
+                                pattern = "[:alnum:]+_[:digit:]{2}h")
+      kpPlotRegions(kp, data=gr_ann_list[[j]], border=color_code[name_cond], r0=j-1, r1=j-0.6)
+      kpPlotDensity(kp, data=gr_ann_list[[j]], data.panel = 1, r0=j-0.6, r1=j-0.2)
+      kpAddLabels(kp, labels=name_sample, data.panel = 1, r0=j-1, r1=j-0.6)
+    }
+  
+  # save plot
+  png(paste0(directory_output, "plot_allsamples_",chromosomes[i], ".png"), 
+      width = 2000, height = 1000)
+  kp = plotKaryotype(plot.type = 1, chromosomes=chromosomes[i], plot.params = pp)
+  for (j in 1:length(gr_ann_list)) {
+    name_cond = str_extract(string = names(gr_ann_list)[j], 
+                              pattern = "[:alnum:]+(?=_[:digit:]{2}h)")
+    name_sample = str_extract(string = names(gr_ann_list)[j], 
+                            pattern = "[:alnum:]+_[:digit:]{2}h")
+      kpPlotRegions(kp, data=gr_ann_list[[j]], border=color_code[name_cond], r0=j-1, r1=j-0.6)
+      kpPlotDensity(kp, data=gr_ann_list[[j]], data.panel = 1, r0=j-0.6, r1=j-0.2)
+      kpAddLabels(kp, labels=name_sample, data.panel = 1, r0=j-1, r1=j-0.6) 
+    }
+  dev.off()
+  
+}
+
+```
+
+```{r}
+
+list_to_keep = c("start_time", "directory_output", "gr_ann_list", "bam_list", 
+                 "prom_hg19", "color_code", "list_gene", "directory")
+rm(list = setdiff(ls(), list_to_keep))
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Gene coverage 
+
+https://www.bioconductor.org/packages/devel/bioc/vignettes/Gviz/inst/doc/Gviz.html   
+http://www.sthda.com/english/wiki/visualize-ngs-data-with-r-and-bioconductor  
+Note !!! Need .bai file in the folder with the .bam files  
+
+<br>
+
+## Extract genomic location for each studied gene = df_region_genes
+
+```{r}
+
+# Extract and organize gene information from genesymbol via Gviz
+data(genesymbol, package = "biovizBase")
+df_region_genes = tibble()
+
+for(i in 1:length(list_gene)) {
+  region = genesymbol[list_gene[i]]
+  region = range(region, ignore.strand = TRUE)
+  region = region + 5000
+  region = keepStandardChromosomes(region)
+  df_region_genes[i,"gene"] = list_gene[i]
+  df_region_genes[i,"chr"] = as.character(seqnames(region))
+  df_region_genes[i,"start"] = start(region)
+  df_region_genes[i,"end"] = end(region)
+}
+
+# Save output
+write.csv2(x = df_region_genes, row.names = FALSE,
+            file = paste0(directory_output, "ranges_genes_interest.csv"))
+
+# Visualize output
+df_region_genes %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "250px")
+
+```
+
+<br>
+
+## Create *isoform and promotor track* for each studied gene (ensGenes + promoterTrack)
+
+```{r}
+
+# # Define function to create the gene track with isoform and promoters
+# iso_prom_tracking_fun = function(df_region, gene_index, prom_grange) {
+# 
+#   # Isoform tracking for the studied gene
+#   # *************************************
+# 
+#   ensGenes <- UcscTrack(genome = "hg19",
+#                         chromosome = df_region$chr[gene_index],
+#                         background.title = "transparent",
+#                         alpha.title = 1,
+#                         col.title = "black",
+#                         cex.title = 1.5,
+#                         track = "ensGene",
+#                         from = df_region$start[gene_index],
+#                         to = df_region$end[gene_index],
+#                         trackType = "GeneRegionTrack",
+#                         rstarts = "exonStarts",
+#                         rends = "exonEnds",
+#                         transcript = "name",
+#                         strand = "strand",
+#                         fill = "lightgrey",
+#                         name = df_region$gene[gene_index])
+# 
+#   # Promoters tracking for the studied gene
+#   # *************************************
+# 
+#   # Extract ranges of the gene promoters
+#   prom_peak = subsetByOverlaps(prom_grange,
+#                                GRanges(seqnames = df_region$chr[gene_index],
+#                                        ranges = IRanges(start = df_region$start[gene_index],
+#                                                         end = df_region$end[gene_index])))
+#   # Store promoters limits into a dataframe
+#   df_prom_retained = tibble("start" = start(prom_peak),
+#                             "end" = end(prom_peak),
+#                             "chr" = as.character(seqnames(prom_peak)))
+# 
+#   # if we found promoters for the gene in our list, we add them on the track
+#   if(nrow(df_prom_retained) != 0){
+# 
+#     # Add promoters on the isoform tracking
+#     promoterTrack = HighlightTrack(trackList = ensGenes,
+#                                    start = df_prom_retained$start,
+#                                    end = df_prom_retained$end,
+#                                    chromosome = df_region$chr[gene_index],
+#                                    col = "green", fill = "green")
+#     return(promoterTrack)
+# 
+#   # if we didn't find promoters for the gene in our list, we keep only the isoform track
+#   } else {
+# 
+#     print("No promoter found")
+#     return(ensGenes)
+#   }
+# }
+# 
+# # Call function for each gene of the studied list
+# list_iso_prom_track = list()
+# for (i in 1:length(list_gene)) {
+#   list_iso_prom_track[i] = list(
+#     iso_prom_tracking_fun(df_region = df_region_genes,
+#                           gene_index = i,
+#                           prom_grange = prom_hg19)
+#     )
+# }
+# names(list_iso_prom_track) = list_gene
+# 
+# # Save the list of tracks
+# saveRDS(list_iso_prom_track, file = paste0(directory_output, "list_iso_prom_track.rds"))
+
+## really hard to reach the database sometimes
+## we saved the object in the data folder for further analysis
+list_iso_prom_track = readRDS(paste0(directory, "data/bulkATACseq/list_iso_prom_track.rds"))
+
+```
+
+<br>
+
+## Create *chromosome track*, axis scale and blank space
+
+```{r}
+
+list_chr_track = list()
+chr_list = unique(df_region_genes$chr)
+
+for (i in 1:length(chr_list)){
+list_chr_track[[chr_list[i]]] = IdeogramTrack(genome="hg19", chromosome= chr_list[i]) 
+}
+  
+saveRDS(list_chr_track, paste0(directory_output, "list_chr_track.rds"))
+
+```
+
+```{r}
+
+axTrack <- GenomeAxisTrack()
+blank_space = GenomeAxisTrack(col = "white",fill = "white", fontcolor = "white")
+
+```
+
+<br>
+
+## Create *peaks track* for each studied gene for each sample
+
+```{r}
+
+# Function to draw the track of a sample for a specific gene
+track_sample_fun = function(var_name_sample, var_col, var_bam_path, var_grange_sample, var_ranges_gene) {
+  
+   # create track of fragments for the sample
+    dt = DataTrack(type = "histogram",
+                   name = var_name_sample,
+                   background.title = "transparent",
+                   fill.histogram = "#0072B2",
+                   col.histogram = "#0072B2",
+                   alpha.title = 1,
+                   col.title = var_col,
+                   col.axis = "black",
+                   cex.title = 1,
+                   range = var_bam_path,
+                   genome = "hg19",
+                   window = -1,
+                   chromosome = var_ranges_gene$chr)
+  
+    # determine if peaks are detected in this gene for this sample
+    peaks_in = subsetByOverlaps(var_grange_sample,
+                                GRanges(seqnames = var_ranges_gene$chr,
+                                        ranges = IRanges(start = var_ranges_gene$start, 
+                                                         end = var_ranges_gene$end)))
+    
+    # if no peak detected, just the graph of the fragments for this sample for this gene
+    if (length(peaks_in) == 0){  
+      
+      print(paste(var_name_sample, "no_peaks_detected"))
+      return(dt)
+      
+    # if peaks detected, add highlighted peaks on the fragments track
+      } else {  
+        
+      df_peaks_retained = tibble("start" = start(peaks_in),
+                                 "end" = end(peaks_in),
+                                 "chr" = as.character(seqnames(peaks_in)))
+      
+      ht = HighlightTrack(trackList = dt,
+                          start = df_peaks_retained$start,
+                          end = df_peaks_retained$end,
+                          chromosome = var_ranges_gene$chr)
+      return(ht)
+      
+      }
+
+}
+
+
+# Call function for sample and each gene of the studied list
+list_track_samples = list()
+
+for(i in 1:length(gr_ann_list)) { # track for each sample
+  
+  name_sample = names(gr_ann_list)[i]
+  var_bam_path = ifelse(str_detect(name_sample, pattern="aK") == FALSE, name_sample, 
+                        str_replace(name_sample, pattern ="CTRL", replacement =""))
+  var_bam_path = str_subset(bam_list, pattern = var_bam_path)
+    
+  list_temp = list()
+  
+  for(j in 1:nrow(df_region_genes)){  # track for each gene
+
+    track = track_sample_fun(var_name_sample = name_sample, 
+                             var_col = color_code[str_extract(name_sample, pattern ="[:alnum:]+(?=_[:digit:]{2}h)")],
+                             var_bam_path = var_bam_path,
+                             var_grange_sample = gr_ann_list[[name_sample]],
+                             var_ranges_gene = df_region_genes[j,])
+    list_temp[[df_region_genes[j,]$gene]] = track
+    
+  }
+  
+  list_track_samples[[name_sample]] = list_temp
+  
+}
+
+saveRDS(list_track_samples, paste0(directory_output, "list_track_samples.rds"))
+
+```
+
+```{r}
+
+list_to_keep = c("start_time", "directory_output", "gr_ann_list",
+                 "list_gene", "list_chr_track", "list_iso_prom_track",
+                 "list_track_samples", "blank_space", "axTrack",
+                 "color_code", "df_region_genes")
+rm(list=setdiff(ls(), list_to_keep))
+
+```
+
+<br>
+
+## Plot the final graphs
+
+A tracking plot is composed of (from top to bottom) :  
+- one chromosome track (list_chr_track)  
+- one axis scale (adxTrack)    
+- one isoform/promoters track for the gene studied (list_iso_prom_track)    
+- one or multiple samples tracks for the gene studied (list_track_samples)    
+- blank space between element for clearness (blank_space)    
+  
+All those elements were already created in the code above. Here we will just assemble the graph as we desire.  
+
+<br>
+
+### One coverage plot with all time point of the same condition per gene
+
+```{r}
+
+conditions = unique(str_extract(string = names(gr_ann_list), 
+                                pattern = "[:alnum:]+(?=_[:digit:]{2}h)"))
+
+list_cov_genes_cond = list()
+
+for(i in 1:length(conditions)){
+
+  # extract tracks of the samples for the condition
+  samples_track = list_track_samples[str_detect(names(list_track_samples), conditions[i])]
+  samples_track = unlist(samples_track,recursive=FALSE)
+  
+  for(j in 1:length(list_gene)) {
+
+    # extract gene_info
+    gene_info = df_region_genes %>% dplyr::filter(gene == list_gene[j])
+    # extract track of chromosome for the gene
+    chr_track = list_chr_track[[str_subset(names(list_chr_track), paste0(gene_info$chr, "$"))]]
+    # extract track of iso/prom for the gene
+    isoprom_track = list_iso_prom_track[[str_subset(names(list_iso_prom_track), gene_info$gene)]]
+    # extract list of samples track for the gene
+    peaks_track = samples_track[str_detect(names(samples_track), gene_info$gene)]
+    # assemble the plots 
+    list_to_plot = list(chr_track, axTrack, blank_space, isoprom_track)
+    for(k in 1:length(peaks_track)) { list_to_plot = c(list_to_plot, blank_space, peaks_track[k])}
+    # visualize graph on html
+    list_cov_genes_cond = append(x = list_cov_genes_cond, 
+                            values = list(as.ggplot(expression(
+                              plotTracks(trackList = list_to_plot, 
+                                         from = gene_info$start, 
+                                         to = gene_info$end, 
+                                         showTitle = TRUE, 
+                                         add = TRUE)))))
+    # save graph 
+    pdf(file =  paste0(directory_output, conditions[i], "_", gene_info$gene, "_coverage_plot_alltime.pdf"), 
+        width = 24, height = 20)
+    plotTracks(list_to_plot, from = gene_info$start, to = gene_info$end, showTitle = TRUE)
+    dev.off()  
+  }
+
+}
+
+```
+
+Here, we present some gene coverage plots per condition. To see all the plots, refer to the exp folder.
+
+```{r, fig.width = 37, fig.height = 35}
+
+do.call("grid.arrange", c(list_cov_genes_cond[1:12], ncol = 3))
+
+```
+
+<br>
+
+### One coverage plot with all conditions of the same time point
+
+https://stackoverflow.com/questions/14748557/skipping-error-in-for-loop
+
+```{r}
+
+time = unique(str_extract(string = names(gr_ann_list), 
+                          pattern = "[:digit:]{2}h"))
+
+list_cov_genes_time = list()
+
+for(i in 1:length(time)){
+
+  # extract tracks of the samples for this time 
+  samples_track = list_track_samples[str_detect(names(list_track_samples), time[i])]
+  samples_track = unlist(samples_track,recursive=FALSE)
+  
+  for(j in 1:length(list_gene)) {
+    
+    skip_to_next <- FALSE
+    # extract gene_info
+    gene_info = df_region_genes %>% dplyr::filter(gene == list_gene[j])
+    # extract track of chromosome for the gene
+    chr_track = list_chr_track[[str_subset(names(list_chr_track), paste0(gene_info$chr, "$"))]]
+    # extract track of iso/prom for the gene
+    isoprom_track = list_iso_prom_track[[str_subset(names(list_iso_prom_track), gene_info$gene)]]
+    # extract list of samples track for the gene
+    peaks_track = samples_track[str_detect(names(samples_track), gene_info$gene)]
+    # assemble the plots 
+    list_to_plot = list(chr_track, axTrack, blank_space, isoprom_track)
+    for(k in 1:length(peaks_track)) { list_to_plot = c(list_to_plot, blank_space, peaks_track[k])}
+    # visualize graph
+    tryCatch({
+   list_cov_genes_time = append(x = list_cov_genes_time, 
+                                 values = list(as.ggplot(expression(
+                                   plotTracks(trackList = list_to_plot, 
+                                              from = gene_info$start, 
+                                              to = gene_info$end, 
+                                              showTitle = TRUE, 
+                                              add = TRUE)))))
+    }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+    # save graph 
+    pdf(file =  paste0(directory_output, time[i], "_", gene_info$gene, "_coverage_plot_allcond.pdf"), 
+        width = 24, height = 40)
+    plotTracks(list_to_plot, from = gene_info$start, to = gene_info$end, showTitle = TRUE)
+    dev.off()  
+  }
+
+}
+
+```
+
+Here, we present gene coverage plots per time. 
+
+```{r, fig.width = 37, fig.height = 35}
+do.call("grid.arrange", c(list_cov_genes_time[1:8], ncol = 3))
+do.call("grid.arrange", c(list_cov_genes_time[9:12], ncol = 3))
+```
+
+```{r, fig.width = 37, fig.height = 20}
+do.call("grid.arrange", c(list_cov_genes_time[13:16], ncol = 3))
+```
+
+
+
+<br><br><br>
+
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results="hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+
+
