@@ -1,0 +1,937 @@
+---
+title: "bulkATACseq_R_Multiparametric_DifferentialAccessibility"
+author: "Laëtitia Racine"
+date: "2023-03-27"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r, Setup, include=F}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(knitr)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(kableExtra)
+library(DESeq2)
+library(Rsubread)
+library(tidyverse) # column_to_rownames() function
+library(pheatmap)
+library(gridExtra)
+library(patchwork)
+library(ChIPseeker)
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(org.Hs.eg.db)
+library(ReactomePA)
+library(clusterProfiler)
+
+```
+
+```{r, Working directory }
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+# current_date = format(Sys.time(), "%Y%m%d")
+current_date = "20230403"
+dir.create(path = paste0(directory, "exp/bulkATACseq_R_Multiparametric_DifferentialAccessibility/"))
+dir.create(path = paste0(directory, "exp/bulkATACseq_R_Multiparametric_DifferentialAccessibility/", current_date))
+directory_output = paste0(directory, "exp/bulkATACseq_R_Multiparametric_DifferentialAccessibility/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+# Load grange objects 
+dir = pic_last_dir(paste0(directory, "exp/bulkATACseq_R_ChangeAnnotation/"))
+gr_ann_list = list.files(path = dir, pattern = "update_annot.gr.rds", full.names = TRUE)
+name_list = str_extract(gr_ann_list, pattern = "(?<=[:digit:]{8}/)[:graph:]+(?=_update_annot.gr.rds)")
+gr_ann_list = lapply(gr_ann_list, readRDS)
+names(gr_ann_list) = name_list
+  
+# Extract bam file list for merged donors
+dir_data = paste0(directory, "data/bulkATACseq/downsampled_bam_merged")
+bam_merged_list = list.files(path = dir_data, pattern = "_downsampled.bam$", full.names = TRUE)
+
+# Extract bam file for separated donors
+# We use the files from bloc2 snakefile_separated_without06h_commita38dc
+dir_data = paste0(directory, "data/bulkATACseq/downsampled_bam_separated")
+bam_sep_list = list.files(path = dir_data, pattern = "_downsampled.bam$", full.names = TRUE)
+
+# Merge the list
+bam_list = c(bam_merged_list, bam_sep_list)
+
+# Load grange with hg19 annotations
+dir_annot = pic_last_dir(paste0(directory, "exp/", "AnnotationsFiles_createGrange/"))
+hg19_annotations = readRDS(paste0(dir_annot, "/", "hg19_annotations_gr.rds"))
+
+```
+
+
+Analysis based on : https://tobiasrausch.com/courses/atac/atac-seq-data-analysis.html  
+
+
+<br><br><br>
+
+
+
+# Create a common set of regions for all sample
+
+<br>
+
+**Common list of regions for all samples**  
+To be able to compare the peaks from one sample to another, we need to create a big Grange with all the regions detected in all sample.  
+Each "peak" in the df_gr_union table is a region in which we can find at least one peak among all the samples  .  
+https://stackoverflow.com/questions/28545688/understand-the-reduce-function    
+https://bioconductor.org/packages/devel/bioc/vignettes/GenomicRanges/inst/doc/GenomicRangesIntroduction.html    
+```{r}
+
+# Create a grange with the union of all peaks from all sample
+gr_union = Reduce(GenomicRanges::union, gr_ann_list)
+
+# Add annotation on grange union
+annotations_types = levels(factor(hg19_annotations$type))
+metadata = matrix(FALSE, ncol = length(annotations_types), nrow = length(gr_union))
+colnames(metadata) = annotations_types
+mcols(gr_union) = metadata
+for (i in 1:ncol(metadata)){
+    sub_annot = hg19_annotations[hg19_annotations$type == annotations_types[i]]
+    overlaps = findOverlaps(gr_union, sub_annot)
+    mcols(gr_union)[queryHits(overlaps),i] = TRUE
+}
+saveRDS(gr_union, file=paste0(directory_output, "union_gr_allsamples.gr.rds"))
+
+# Annotation table for featureCounts function
+df_gr_union = data.frame(gr_union) %>%
+      tibble::rownames_to_column(var = "number") %>%
+      dplyr::mutate(GeneID = paste0("peak_", number), .keep = "unused") %>%
+      dplyr::rename(Chr = seqnames, Start = start, End = end, Strand = strand) %>%
+      dplyr::select(GeneID, Chr, Start, End, Strand)
+write.csv2(x = df_gr_union, row.names = FALSE, 
+           file=paste0(directory_output, "common_regions_union_allsamples.csv") )
+
+# Annotation table with genomic location
+df_gr_union_annot = data.frame(gr_union) %>%
+      tibble::rownames_to_column(var = "number") %>%
+      dplyr::mutate(region = paste0("region_", number), .keep = "unused", .before = seqnames)
+
+# Visualize table
+df_gr_union[1:20,] %>%
+  kable(caption = "First 20 rows of the df_gr_union table") %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "250px")
+
+```
+
+<br>
+
+**Number of reads detected per sample for each region of the union**  
+We use the merged donors files and the separated donors files (needed for DEseq2 analysis later).  
+```{r, eval = FALSE}
+
+# Count the number of reads, for each sample, present in the region resulting from the union
+readCount <- featureCounts(files = bam_list,
+                           annot.ext = df_gr_union,
+                           isPairedEnd = TRUE,
+                           nthreads = 1,
+                           countChimericFragments = FALSE,
+                           countMultiMappingReads = TRUE)
+saveRDS(readCount, file = paste0(directory_output, "readcount_union_allsamples.rds"))
+
+```
+
+```{r}
+readCount = readRDS(paste0(directory_output, "readcount_union_allsamples.rds"))
+```
+
+<br>
+
+**Matching region - peak**   
+For each sample (merged donors), we indicate if the region of the union was detected as a peak or not.  
+```{r}
+
+gr_readcount = makeGRangesFromDataFrame(df = df_gr_union)
+
+peak_corr = list()
+for(i in 1:length(gr_ann_list)) {
+  temp = as.data.frame(as.logical(countOverlaps(gr_readcount, gr_ann_list[[i]])))
+  name = str_extract(names(gr_ann_list)[i], "[:alnum:]+_[:digit:]{2}h+_[:graph:]+")
+  colnames(temp) = paste0("peaks_in_", name)
+  peak_corr[[i]] = temp
+}
+peak_corr = do.call("cbind", peak_corr) %>%
+      tibble::rownames_to_column(var = "region") %>%
+      dplyr::mutate(region = paste0("region_", region))
+
+```
+
+<br>
+
+**Global table with list of regions, number of reads per sample and peaks detected or not for that condition**  
+```{r}
+
+# Create the table
+count_df = left_join(
+  x = data.frame(readCount$annotation) %>% dplyr::select(-Strand, -Length),
+  y = tibble::rownames_to_column(data.frame(readCount$counts), "GeneID"),
+  by = "GeneID") %>% 
+  dplyr::mutate(region = str_replace(GeneID, "peak", "region"), .before = Chr) %>%
+  dplyr::rename("seqnames" = "Chr", "start" = "Start", "end" = "End") %>%
+  dplyr::select(-GeneID)
+count_df = left_join(count_df, peak_corr, by = "region")
+colnames(count_df) = str_replace_all(string = colnames(count_df), pattern = "X2DG", replacement = "2DG")
+rownames(count_df) = paste0(count_df$seqnames, '_', count_df$start, '_', count_df$end)
+
+# Save the table
+write.table(count_df, sep = ";", row.names = FALSE, 
+            file = paste0(directory_output, "readcount_df_peaks_union_allsamples.csv"))    
+
+# Visualize the table
+count_df[1:20, ] %>%
+  kable(caption = "First 20 rows of the 'count_df' table") %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "250px")
+
+```
+
+<br>
+
+**Table with list of regions and annotations for pathway analysis**
+```{r}
+
+gr = makeGRangesFromDataFrame(count_df, keep.extra.columns = T)
+peakAnno = annotatePeak(gr, tssRegion=c(-1000, 1000), 
+                        TxDb=TxDb.Hsapiens.UCSC.hg19.knownGene, 
+                        annoDb="org.Hs.eg.db")
+dfPA = as.data.frame(peakAnno) 
+dfPA = dfPA  %>%
+  dplyr::select(-str_subset(colnames(dfPA), "downsampled")) %>% 
+  dplyr::select(-str_subset(colnames(dfPA), "peaks_in"))
+
+```
+
+```{r}
+
+list_to_keep = c("start_time", "directory_output", "color_code",
+                 "count_df", "dfPA", "df_gr_union_annot", "gr_ann_list")
+rm(list = setdiff(ls(), list_to_keep))
+
+```
+
+
+<br><br><br>
+
+
+
+# Differential accessibility - All samples comparison
+
+For this part of the analysis, we use the number of reads detected in merged donors (one element per time point).  
+
+## Perform DataNormalization with DEseq
+
+https://www.rdocumentation.org/packages/DESeq2/versions/1.12.3/topics/DESeqDataSet-class    
+https://tobiasrausch.com/courses/atac/atac-seq-data-analysis.html#data-normalization    
+```{r}
+
+# Extract the matrix with number of reads in each merged donors
+cols_to_keep = str_subset(string = colnames(count_df), pattern = "D[:digit:].D[:digit:]_downsampled.bam")
+counts = count_df[ , cols_to_keep]
+
+## Extract information in the colnames
+coldata = data.frame(file = cols_to_keep, name = unlist(str_extract_all(cols_to_keep, pattern = ".+(?=_downsampled.bam)"))) %>%
+  dplyr::mutate(donors = str_extract(name, pattern = "D[:digit:].+")) %>%
+  dplyr::mutate(condtime = paste0(str_extract(name, pattern = ".+(?=h)"), "h")) %>% 
+  tidyr::separate(col = condtime, into = c("condition", "time"), remove = TRUE) 
+coldata = coldata %>%
+  tidyr::unite(condition_time, condition, time, sep = "_", remove = FALSE) %>%
+  remove_rownames %>%
+  column_to_rownames(var = "file") %>%
+  dplyr::select(-name)
+  
+# Data normalization with DEseq
+dds = DESeqDataSetFromMatrix(
+  countData = counts, 
+  colData = coldata, 
+  design = ~ condition)
+dds = DESeq(dds)
+saveRDS(dds, paste0(directory_output, "DEseq_readcount_union_allsamples.rds"))
+
+# Organize DEseq results in a table
+cm = data.frame(counts(dds, normalized=TRUE)) %>%
+  tibble::rownames_to_column("region") %>%
+  tidyr::separate(region, c("seqnames", "start", "end"), remove = FALSE) %>%
+  column_to_rownames("region")
+colnames(cm) = str_replace_all(colnames(cm), pattern = "X2DG", replacement = "2DG")
+write.csv2(x = cm, row.names = FALSE,
+           file = paste0(directory_output, "DEseq_readcount_df_union_allsamples.csv"))
+
+# Visualize the table 
+cm[1:20, ] %>%
+  kable(caption = "First 20 rows of the 'cm' table") %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "250px")
+
+```
+
+
+## Principal Component Analysis (PCA)
+
+https://tobiasrausch.com/courses/atac/atac-seq-data-analysis.html#principal-component-analysis-pca  
+
+<br>
+
+**Choice of PC for the plot**  
+We want to select the PCs that explain the most the variance.   
+```{r}
+
+pca = prcomp(t(cm[,-c(1:3)]))
+print(summary(pca))
+pcaData = as.data.frame(pca$x)
+pcaData$sample=rownames(pcaData)
+coldata = coldata %>% rownames_to_column(var = "sample")
+pcaData=merge(pcaData, coldata)
+percentVar = round(100*(pca$sdev^2/sum(pca$sdev^2)))
+
+varexp = data.frame(x=1:length(percentVar), y=percentVar)
+varexp$x = factor(varexp$x)
+ggplot(data=varexp, aes(x=x, y=y)) + 
+  geom_bar(stat="identity") + 
+  xlab("Principal Component") + 
+  ylab("Proportion of variation (%)")
+
+```
+We choose PC1 and PC2.
+
+<br>
+
+**Plot the PCA**
+```{r}
+ 
+plot_pca = ggplot(data=pcaData, aes(x = PC1, y = PC2)) +
+  geom_point(aes(colour = condition, shape = time), size=6) +
+  scale_color_manual(values = color_code, limits = force) +
+  scale_shape_manual(values=c(15, 16, 17, 7)) +
+  ggtitle("PCA on normalized read counts from union of all samples") +
+  theme(legend.position = "right",
+        plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
+        strip.text.x = element_text(size=11, color="black", face="bold.italic"),
+        axis.line.y = element_line(colour = "black"),
+        axis.text.y = element_text(size = 11, colour = "black"),
+        axis.ticks.y = element_line() ,
+        axis.title.y = element_text(vjust = 1 ,size = 14),
+        axis.title.x = element_text(vjust = 1 ,size = 14),
+        axis.text.x = element_text(size = 11, colour = "black"),
+        axis.ticks = element_blank()) +
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) 
+plot_pca
+
+ggsave(plot = plot_pca,
+       filename = paste0(directory_output, "ATAC_pca_allsamples.png"),
+       width = 16*0.75, height = 9*0.75)
+
+```
+
+Comment : Time point 00h, 03h and 12h are separated by peaks from PC1. For those time points, the different conditions are really close to each other. The conditions start to differ at 24h, they are separated on the plot by peaks from PC2 mostly but also PC1.
+
+<br>
+
+**Loadings from each PCs**  
+Which peaks contribute the most to the separation of the samples ?  
+```{r}
+
+# Peaks contribution for each PC
+loadings = abs(pca$rotation)
+contribution = as.data.frame(sweep(loadings, 2, colSums(loadings), "/"))
+
+# 500 peaks with the highest contribution for PC1
+pc1_500peaks = contribution %>% dplyr::arrange(desc(PC1))
+pc1_500peaks = rownames(pc1_500peaks[1:500,])
+
+# 500 peaks with the highest contribution for PC2
+pc2_500peaks = contribution %>% dplyr::arrange(desc(PC2))
+pc2_500peaks = rownames(pc2_500peaks[1:500,])
+
+# list of interesting peaks for all samples
+pc1_pc2_peaks = intersect(pc1_500peaks, pc2_500peaks)
+pc1_only_peaks = setdiff(pc1_500peaks, pc2_500peaks)
+pc2_only_peaks = setdiff(pc1_500peaks, pc2_500peaks)
+
+```
+
+<br>
+
+## Peaks investigation 
+
+**Heatmap on the 500 peaks with the highest loading for PC1 and PC2**
+```{r, fig.height=16, fig.width = 8, results="hold"}
+
+# Prepare dataframe for heatmap
+cm_heatmap = cm[, -c(1:3)]
+colnames(cm_heatmap) = str_replace_all(colnames(cm_heatmap), "(.D[:digit:])+_downsampled.bam", "")
+cm_heatmap = cm_heatmap %>%
+  dplyr::select(Xvivo_00h, MP_03h, MP_12h, MP_24h, DON_03h,
+                DON_12h, DON_24h, '2DG_03h', '2DG_12h', '2DG_24h',
+                AOA_03h, AOA_12h, AOA_24h, aK_24h, VPA_24h)
+# heatmap on peaks from PC1
+mat_pc1 = cm_heatmap %>% dplyr::filter(row.names(cm_heatmap) %in% pc1_only_peaks)
+mat_pc1 = mat_pc1 - rowMeans(mat_pc1)
+pheatmap(mat_pc1, scale="row", cluster_rows = FALSE, cluster_cols = FALSE, fontsize_row = 5)
+
+# heatmap on peaks from PC2
+mat_pc2 = cm_heatmap %>% dplyr::filter(row.names(cm_heatmap) %in% pc2_only_peaks)
+mat_pc2 = mat_pc2 - rowMeans(mat_pc2)
+pheatmap(mat_pc2, scale="row", cluster_rows = FALSE, cluster_cols = FALSE, fontsize_row = 5)
+
+# heatmap on peaks from PC1 and PC2
+mat_pc1_pc2 = cm_heatmap %>% dplyr::filter(row.names(cm_heatmap) %in% pc1_pc2_peaks)
+mat_pc1_pc2 = mat_pc1_pc2 - rowMeans(mat_pc1_pc2)
+pheatmap(mat_pc1_pc2, scale="row", cluster_rows = FALSE, cluster_cols = FALSE, fontsize_row = 5)
+
+```
+
+<br>
+
+**Pathway analysis and GO enrichment analysis on those genes** 
+```{r, fig.width = 20, fig.height = 8}
+
+# Extract interesting peaks
+dfP = dfPA
+rownames(dfP) = paste0(dfP$seqnames, '_', dfP$start, '_', dfP$end)
+selpeaks_pc1 = dfP[rownames(dfP) %in% pc1_only_peaks,]
+selpeaks_pc1 = selpeaks_pc1[abs(selpeaks_pc1$distanceToTSS) < 5000,]$geneId
+selpeaks_pc2 = dfP[rownames(dfP) %in% pc2_only_peaks,]
+selpeaks_pc2 = selpeaks_pc2[abs(selpeaks_pc2$distanceToTSS) < 5000,]$geneId
+selpeaks_pc1pc2 = dfP[rownames(dfP) %in% pc1_pc2_peaks,]
+selpeaks_pc1pc2 = selpeaks_pc1pc2[abs(selpeaks_pc1pc2$distanceToTSS) < 5000,]$geneId
+
+# Perform pathway  enrichment analysis
+pathway_pc1 = enrichPathway(selpeaks_pc1)
+pathway_pc2 = enrichPathway(selpeaks_pc2)
+pathway_pc1pc2 = enrichPathway(selpeaks_pc1pc2)
+
+# Perform GO analysis
+ego_pc1 = enrichGO(gene = selpeaks_pc1, 
+                   OrgDb = org.Hs.eg.db,
+                   ont = "ALL", 
+                   pAdjustMethod = "BH",
+                   pvalueCutoff = 0.05,
+                   qvalueCutoff = 0.2,
+                   readable = TRUE,
+                   keyType = "ENTREZID")
+ego_pc2 = enrichGO(gene = selpeaks_pc2, 
+                   OrgDb = org.Hs.eg.db,
+                   ont = "ALL", 
+                   pAdjustMethod = "BH",
+                   pvalueCutoff = 0.05,
+                   qvalueCutoff = 0.2,
+                   readable = TRUE,
+                   keyType = "ENTREZID")
+ego_pc1pc2 = enrichGO(gene = selpeaks_pc1pc2, 
+                   OrgDb = org.Hs.eg.db,
+                   ont = "ALL", 
+                   pAdjustMethod = "BH",
+                   pvalueCutoff = 0.05,
+                   qvalueCutoff = 0.2,
+                   readable = TRUE,
+                   keyType = "ENTREZID")
+
+dotplot(ego_pc1, showCategory = 25) + 
+  facet_grid(ONTOLOGY ~ ., scales="free") +
+  ggtitle("Gene associated with peaks from PC1") |
+  dotplot(ego_pc2, showCategory = 25) + 
+  facet_grid(ONTOLOGY ~ ., scales="free") +
+  ggtitle("Gene associated with peaks from PC2") |
+  dotplot(ego_pc1pc2, showCategory = 25) + 
+  facet_grid(ONTOLOGY ~ ., scales="free") +
+  ggtitle("Gene associated with peaks from PC1 and PC2")
+
+```
+
+No pathway enrichment for any list tested (peaks from PC1 only, peaks from PC2 only and peaks from PC1 and PC2).  
+Some GO enrichment but not really interesting. 
+
+```{r}
+
+list_to_keep = c("start_time", "directory_output", "color_code",
+                 "count_df", "dfPA", "df_gr_union_annot", "gr_ann_list")
+rm(list = setdiff(ls(), list_to_keep))
+
+```
+
+<br><br><br>
+
+
+
+# Differential accessibility - Dual comparison
+
+## Choose comparisons
+
+```{r}
+
+combination = list(c("MP_03h", "MP_12h"), c("MP_12h", "MP_24h"),
+                   c("DON_03h", "DON_12h"), c("DON_12h", "DON_24h"),
+                   c("2DG_03h", "2DG_12h"),c("2DG_12h", "2DG_24h"),
+                   c("AOA_03h", "AOA_12h"),c("AOA_12h", "AOA_24h"),
+                   c("MP_03h","DON_03h"),c("MP_12h","DON_12h"), c("MP_24h","DON_24h"), 
+                   c("MP_03h","2DG_03h"),c("MP_12h","2DG_12h"), c("MP_24h","2DG_24h"),
+                   c("MP_03h","AOA_03h"),c("MP_12h","AOA_12h"), c("MP_24h","AOA_24h"),
+                   c("MP_24h", "VPA_24h"), c("MP_03h", "Xvivo_00h"))
+
+```
+
+
+## Visualize peaks evolution
+
+Note : we work with the list of regions from the union of peaks of all samples. Some peaks from individual samples were merged during this operation. So when we count the number of peaks for each sample among this list of regions, it's normal that we don't find the same number as the initial number of peaks per sample.   
+https://stackoverflow.com/questions/27197617/filter-data-frame-by-character-column-name-in-dplyr
+
+```{r}
+
+df_type_peak = data.frame()
+
+for(i in 1:length(combination)) {
+  
+  # Extract conditions information
+  cond1 = combination[[i]][1]
+  cond2 = combination[[i]][2] 
+  name = paste0(cond1, "_vs_", cond2)
+  col_cond1 = str_subset(string = colnames(count_df), pattern = paste0("peaks_in_", cond1))
+  col_cond2 = str_subset(string = colnames(count_df), pattern = paste0("peaks_in_", cond2))
+
+  # Classify peaks in category
+  temp = data.frame(
+    differential = name,
+    nb_peaks_cond1_in_union = nrow(count_df %>% dplyr::filter(!!as.symbol(col_cond1) == TRUE)), 
+    nb_peaks_cond2_in_union = nrow(count_df %>% dplyr::filter(!!as.symbol(col_cond2) == TRUE)),
+    persistant_peaks_cond1_cond2 = nrow(count_df %>% dplyr::filter(!!as.symbol(col_cond1) == TRUE & 
+                                                            !!as.symbol(col_cond2) == TRUE)),
+    close_open_peaks_cond1_cond2 = nrow(count_df %>% dplyr::filter(!!as.symbol(col_cond1) == FALSE & 
+                                                            !!as.symbol(col_cond2) == TRUE)),
+    open_close_peaks_cond1_cond2 = nrow(count_df %>% dplyr::filter(!!as.symbol(col_cond1) == TRUE & 
+                                                            !!as.symbol(col_cond2) == FALSE))
+    )
+  df_type_peak = rbind(df_type_peak, temp)
+  
+}
+
+write.csv2(x = df_type_peak, row.names = FALSE,
+           file = paste0(directory_output, "peaks_close_open_conditions.csv"))
+
+```
+
+
+## Volcano plot
+
+Note : for DEseq2 comparison, we need duplicate samples. We work with the individual donors files to perform it. 
+Are the peaks bigger (more reads) or smaller between the two conditions ?  
+https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#pvaluesNA  
+https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#indfilttheory  
+"If a row is filtered by automatic independent filtering, for having a low mean normalized count, then only the adjusted p value will be set to NA." "The goal of independent filtering is to filter out those tests from the procedure that have no, or little chance of showing significant evidence, without even looking at their test statistic."  
+Based on this explanation, we remove peaks with NA values in padj column.  
+
+```{r, Define a function}
+
+volcano_DEseq_fun = function(comb, tab_count, tab_annot) {
+  
+  # Extract conditions information
+  cond1 = comb[1]
+  cond2 = comb[2] 
+  name = paste0(cond1, "_vs_", cond2)
+  col_peak_cond1 = str_subset(string = colnames(tab_count), pattern = paste0("peaks_in_", cond1))
+  col_peak_cond2 = str_subset(string = colnames(tab_count), pattern = paste0("peaks_in_", cond2))
+  col_read_cond1 = str_subset(string = colnames(tab_count), pattern = paste0(cond1, "_D[:digit:]_downsampled.bam"))
+  col_read_cond2 = str_subset(string = colnames(tab_count), pattern = paste0(cond2, "_D[:digit:]_downsampled.bam"))
+  
+  # Extract the read counts for the two conditions
+  matrix_peaks = tab_count
+  ## put region number as rownames
+  rownames(matrix_peaks) = matrix_peaks$region
+  ## keep only the regions that correspond to peaks in both conditions
+  matrix_peaks = matrix_peaks %>% 
+    dplyr::filter(!!as.symbol(col_peak_cond1) == TRUE & !!as.symbol(col_peak_cond2) == TRUE) 
+  ## keep only the reads from the two conditions
+  matrix_peaks = matrix_peaks[colnames(matrix_peaks) %in% c(col_read_cond1, col_read_cond2)]
+  
+  # DEseq2 parameters
+  coldata <- data.frame(sample = colnames(matrix_peaks)) %>%
+    dplyr::mutate(condition = ifelse(str_detect(sample, pattern = cond1), "before", "after")) %>%
+    dplyr::mutate(type = "paired-end")
+  
+  # Normalize data with DEseq
+  dds <- DESeqDataSetFromMatrix(
+    countData = matrix_peaks,
+    colData = coldata,
+    design = ~ condition)
+  dds$condition <- relevel(dds$condition, ref = "before") 
+  dds <- DESeq(dds)
+  
+  # Extract matrix count from deseq
+  cm = data.frame(counts(dds, normalized=TRUE))
+  
+  # Extract statistics from deseq
+  res = as_tibble(results(dds)) 
+  res = res %>% 
+    dplyr::mutate(region = rownames(cm), .before = baseMean) %>%
+    dplyr::mutate(regulation = case_when(pvalue < 0.01 ~ "significative", 
+                                         pvalue > 0.01 ~ "non-significative")) %>%
+    dplyr::filter(!is.na(padj))
+  
+  # Add genomic annotations for the regions
+  DEseq_results_annotated = right_join(df_gr_union_annot, res, by = "region")
+  start = grep("baseMean", colnames(DEseq_results_annotated))
+  end = grep("padj", colnames(DEseq_results_annotated))
+  DEseq_results_annotated[,start:end] = lapply(DEseq_results_annotated[,start:end], as.numeric)
+  
+  # Pivot table to draw the plot
+  DEseq_results_long = DEseq_results_annotated %>% 
+    pivot_longer(cols = str_subset(colnames(DEseq_results_annotated), "hg19"), 
+                 names_to = "feature", 
+                 values_to = "feature_overlap") 
+  
+  # Plot volcano
+  df_plot = DEseq_results_long %>% 
+    dplyr::filter(feature == "hg19_genes_promoters" & feature_overlap == TRUE | 
+                  feature == "hg19_genes_intergenic" & feature_overlap == TRUE |
+                  feature == "hg19_genes_introns" & feature_overlap == TRUE |
+                  feature == "hg19_enhancers_fantom" & feature_overlap == TRUE)
+  
+  plot = ggplot(df_plot, aes(x = log2FoldChange, y = -1 * log10(pvalue), colour = feature)) +
+    geom_point(size = 3, alpha = 0.5, fill = NA, shape = 21, stroke = 2) +
+    geom_hline(aes(yintercept = 2), colour = "red", linetype = "dashed") +
+    geom_text(label = "p-value = 0.01", colour = "red", aes(x = -5, y = 3), size = 3) +
+    coord_cartesian(xlim = c(-7, 7), ylim = c(NA, 10)) + 
+    labs(subtitle = name, x = "log2(FoldChange)", y = "-log10(Pvalue)") +
+    facet_wrap(facets = .~feature) +
+    theme(axis.line.y = element_line(color = "black"),
+          axis.line.x = element_line(color = "black"),
+          legend.position = "none",
+          axis.title = element_text(size = 10),
+          plot.subtitle = element_text(size = 14, hjust = 0.5))
+
+  ## save plot 
+  ggsave(plot, width = 8, height = 8,
+         filename = paste0(directory_output, name, "_volcano.svg"))
+  
+  # Output function
+  return(list(volcano_plot = plot,
+              deseq_res = res,
+              matrix_count = cm))
+  
+}
+
+```
+
+```{r, Apply function on each combination}
+
+list_deseq_volcano = list()
+for(i in 1:length(combination)) {
+  list_name = paste0(combination[[i]][1], "_vs_", combination[[i]][2])
+  list_deseq_volcano[[list_name]] = volcano_DEseq_fun(comb = combination[[i]], 
+                                                      tab_count = count_df, 
+                                                      tab_annot = df_gr_union_annot)
+}
+
+```
+
+```{r, Show volcano plots, fig.width = 37, fig.height = 30}
+
+list_volcano = unlist(list_deseq_volcano, recursive=FALSE)
+list_volcano = list_volcano[str_detect(names(list_volcano), "volcano_plot")]
+do.call("grid.arrange", c(list_volcano, ncol = 4))
+
+```
+
+
+## Pathway enrichment analysis
+
+We extracted up regulated and down regulated peaks between two conditions and we perform enrichment pathway analysis.
+```{r, Show pathway enrichment, fig.width = 8, fig.height=12}
+
+for(i in 1:length(list_deseq_volcano)) {
+  
+  print(i)
+  tp = list_deseq_volcano[[i]]
+  tp_res = tp$deseq_res
+  tp_cm = tp$matrix_count
+  comp = names(list_deseq_volcano)[i]
+  
+  # Up regulated peaks in the first condition
+  region_up = rownames(tp_cm[which(tp_res$padj < 0.1 & tp_res$log2FoldChange>0),])
+  selpeaks_up = dfPA %>% dplyr::filter(region %in% region_up)
+  selpeaks_up = selpeaks_up[abs(selpeaks_up$distanceToTSS) < 5000,]$geneId
+  if(length(selpeaks_up) != 0) {
+    pathwayUp = enrichPathway(selpeaks_up)
+    tab_u = data.frame(pathwayUp)
+    if(nrow(tab_u) != 0) {tab_u = tab_u  %>% dplyr::mutate(Peak_Category = "Up_regulated", .before = "ID")}
+    ego_up = enrichGO(gene = selpeaks_up, 
+                   OrgDb = org.Hs.eg.db,
+                   ont = "ALL", 
+                   pAdjustMethod = "BH",
+                   pvalueCutoff = 0.05,
+                   qvalueCutoff = 0.2,
+                   readable = TRUE,
+                   keyType = "ENTREZID")
+
+  } else {
+    tab_u = data.frame()
+  }
+  
+  # Down regulated peaks in the first condition
+  region_down = rownames(tp_cm[which(tp_res$padj < 0.1 & tp_res$log2FoldChange<0),])
+  selpeaks_down = dfPA %>% dplyr::filter(region %in% region_down)
+  selpeaks_down = selpeaks_down[abs(selpeaks_down$distanceToTSS) < 5000,]$geneId
+  if(length(selpeaks_down) != 0) {
+    pathwayDown = enrichPathway(selpeaks_down)
+    tab_d = data.frame(pathwayDown)
+    if(nrow(tab_d) != 0) {tab_d = tab_d  %>% dplyr::mutate(Peak_Category = "Down_regulated", .before = "ID")}
+    ego_down = enrichGO(gene = selpeaks_down, 
+                   OrgDb = org.Hs.eg.db,
+                   ont = "ALL", 
+                   pAdjustMethod = "BH",
+                   pvalueCutoff = 0.05,
+                   qvalueCutoff = 0.2,
+                   readable = TRUE,
+                   keyType = "ENTREZID")
+  } else {
+    tab_d = data.frame()
+  }
+  
+  # Results pathway analysis
+  tab = rbind(tab_u, tab_d)
+  
+  if (nrow(tab) != 0) {
+    
+    write.csv2(tab, paste0(directory_output, comp, "_pathway_UpDown.csv"))
+    
+    if (nrow(tab_d != 0)) {
+      plot_d = dotplot(pathwayDown) + 
+        ggtitle("Down_regulated") + 
+        plot_annotation(title = comp)
+      ggsave(plot_d, height = 6, width = 14,
+             filename = paste0(directory_output, comp, "_dotplot_pathway_Down.svg"))
+      print(plot_d)
+    }
+  
+    if (nrow(tab_u != 0)) {
+      plot_u = dotplot(pathwayUp) + 
+        ggtitle("Up_regulated") + 
+        plot_annotation(title = comp)
+      ggsave(plot_u, height = 6, width = 14,
+             filename = paste0(directory_output, comp, "_dotplot_pathway_Up.svg"))
+      print(plot_u)
+    }
+    
+  } else { print("No pathway enrichment in up and down regulated peaks") }
+    
+  if (exists("ego_up") | exists("ego_down")) {
+    
+    if (exists("ego_up")) {
+      if (!is.null(ego_up)) {
+        if (nrow(ego_up@result) != 0) {
+          dot_up = dotplot(ego_up, showCategory = 25) + 
+          facet_grid(ONTOLOGY ~ ., scales="free") +
+          ggtitle("Gene associated to peaks upregulated in cond1 compared to cond2")
+        print(dot_up)
+        ggsave(dot_up, height = 15, width = 8,
+               filename = paste0(directory_output, comp, "_dotplot_GO_Up.svg"))
+        }
+      }
+    }
+    
+    if (exists("ego_down")) {
+      if (!is.null(ego_down)) {
+        if (nrow(ego_down@result) != 0) {
+        dot_down = dotplot(ego_down, showCategory = 25) + 
+          facet_grid(ONTOLOGY ~ ., scales="free") +
+          ggtitle("Gene associated to peaks downregulated in cond1 compared to cond2")
+        ggsave(dot_down, height = 15, width = 8,
+               filename = paste0(directory_output, comp, "_dotplot_GO_Down.svg"))
+        }
+      }
+    }
+    
+  } else { print("No GO enrichment in up and down regulated peaks") }
+
+  rm(tab_u, tab_d, tab, ego_up, ego_down)
+  
+}
+
+```
+
+```{r}
+
+list_to_keep = c("start_time", "directory_output", "color_code",
+                 "count_df", "gr_ann_list", "df_gr_union_annot")
+rm(list = setdiff(ls(), list_to_keep))
+
+```
+
+
+
+<br><br><br>
+
+
+# Visualize peaks dynamics 
+
+```{r}
+
+peaks_dynamics_fun = function(df_readcount, df_peaks_in, choice_annot, condition) {
+  
+  if (!choice_annot %in% c(str_subset(colnames(df_gr_union_annot), pattern = "hg19"), "all")) {
+    
+    print("error in choice_annot")
+    
+  } else {
+    
+    # Select columns from the condition and keep only merge donors info
+    df_readcount = df_readcount %>%
+      dplyr::select(region, seqnames, start, end, 
+                    str_subset(colnames(df_readcount), pattern = condition),
+                    - str_subset(colnames(df_readcount), pattern = "[:alnum:]+_[:digit:]{2}h_D[:digit:]_downsampled.bam"))
+    
+    # Keep only peaks corresponding to the wanted genomic annotation
+    df_readcount = left_join(df_readcount, df_peaks_in, by = c("region", "seqnames", "start", "end"))
+    if (!choice_annot == "all") { 
+      df_readcount = df_readcount %>% dplyr::filter(!!as.symbol(choice_annot) == TRUE) }
+    df_readcount = df_readcount %>% 
+      dplyr::select(-str_subset(colnames(df_readcount), "hg19"), 
+                    -width, -strand, -seqnames, -start, -end)
+    
+    # Extract combination
+    cols <- sapply(df_readcount, is.logical)
+    df_readcount[,cols] <- lapply(df_readcount[,cols], as.numeric)
+    df_readcount = df_readcount %>% 
+      tidyr::unite(str_subset(colnames(df_readcount), "peaks_in"), 
+                   col = "peaks_evolution", remove = TRUE, sep = "_")
+    df_readcount = df_readcount %>% 
+      dplyr::mutate(peaks_category = case_when(
+        peaks_evolution %in% c("1_1_0", "1_0_0") ~ "closing_peaks",
+        peaks_evolution %in% c("0_0_1", "0_1_1") ~ "opening_peaks",
+        peaks_evolution %in% c("1_1_1", "0_0_0") ~ "stable_peaks",
+        peaks_evolution %in% c("0_1_0", "1_0_1") ~ "others")) %>%
+      pivot_longer(cols = str_subset(colnames(df_readcount), pattern = "downsampled"),
+                   names_to = "condition",
+                   values_to = "nbreads") %>% 
+      tidyr::separate(condition, c("condition", "time", "donors", "temp"), 
+                      sep = "_", remove = TRUE) %>% 
+      dplyr::select(-temp, -donors)
+    df_readcount = df_readcount %>%
+      dplyr::group_by(peaks_evolution, time) %>%
+      dplyr::mutate(mean_nbreads = mean(nbreads)) %>%
+      dplyr::ungroup()
+    
+    # Plot the peaks dynamics
+    plot = ggplot(df_readcount, aes(x = time, y = nbreads, group = region)) +
+      geom_line(alpha = 0.2, col = color_code[condition]) +
+      geom_point(col = color_code[condition]) +
+      geom_line(aes(x = time, y = mean_nbreads), colour = "red", linetype = "dashed") +
+      ggtitle(paste0(condition, "-", choice_annot)) +
+      facet_wrap(facets = peaks_category~peaks_evolution, scales = "free") 
+    
+    # Save plot
+    ggsave(plot, width = 12, height = 12,
+           file = paste0(directory_output, condition, "_", choice_annot, "_peaks_dyn.png"))
+       
+    # Function's output 
+    return(list(df_peaks_dyn = df_readcount,
+                plot_dyn = plot))
+    
+  }}
+
+```
+
+```{r}
+
+# Keep only conditions with multiple time points
+cond_chrono = data.frame(temp = str_extract(names(gr_ann_list), pattern = "[:alnum:]+_[:digit:]{2}h"))
+cond_chrono = tidyr::separate(cond_chrono, temp, into = c("cond", "time"), remove = TRUE)
+cond_chrono = cond_chrono %>% group_by(cond) %>% dplyr::filter(n() > 1) %>% dplyr::pull(cond)
+cond_chrono = unique(cond_chrono)
+
+# Call the function for each condition
+list_dyn_peaks = list()
+
+for(i in 1:length(cond_chrono)){
+  
+  list_dyn_peaks[[cond_chrono[i]]]$prom = peaks_dynamics_fun(
+    df_readcount = count_df,
+    df_peaks_in =  df_gr_union_annot,
+    choice_annot = "hg19_genes_promoters",
+    condition = cond_chrono[i]
+  )
+  
+   list_dyn_peaks[[cond_chrono[i]]]$intergenic = peaks_dynamics_fun(
+    df_readcount = count_df,
+    df_peaks_in =  df_gr_union_annot,
+    choice_annot = "hg19_genes_intergenic",
+    condition = cond_chrono[i]
+  )
+   
+  list_dyn_peaks[[cond_chrono[i]]]$all = peaks_dynamics_fun(
+    df_readcount = count_df,
+    df_peaks_in =  df_gr_union_annot,
+    choice_annot = "all",
+    condition = cond_chrono[i]
+  )
+  
+}
+
+```
+
+Here, we present one peaks dynamic plot. To see all the plots, refer to the exp folder.
+
+```{r, fig.width = 20, fig.height = 20}
+ 
+plots =  unlist(unlist(list_dyn_peaks,recursive=FALSE),recursive=FALSE)
+plots = plots[str_detect(names(plots), "plot")]
+plots[[1]]
+
+```
+
+
+
+<br><br><br>
+
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric(end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results="hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+
