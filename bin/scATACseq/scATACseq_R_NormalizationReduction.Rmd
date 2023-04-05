@@ -11,6 +11,10 @@ output:
     theme: journal
 ---
 
+<style>
+body {text-align: justify}
+</style>
+
 ```{r, Setup, include=FALSE}
 
 knitr::opts_chunk$set(echo = TRUE)
@@ -55,35 +59,81 @@ seurat_common_merged = readRDS(paste0(dir, "/", "merged_seurat_qc_filter_annot.r
 ```
 
 
+<br><br><br>
+
+
+# Overview 
+
+This code aims at :  
+- normalizing the data
+- selecting the 90% top features (features = peaks)  
+- performing linear dimension reduction (analogue to PCA in scRNAseq)   
+- choosing the optimal number of dimensions to keep for further analysis    
+- performing non-linear dimension reduction to visualize the dataset in 2D (UMAP)  
+- defining clusters with different resolutions  
+- choosing the resolutions that fit best the dataset  (clusters that separate the conditions)  
+- adding clusters information in the metadata  
+  
+Based on documentation :    
+https://stuartlab.org/signac/articles/merging.html    
+https://stuartlab.org/signac/articles/pbmc_vignette.html    
+  
+  
+<br><br><br>  
+
+
 # Normalization and dimension choice
 
-```{r, Normalization, message=F, warning=F, results = 'hold', fig.width=16, fig.height=6}
+```{r, Normalization, results = 'hold', fig.width=16, fig.height=6}
 
+# Normalization: term frequency-inverse document frequency (TF-IDF) normalization. 
+# Two-step normalization procedure, that both normalizes across cells to correct for differences in cellular sequencing depth, and across peaks to give higher values to more rare peaks.
 seurat_common_merged <- RunTFIDF(seurat_common_merged)
-seurat_common_merged <- FindTopFeatures(seurat_common_merged, min.cutoff = 'q0') 
+
+# Choose to use only the top n% of features (peaks) for dimensional reduction
+# Can also remove features present in less than n cells
+# Set qXX to only select the top 90% features (peaks)
+# Features used for dimensional reduction are automatically set as VariableFeatures() by this function.
+seurat_common_merged <- FindTopFeatures(seurat_common_merged, min.cutoff = 'q10') # Drop the 10 lowest %
+# seurat_common_merged <- FindTopFeatures(seurat_common_merged, min.cutoff = 'q0')
+
+# Dimension reduction: singular value decomposition (SVD) on the TD-IDF matrix
+# It automatically uses the features (peaks) selected above. 
+# This returns a reduced dimension representation of the object 
+# (You can think of this as analogous to the output of PCA).
 seurat_common_merged <- RunSVD(seurat_common_merged)
 
+## ATTENTION : The combined steps of TF-IDF followed by SVD are known as latent semantic indexing (LSI)
+# The 1st LSI component often captures sequencing depth (technical variation) rather than biological variation
+# If this is the case (< - 0.7 or > 0.7), then discard it for further analysis
 plot_dim_depth = DepthCor(object = seurat_common_merged, 
                           assay = "peaks", 
                           reduction = "lsi", 
                           n = NULL) + 
+  coord_cartesian(xlim = c(1,50)) +
   geom_hline(yintercept = -0.7, linetype = "dashed", color = "red") +
   geom_hline(yintercept = + 0.7, linetype = "dashed", color = "red")
 
 plot_dim_elb = ElbowPlot(object = seurat_common_merged, 
                          ndims = 50, 
                          reduction = "lsi") + 
-  ylim(0.2, 3) +
+  coord_cartesian(ylim = c(0.2,3)) +
   theme(plot.background = element_rect(fill = "white"))
 
 print(plot_dim_depth | plot_dim_elb)
 
 ```
 
+<br>
+
+"The first LSI component often captures sequencing depth (technical variation) rather than biological variation. If this is the case, the component should be removed from downstream analysis." Here, as in the example on the vignette (see Documentation), we see there is a very strong correlation between the first LSI component and the total number of counts for the cell, so we will perform downstream steps without this component.
+
+<br>
+
 ```{r, Dimension choice}
 
-print("We chose dimensions 2 --> 30 for downstream analysis.")
-dims_choice = c(2:30)
+print("We chose dimensions 2 --> 50 for downstream analysis.")
+dims_choice = c(2:50)
 
 ```
 
@@ -94,14 +144,27 @@ dims_choice = c(2:30)
 
 reduction_possibility = function(seurat_obj, dims_choice) {
   
+  # Compute another reduction (commonly used for RNAseq) : UMAP
+  ## Of note, usually UMAP is based on PCA dimension reduction, but here it's on lsi
+  ## Dump the first dimension according to the graph above
   seurat_obj <- RunUMAP(object = seurat_obj,
                         assays = "peaks",
                         reduction = 'lsi', 
                         dims = dims_choice, 
                         set.seed = 42)
-  seurat_obj <- FindNeighbors(object = seurat_obj, reduction = 'lsi', dims = dims_choice)
+  # => Now another reduction has been added to seurat_obj@reduction : "umap"
+  
+  # Constructing the K-nearest neighbor (KNN) graph (by default)
+# Edges drawn between cells with similar gene expression patterns. 
+# Then, it attempts to partition this graph into highly interconnected ‘quasi-cliques’ or ‘communities’.
+  seurat_obj <- FindNeighbors(object = seurat_obj, 
+                              reduction = 'lsi', 
+                              dims = dims_choice)
+  # => This function adds a "graph" named peaks_snn in seurat_obj@graphs
   
   # Try different resolution to find the best granularity
+  # Based on the current default assay
+## Algorithm = 3 => Louvain
   for (res in c(0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 
                 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 0.25)) {
     seurat_obj <- FindClusters(
@@ -110,6 +173,8 @@ reduction_possibility = function(seurat_obj, dims_choice) {
       algorithm = 3)
   }
   return(seurat_obj)
+  # => This function adds 2 new columns to meta.data : seurat_clusters AND peaks_snn_res.0.8. There are equivalent
+# => If the name of algorithm is changed, then this 2 columns are replaced and a little bit different from previously
   
 }
 
@@ -168,7 +233,7 @@ print(plot_resolution)
 
 # Visualization on UMAP graph 
 
-```{r, Visualize all cond, fig.height = 12, fig.width = 10, results = 'keep'}
+```{r, Visualize all cond, fig.height=10, fig.width = 10, results = 'keep'}
 
 allcond_umap = DimPlot(object = seurat_common_merged, 
                        group.by = 'orig.ident', 
@@ -225,39 +290,36 @@ ind_umap[[1]] | ind_umap[[2]] | ind_umap[[3]] | ind_umap[[4]]
 
 ```
 
-```{r, Resolution choice, results='hold', fig.height=10, fig.width=16}
+```{r, Resolution choice, results='hold', fig.height=10, fig.width=12}
 
-cat("Based on the conditions we want to analyze, two resolutions can be interesting for downstream analysis :", "\n", 
-    "- resolution 0.06 for bigger clusters", "\n",
-    "- resolution 0.25 for more precise clusters", "\n",
-    "We erase seurat_clusters meta.data column and we keep the two columns with clusters number for resolution 0.06 and 0.25.")
+cat("Based on the conditions we want to analyze, we choose the resolution 0.25.", "\n",
+    "We erase seurat_clusters meta.data column and we keep only the one for resolution 0.25.")
 
 seurat_common_merged@meta.data = seurat_common_merged@meta.data %>%
   dplyr::select(-peaks_snn_res.0.01,-peaks_snn_res.0.02,-peaks_snn_res.0.03,
-                -peaks_snn_res.0.04,-peaks_snn_res.0.05,-peaks_snn_res.0.07,
-                -peaks_snn_res.0.08,-peaks_snn_res.0.09,-peaks_snn_res.0.1,
-                -peaks_snn_res.0.2,-peaks_snn_res.0.3,-peaks_snn_res.0.4,
-                -peaks_snn_res.0.5,-peaks_snn_res.0.6,-peaks_snn_res.0.7,
-                -peaks_snn_res.0.8,-peaks_snn_res.0.9,-peaks_snn_res.1,
-                -seurat_clusters)
+                -peaks_snn_res.0.04,-peaks_snn_res.0.05, -peaks_snn_res.0.06,
+                -peaks_snn_res.0.07,-peaks_snn_res.0.08,-peaks_snn_res.0.09,
+                -peaks_snn_res.0.1,-peaks_snn_res.0.2, -peaks_snn_res.0.3,
+                -peaks_snn_res.0.4,-peaks_snn_res.0.5,-peaks_snn_res.0.6,
+                -peaks_snn_res.0.7,-peaks_snn_res.0.8,-peaks_snn_res.0.9,
+                -peaks_snn_res.1,-seurat_clusters)
 
-plot_clusters = 
-  DimPlot(seurat_common_merged, reduction = "umap", 
-          group.by = "peaks_snn_res.0.06") + ggtitle("Resolution_0.06") |
-  DimPlot(seurat_common_merged, reduction = "umap", 
-          group.by = "peaks_snn_res.0.25") + ggtitle("Resolution_0.25")
+plot_clusters = DimPlot(seurat_common_merged, 
+                        reduction = "umap", 
+                        group.by = "peaks_snn_res.0.25") + 
+  ggtitle("Resolution_0.25") 
 plot_clusters
 
 ```
 
-```{r, Save outputs}
+```{r, Save outputs, fig.show="hide"}
 
 ggsave(plot = plot_dim_depth | plot_dim_elb, 
        file = paste0(directory_output, "plot_dimension_choice.svg"),
        width = 20, height = 8)
 
 ggsave(plot = plot_resolution, 
-       file = paste0(directory_output, "plot_resolution.svg"),
+       file = paste0(directory_output, "plot_resolution.pdf"),
        width = 30, height = 40)
 
 ggsave(plot = allcond_umap, 
@@ -270,27 +332,36 @@ ggsave(plot = allcond_split_umap,
 
 ggsave(plot = arrangeGrob(grobs = ind_umap, ncol = 4, nrow = 1),
        filename = paste0(directory_output, "plot_umap_individual.svg"),
-       width = 40, height = 12)
+       width = 40, height = 10)
 
 ggsave(plot = plot_clusters, 
        file = paste0(directory_output, "plot_umap_clusters.svg"),
-       width = 20, height = 12)
+       width = 10, height = 10)
 
 saveRDS(object = seurat_common_merged, 
         file = paste0(directory_output, "merged_seurat_qc_filter_annot_normreduc.rds"))
 
 ```
 
+
+<br><br><br>
+
+
 ```{r, Rsession}
 
 end_time = Sys.time()
 cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
 
-# Clean working space and memory 
-rm(list = ls())
-gc()
-
 # Show package version
 sessionInfo()
 
 ```
+
+```{r, results="hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+
