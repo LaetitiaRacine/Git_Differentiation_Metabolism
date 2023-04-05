@@ -112,7 +112,7 @@ rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATACseq_R_Merg
 # annotationsFiles_createGrange.Rmd
 
 *OBJECTIVE*  
-Extract hg38 and hg19 annotations informations (annotatr package) in R objects.    
+Extract hg38 and hg19 annotations information (annotatr package) in R objects.    
   
 *OUTPUTS*   
 - hg19_annotations_gr.rds  
@@ -173,8 +173,9 @@ Normalize and reduced the dataset :
   
 *OUTPUTS*  
 - plot_dimension_choice.svg  
-- plot_resolution.svg  
-- plot_umap_allconditions_merged.svg  
+- plot_resolution.pdf  
+- plot_umap_allconditions_merged.svg
+- plot_umap_allconditions_split.svg 
 - plot_umap_individual.svg  
 - plot_umap_clusters.svg  
 - merged_seurat_qc_filter_annot_normreduc.rds  
