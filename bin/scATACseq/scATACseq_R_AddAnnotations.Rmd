@@ -79,14 +79,14 @@ Annotation(seurat_common_merged) = annotations
 
 <br>
 
-**Add peak_name in the metadata**
+**Add peak_name in the metadata**  
+Metadata are lost during the "merging" step so we need to add peak_name again.   
 ```{r, Add peak_name metadata}
 
 add_peak_name = function(seurat_obj) {
   print(seurat_obj@assays$peaks@ranges)
   names_peaks = paste0(seurat_obj@assays$peaks@ranges@seqnames, "-", seurat_obj@assays$peaks@ranges@ranges)
   mcols(seurat_obj@assays$peaks@ranges)$peak_name = names_peaks
-  print(seurat_obj@assays$peaks@ranges)
   return(seurat_obj)
 }
 
@@ -106,7 +106,8 @@ add_peak_annot = function(seurat_obj, annotations_gr) {
   metadata = matrix(FALSE, ncol = length(annotations_types), 
                     nrow = length(seurat_obj@assays$peaks@ranges))
   colnames(metadata) = annotations_types
-  mcols(seurat_obj@assays$peaks@ranges) = append(mcols(seurat_obj@assays$peaks@ranges), metadata) 
+  save_meta = mcols(seurat_obj@assays$peaks@ranges)
+  mcols(seurat_obj@assays$peaks@ranges) = metadata
   
   # For each of the annotations types an overlap is calculated 
   # and used to assigned the peak as TRUE when overlapping with the annotation
@@ -115,6 +116,7 @@ add_peak_annot = function(seurat_obj, annotations_gr) {
     overlaps = findOverlaps(seurat_obj@assays$peaks@ranges, sub_annot)
     mcols(seurat_obj@assays$peaks@ranges)[queryHits(overlaps),i] = TRUE
   }
+  mcols(seurat_obj@assays$peaks@ranges) = append(mcols(seurat_obj@assays$peaks@ranges), save_meta) 
   
   # Return output
   return(seurat_obj)

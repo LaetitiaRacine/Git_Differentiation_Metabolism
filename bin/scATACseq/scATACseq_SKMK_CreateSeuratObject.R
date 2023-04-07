@@ -95,9 +95,9 @@ seurat_obj$orig.ident = name_cond
 # Add peak_name as grange metadata
 #*****************
 
-peaks_name = data.frame(paste0(seurat_obj@assays$peaks@ranges@seqnames, "-", seurat_obj@assays$peaks@ranges@ranges))
-colnames(peaks_name) = "peaks_name"
-mcols(seurat_obj@assays$peaks@ranges)$peaks_name = peaks_name
+peak_name = data.frame(paste0(seurat_obj@assays$peaks@ranges@seqnames, "-", seurat_obj@assays$peaks@ranges@ranges))
+colnames(peak_name) = "peak_name"
+mcols(seurat_obj@assays$peaks@ranges)$peak_name = peak_name
 
 #************
 # Save output

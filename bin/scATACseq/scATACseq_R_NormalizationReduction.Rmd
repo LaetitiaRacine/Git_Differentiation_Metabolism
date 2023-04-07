@@ -65,8 +65,8 @@ seurat_common_merged = readRDS(paste0(dir, "/", "merged_seurat_qc_filter_annot.r
 # Overview 
 
 This code aims at :  
-- normalizing the data
-- selecting the 90% top features (features = peaks)  
+- normalizing the data  
+- selecting the 90% top features (features = peaks)    
 - performing linear dimension reduction (analogue to PCA in scRNAseq)   
 - choosing the optimal number of dimensions to keep for further analysis    
 - performing non-linear dimension reduction to visualize the dataset in 2D (UMAP)  

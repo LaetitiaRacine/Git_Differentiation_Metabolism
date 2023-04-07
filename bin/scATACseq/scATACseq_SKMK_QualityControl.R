@@ -205,7 +205,7 @@ seurat_obj@assays$peaks@ranges = tidyChromosomes(gr = seurat_obj@assays$peaks@ra
                                                  keep.nonstandard = FALSE,
                                                  genome = "hg38")
 # Subset in the Count matrix as well
-list_peak_clean = unlist(as.vector(seurat_obj@assays$peaks@ranges$peaks_name))
+list_peak_clean = unlist(as.vector(seurat_obj@assays$peaks@ranges$peak_name))
 table(rownames(seurat_obj) %in% list_peak_clean) # we need to remove the FALSE peaks
 seurat_obj = subset(seurat_obj, features = list_peak_clean) # works only because we have only one assay
 table(rownames(seurat_obj) %in% list_peak_clean)
