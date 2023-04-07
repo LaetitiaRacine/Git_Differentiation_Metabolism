@@ -8,23 +8,28 @@ color_code = c(
   "CTRL" = "#009E73",
   "CTRL2" = "#009E73",
   "CTRL_CTRL2" = "#009E73",
+  "MP" = "#009E73",
   "DON" = "#0072B2",
   "2DG" = "#E69F00",
   "AOA" = "#D30707",
-  "CTRLaK" = "#66FF99",
+  "CTRLaK" = "#71E09F",
+  "aK" = "#71E09F",
   "DONaK" = "#56B4E9",
   "2DGaK" = "#F0E442",
   "AOAaK" = "#FF8989",
-  "VPA" = "#FF59B5"
+  "VPA" = "#FF59B5",
+  "Xvivo" = "#065B2C"
 )
 
 # Lists of interesting genes to study
 list_genes_TH_hemato = c('SMAD6', 'GATA1', 'GATA2', 'RUNX1', 'TAL1', 'HHEX', 'ZFPM1', 'FLI1', 'CBFA2T3', 'SPI1', 'ERG')
-list_genes_metabo_tca = c('ACLY', 'ACSS1', 'IDH1', ' MDH1', 'MDH2', 'PDHA1', 'PDHA2', 'PDK1')
-list_genes_metabo_glycolysis = c('G6PD', ' HK1', 'HK2', 'HK3', 'LDHA', 'LDHB', 'PKM', 'GLUT1', 'SLC1A5')
-list_genes_metabo_glut = c('GLS', 'SLC1A5', 'ASCT2')
-list_genes_metabo = c('ACACA', 'BCAT1', 'FASN',  'GOT1', 'GPAT1', 'MTOR')
-
+list_genes_metabo_tca = c('ACLY', 'ACSS1', 'IDH1', 'MDH1', 'MDH2', 'PDHA1', 'PDHA2', 'PDK1')
+# list_genes_metabo_glycolysis = c('G6PD', 'HK1', 'HK2', 'HK3', 'LDHA', 'LDHB', 'PKM', 'GLUT1', 'SLC1A5')
+list_genes_metabo_glycolysis = c('G6PD', 'HK1', 'HK2', 'HK3', 'LDHA', 'LDHB', 'PKM2', 'SLC2A1', 'SLC1A5')
+list_genes_metabo_glut = c('GLS', 'SLC1A5')
+# list_genes_metabo_glut = c('GLS', 'SLC1A5', 'ASCT2')
+# list_genes_metabo = c('ACACA', 'BCAT1', 'FASN',  'GOT1', 'GPAT1', 'MTOR')
+list_genes_metabo = c('ACACA', 'BCAT1', 'FASN',  'GOT1', 'GPAM', 'MTOR')
 
 
 ###################

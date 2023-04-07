@@ -1,0 +1,179 @@
+---
+title: "bulkATACseq_DWNS_bloc3_src"
+author: "Laëtitia Racine"
+date: "2022-09-02"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+This script is a "knit_all" document. It allows to run all the script from downstream analysis steps for bulkATACseq dataset and to produce html files in the *report* folder.    
+  
+
+# bulkATACseq_R_ChangeAnnotation.Rmd
+
+*OBJECTIVES*        
+Change the annotations metadata of the Granges object output of bloc2.
+Use the annotation file obtain in annotationsFiles_createGrange.Rmd with annotatr package.
+Add peak_name in metadata of granges.  
+Change name aK in CTRLaK for grange.  
+   
+*INPUTS*  
+- [DRUG]_[TIME]_[DONORS]_threshold_10_ann.gr.rds (cf. bloc2 of bulkATACseq analysis)  
+- functions_constants.R 
+- hg19_annotations_gr.rds (cf. annotationsFiles_createGrange.Rmd)  
+
+*OUTPUTS*    
+-[DRUG]_[TIME]_[DONORS]_threshold_10_update_annot.gr.rds
+  
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, 
+                                 "/bin/bulkATACseq/", 
+                                 "bulkATACseq_R_ChangeAnnotation.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), 
+                                       '_', 
+                                       "bulkATACseq_R_ChangeAnnotation.html"))
+
+```
+
+
+# bulkATACseq_R_NumberPeaksReport.Rmd
+
+*OBJECTIVES*    
+ - Count the total number of peaks  
+ - Count the number of peaks per annotation  
+ - Create a summary table  
+ - Create bar plots, line plots and upset plots
+  
+*INPUTS*          
+- [DRUG]_[TIME]_[DONORS]_threshold_10_update_annot.gr.rds (cf. bulkATACseq_R_ChangeAnnotation.Rmd)
+- functions_constants.R
+    
+*OUTPUTS*    
+- tab_nbpeaks_percond_perannot.csv
+- plot_nbpeaks_pertime.svg
+- plot_nbpeaks_percond.svg
+- plot_nbpeaks_pertime_filter.svg
+- plot_nbpeaks_percond_filter.svg
+- plot_nbpeaks_annotation_pertime.svg
+- plot_nbpeaks_annotation_percond.svg
+- plot_nbpeaks_annotation_pertime_filter.svg
+- plot_nbpeaks_annotation_percond_filter.svg
+- plot_nbpeaks_annotation_chrono.svg
+- plot_upset_[DRUG]_[TIME].svg  
+- plot_upset_zoom_[DRUG]_[TIME].svg  
+- plot_upset_setsize_[DRUG]_[TIME].png   
+- plot_upset_zoom_setsize_[DRUG]_[TIME].png  
+  
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, 
+                                 "/bin/bulkATACseq/", 
+                                 "bulkATACseq_R_NumberPeaksReport.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), 
+                                       '_', 
+                                       "bulkATACseq_R_NumberPeaksReport.html"))
+
+```
+
+
+# bulkATACseq_GenomeDistribution_GeneCoverage.Rmd
+
+*OBJECTIVES*    
+ - Create chromosome accessibility plots  
+ - Create gene coverage plots  
+      
+*INPUTS*        
+- functions_constants.R       
+- [DRUG]_[TIME]_[DONORS]_threshold_10_update_annot.gr.rds (cf. bulkATACseq_R_ChangeAnnotation.Rmd)
+- [DRUG]_[TIME]_[DONORS]_downsampled.bam (cf. data downsampled_bam_merged from bloc2)
+- hg19_annotations_gr.rds (cf. annotationsFiles_createGrange.Rmd)  
+
+*OUTPUTS*        
+- plot_allchr_[DRUG]_[TIME].png  
+- plot_allsamples_chr[X].png
+- ranges_genes_interest.csv  
+- [DRUG]_[GENE]_coverage_plot_alltime.pdf  
+- list_chr_track.rds
+- list_track_samples.rds 
+- [TIME]_[GENE]_coverage_plot_allcond.pdf  
+- list_iso_prom_track.rds
+  
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, 
+                                 "/bin/bulkATACseq/", 
+                                 "bulkATACseq_R_GenomeDistribution_GeneCoverage.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), 
+                                       '_', 
+                                       "bulkATACseq_R_GenomeDistribution_GeneCoverage.html"))
+
+```
+
+
+# bulkATACseq_R_Multiparametric_DifferentialAccessibility.Rmd
+
+*OBJECTIVES*  
+- Create a common set of regions to perform differential accessibility analysis  
+- Use featureCounts to create a matrix with the number of reads per region for each condition  
+- Perform differential accessibility analysis for all conditions (pca, heatmap, pathway, GO)
+- Perform differential accessibility analysis two conditions by two conditions (volcano plot, pathway, GO)
+- Plot peaks dynamics over time  
+    
+*INPUTS*    
+- functions_constants.R  
+- [DRUG]_[TIME]_[DONORS]_threshold_10_update_annot.gr.rds (cf. bulkATACseq_R_ChangeAnnotation.Rmd)
+- [DRUG]_[TIME]_[DONORS]_downsampled.bam (cf. data downsampled_bam_merged from bloc2)
+- [DRUG]_[TIME]_[DONOR]_downsampled.bam (cf. data downsampled_bam_separated from bloc2)
+- hg19_annotations_gr.rds (cf. annotationsFiles_createGrange.Rmd)  
+
+*OUTPUTS*  
+- [DRUG1]_[TIME1]_vs_[DRUG2]_[TIME2]_volcano.svg  
+- [DRUG]_all_peaks_dyn.png  
+- [DRUG]_hg19_genes_intergenic_peaks_dyn.png  
+- [DRUG]_hg19_genes_promoters_peaks_dyn.png
+- [DRUG1]_[TIME1]_vs_[DRUG2]_[TIME2]_dotplot_GO_Up.svg
+- [DRUG1]_[TIME1]_vs_[DRUG2]_[TIME2]_dotplot_GO_Down.svg
+- [DRUG1]_[TIME1]_vs_[DRUG2]_[TIME2]_dotplot_pathway_Up.svg
+- [DRUG1]_[TIME1]_vs_[DRUG2]_[TIME2]_dotplot_pathway_Down.svg 
+- ATAC_pca_allsamples.png  
+- common_regions_union_allsamples.csv  
+- DEseq_readcount_df_union_allsamples.csv  
+- DEseq_readcount_union_allsamples.rds  
+- peaks_close_open_conditions.csv  
+- readcount_df_peaks_union_allsamples.csv  
+- readcount_union_allsamples.rds  
+- union_gr_allsamples.gr.rds
+
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, 
+                                 "/bin/bulkATACseq/", 
+                                 "bulkATACseq_R_Multiparametric_DifferentialAccessibility.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), 
+                                       '_', 
+                                       "bulkATACseq_R_Multiparametric_DifferentialAccessibility.html"))
+
+```
+

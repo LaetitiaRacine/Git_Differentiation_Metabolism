@@ -44,7 +44,7 @@ library(clusterProfiler)
 
 ```
 
-```{r, Working directory }
+```{r, Working directory}
 
 # Load working directories
 directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
@@ -149,7 +149,7 @@ df_gr_union[1:20,] %>%
 
 **Number of reads detected per sample for each region of the union**  
 We use the merged donors files and the separated donors files (needed for DEseq2 analysis later).  
-```{r, eval = FALSE}
+```{r}
 
 # Count the number of reads, for each sample, present in the region resulting from the union
 readCount <- featureCounts(files = bam_list,
@@ -162,7 +162,7 @@ saveRDS(readCount, file = paste0(directory_output, "readcount_union_allsamples.r
 
 ```
 
-```{r}
+```{r, eval = FALSE}
 readCount = readRDS(paste0(directory_output, "readcount_union_allsamples.rds"))
 ```
 
@@ -753,7 +753,7 @@ for(i in 1:length(list_deseq_volcano)) {
         if (nrow(ego_up@result) != 0) {
           dot_up = dotplot(ego_up, showCategory = 25) + 
           facet_grid(ONTOLOGY ~ ., scales="free") +
-          ggtitle("Gene associated to peaks upregulated in cond1 compared to cond2")
+          ggtitle(paste0(comp, "Gene associated to peaks upregulated in cond1 compared to cond2"))
         print(dot_up)
         ggsave(dot_up, height = 15, width = 8,
                filename = paste0(directory_output, comp, "_dotplot_GO_Up.svg"))
@@ -766,7 +766,7 @@ for(i in 1:length(list_deseq_volcano)) {
         if (nrow(ego_down@result) != 0) {
         dot_down = dotplot(ego_down, showCategory = 25) + 
           facet_grid(ONTOLOGY ~ ., scales="free") +
-          ggtitle("Gene associated to peaks downregulated in cond1 compared to cond2")
+          ggtitle(paste0(comp, "Gene associated to peaks downregulated in cond1 compared to cond2"))
         ggsave(dot_down, height = 15, width = 8,
                filename = paste0(directory_output, comp, "_dotplot_GO_Down.svg"))
         }
