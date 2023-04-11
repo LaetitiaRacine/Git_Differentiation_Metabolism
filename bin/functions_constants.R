@@ -22,7 +22,7 @@ color_code = c(
 )
 
 # Lists of interesting genes to study
-list_genes_TH_hemato = c('SMAD6', 'GATA1', 'GATA2', 'RUNX1', 'TAL1', 'HHEX', 'ZFPM1', 'FLI1', 'CBFA2T3', 'SPI1', 'ERG')
+list_genes_TF_hemato = c('SMAD6', 'GATA1', 'GATA2', 'RUNX1', 'TAL1', 'HHEX', 'ZFPM1', 'FLI1', 'CBFA2T3', 'SPI1', 'ERG')
 list_genes_metabo_tca = c('ACLY', 'ACSS1', 'IDH1', 'MDH1', 'MDH2', 'PDHA1', 'PDHA2', 'PDK1')
 # list_genes_metabo_glycolysis = c('G6PD', 'HK1', 'HK2', 'HK3', 'LDHA', 'LDHB', 'PKM', 'GLUT1', 'SLC1A5')
 list_genes_metabo_glycolysis = c('G6PD', 'HK1', 'HK2', 'HK3', 'LDHA', 'LDHB', 'PKM2', 'SLC2A1', 'SLC1A5')

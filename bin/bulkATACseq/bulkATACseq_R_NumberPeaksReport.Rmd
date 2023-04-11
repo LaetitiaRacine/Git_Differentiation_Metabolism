@@ -106,7 +106,8 @@ for (i in 1:length(gr_ann_list)) {
 }
 
 # Add levels to define order legend in plots
-df_peaks_annotation$condition = factor(df_peaks_annotation$condition, levels = c("Xvivo", "CTRL", "2DG", "DON", "AOA", "CTRLaK", "VPA"))
+df_peaks_annotation$condition = factor(df_peaks_annotation$condition, 
+                                       levels = c("Xvivo", "CTRL", "2DG", "DON", "AOA", "CTRLaK", "VPA"))
 df_peaks_annotation$time = factor(df_peaks_annotation$time, levels = c("00h", "03h", "12h", "24h"))
 
 df_peaks_annotation %>%
@@ -140,7 +141,8 @@ df_peaks_annotation_l_filter = df_peaks_annotation_l %>%
 ```{r, out.width="100%", fig.width=18, fig.height=4, results='hold'}
 
 # Plot with time on x axis
-nbpeaks_pertime = ggplot(df_peaks_annotation, aes(x = time,  y = total_nbpeaks, label = total_nbpeaks, fill = condition)) +
+nbpeaks_pertime = ggplot(df_peaks_annotation, aes(x=time,  y=total_nbpeaks,
+                                                  label=total_nbpeaks, fill=condition)) +
   geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
   geom_text(position = position_dodge2(width = 0.9, preserve = "single"), angle = 90, hjust=1.5) +
   theme(legend.position = "right", 
@@ -158,7 +160,8 @@ nbpeaks_pertime = ggplot(df_peaks_annotation, aes(x = time,  y = total_nbpeaks, 
   labs(y = "Number of peaks detected")
 
 # Plot with condition on x axis
-nbpeaks_percond = ggplot(df_peaks_annotation,aes(x = condition,  y = total_nbpeaks, label = total_nbpeaks, fill = time)) +
+nbpeaks_percond = ggplot(df_peaks_annotation, aes(x = condition,  y = total_nbpeaks, 
+                                                  label = total_nbpeaks, fill = time)) +
   geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
   geom_text(position = position_dodge2(width = 0.9, preserve = "single"), angle = 90, hjust=1.5) +
   theme(legend.position = "right", 
@@ -187,7 +190,8 @@ ggsave(plot = nbpeaks_percond, width = 16*0.75, height = 9*0.75,
 ```{r, out.width="100%", fig.width=18, fig.height=4, results = 'hold'}
 
 # Plot with time on x axis
-nbpeaks_pertime_filter = ggplot(df_peaks_annotation_filter, aes(x = time,  y = total_nbpeaks, label = total_nbpeaks, fill = condition)) +
+nbpeaks_pertime_filter = ggplot(df_peaks_annotation_filter, 
+                                aes(x=time,y=total_nbpeaks,label=total_nbpeaks,fill=condition)) +
   geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
   geom_text(position = position_dodge2(width = 0.9, preserve = "single"), angle = 90, hjust=1.5) +
   theme(legend.position = "right", 
@@ -205,7 +209,8 @@ nbpeaks_pertime_filter = ggplot(df_peaks_annotation_filter, aes(x = time,  y = t
   labs(y = "Number of peaks detected")
 
 # Plot with condition on x axis
-nbpeaks_percond_filter = ggplot(df_peaks_annotation_filter ,aes(x = condition,  y = total_nbpeaks, label = total_nbpeaks, fill = time)) +
+nbpeaks_percond_filter = ggplot(df_peaks_annotation_filter, 
+                                aes(x=condition,y=total_nbpeaks,label=total_nbpeaks,fill=time)) +
   geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
   geom_text(position = position_dodge2(width = 0.9, preserve = "single"), angle = 90, hjust=1.5) +
   theme(legend.position = "right", 
@@ -280,7 +285,7 @@ ggsave(plot = annot_percond, width = 22*0.75, height = 14*0.75,
 ```{r, out.width="100%", fig.width=18, fig.height=14, results='hold'}
 
 # Plot with time on x axis
-annot_pertime_filter = ggplot(df_peaks_annotation_l_filter, aes(x = time,  y = count, fill = condition)) +
+annot_pertime_filter = ggplot(df_peaks_annotation_l_filter, aes(x=time, y=count, fill=condition)) +
   geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
   theme(legend.position = "right", 
         plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
@@ -296,7 +301,7 @@ annot_pertime_filter = ggplot(df_peaks_annotation_l_filter, aes(x = time,  y = c
   facet_wrap(annotation~., scale = "free_x")
 
 # Plot with condition on x axis 
-annot_percond_filter = ggplot(df_peaks_annotation_l_filter,aes(x = condition,  y = count, fill = time)) +
+annot_percond_filter = ggplot(df_peaks_annotation_l_filter, aes(x=condition, y=count, fill=time)) +
   geom_col(position = position_dodge2(width = 0.9, preserve = "single")) +
   theme(legend.position = "right", 
         plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
@@ -328,7 +333,8 @@ ggsave(plot = annot_percond_filter, width = 16*0.75, height = 9*0.75,
 # Keep only conditions with multiple time points
 df_chrono = data_frame()  
 for (i in 1:length(unique(df_peaks_annotation_l$condition))) {
-  df_temp = df_peaks_annotation_l %>% dplyr::filter(condition == unique(df_peaks_annotation_l$condition)[i])
+  df_temp = df_peaks_annotation_l %>% 
+    dplyr::filter(condition == unique(df_peaks_annotation_l$condition)[i])
   if (length(unique(df_temp$time))>1) df_chrono = rbind(df_temp, df_chrono) 
 }
 

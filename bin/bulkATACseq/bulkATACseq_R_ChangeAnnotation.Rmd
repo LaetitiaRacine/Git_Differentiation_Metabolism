@@ -86,7 +86,8 @@ for (i in 1:length(gr_list)) {
   colnames(metadata) = annotations_types
   mcols(grange) = metadata
   
-  # For each of the annotations types an overlap is calculated and used to assigned the peak as TRUE when overlapping with the annotation
+  # For each of the annotations types an overlap is calculated and 
+  # used to assigned the peak as TRUE when overlapping with the annotation
   for (i in 1:ncol(metadata)){
     sub_annot = hg19_annotations[hg19_annotations$type == annotations_types[i]]
     overlaps = findOverlaps(grange, sub_annot)

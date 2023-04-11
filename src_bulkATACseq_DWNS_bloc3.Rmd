@@ -177,3 +177,30 @@ rmarkdown::render(input = paste0(directory,
 
 ```
 
+
+# bulkATACseq_R_Multiparametric_wotVPA
+
+*OBJECTIVES*  
+Same as bulkATACseq_R_Multiparametric_DifferentialAccessibility.Rmd but without VPA condition.
+    
+*INPUTS*    
+- functions_constants.R    
+- readcount_df_peaks_union_allsamples.csv (cf.bulkATACseq_R_Multiparametric_DifferentialAccessibility.Rmd)  
+  
+*OUTPUTS*  
+- ATAC_pca_samplesWoT_VPA.png  
+
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, 
+                                 "/bin/bulkATACseq/", 
+                                 "bulkATACseq_R_Multiparametric_wotVPA.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), 
+                                       '_', 
+                                       "bulkATACseq_R_Multiparametric_wotVPA.html"))
+
+```

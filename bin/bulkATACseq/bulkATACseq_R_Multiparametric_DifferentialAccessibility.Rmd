@@ -51,11 +51,12 @@ directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
 start_time = Sys.time()
 
 # Create a unique folder for output corresponding to the date of the day
-# current_date = format(Sys.time(), "%Y%m%d")
-current_date = "20230403"
+current_date = format(Sys.time(), "%Y%m%d")
 dir.create(path = paste0(directory, "exp/bulkATACseq_R_Multiparametric_DifferentialAccessibility/"))
-dir.create(path = paste0(directory, "exp/bulkATACseq_R_Multiparametric_DifferentialAccessibility/", current_date))
-directory_output = paste0(directory, "exp/bulkATACseq_R_Multiparametric_DifferentialAccessibility/", current_date, "/")
+dir.create(path = paste0(directory, "exp/bulkATACseq_R_Multiparametric_DifferentialAccessibility/", 
+                         current_date))
+directory_output = paste0(directory, "exp/bulkATACseq_R_Multiparametric_DifferentialAccessibility/", 
+                          current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
@@ -149,7 +150,7 @@ df_gr_union[1:20,] %>%
 
 **Number of reads detected per sample for each region of the union**  
 We use the merged donors files and the separated donors files (needed for DEseq2 analysis later).  
-```{r}
+```{r, eval = FALSE}
 
 # Count the number of reads, for each sample, present in the region resulting from the union
 readCount <- featureCounts(files = bam_list,
@@ -162,7 +163,7 @@ saveRDS(readCount, file = paste0(directory_output, "readcount_union_allsamples.r
 
 ```
 
-```{r, eval = FALSE}
+```{r}
 readCount = readRDS(paste0(directory_output, "readcount_union_allsamples.rds"))
 ```
 
@@ -205,7 +206,7 @@ colnames(count_df) = str_replace_all(string = colnames(count_df), pattern = "X2D
 rownames(count_df) = paste0(count_df$seqnames, '_', count_df$start, '_', count_df$end)
 
 # Save the table
-write.table(count_df, sep = ";", row.names = FALSE, 
+write.table(count_df, sep = ";", row.names = TRUE, 
             file = paste0(directory_output, "readcount_df_peaks_union_allsamples.csv"))    
 
 # Visualize the table
@@ -260,7 +261,9 @@ cols_to_keep = str_subset(string = colnames(count_df), pattern = "D[:digit:].D[:
 counts = count_df[ , cols_to_keep]
 
 ## Extract information in the colnames
-coldata = data.frame(file = cols_to_keep, name = unlist(str_extract_all(cols_to_keep, pattern = ".+(?=_downsampled.bam)"))) %>%
+coldata = data.frame(file = cols_to_keep, 
+                     name = unlist(str_extract_all(
+                       cols_to_keep, pattern = ".+(?=_downsampled.bam)"))) %>%
   dplyr::mutate(donors = str_extract(name, pattern = "D[:digit:].+")) %>%
   dplyr::mutate(condtime = paste0(str_extract(name, pattern = ".+(?=h)"), "h")) %>% 
   tidyr::separate(col = condtime, into = c("condition", "time"), remove = TRUE) 
@@ -562,8 +565,10 @@ volcano_DEseq_fun = function(comb, tab_count, tab_annot) {
   name = paste0(cond1, "_vs_", cond2)
   col_peak_cond1 = str_subset(string = colnames(tab_count), pattern = paste0("peaks_in_", cond1))
   col_peak_cond2 = str_subset(string = colnames(tab_count), pattern = paste0("peaks_in_", cond2))
-  col_read_cond1 = str_subset(string = colnames(tab_count), pattern = paste0(cond1, "_D[:digit:]_downsampled.bam"))
-  col_read_cond2 = str_subset(string = colnames(tab_count), pattern = paste0(cond2, "_D[:digit:]_downsampled.bam"))
+  col_read_cond1 = str_subset(string = colnames(tab_count), 
+                              pattern = paste0(cond1, "_D[:digit:]_downsampled.bam"))
+  col_read_cond2 = str_subset(string = colnames(tab_count), 
+                              pattern = paste0(cond2, "_D[:digit:]_downsampled.bam"))
   
   # Extract the read counts for the two conditions
   matrix_peaks = tab_count
@@ -685,7 +690,8 @@ for(i in 1:length(list_deseq_volcano)) {
   if(length(selpeaks_up) != 0) {
     pathwayUp = enrichPathway(selpeaks_up)
     tab_u = data.frame(pathwayUp)
-    if(nrow(tab_u) != 0) {tab_u = tab_u  %>% dplyr::mutate(Peak_Category = "Up_regulated", .before = "ID")}
+    if(nrow(tab_u) != 0) {tab_u = tab_u %>% 
+      dplyr::mutate(Peak_Category="Up_regulated", .before="ID")}
     ego_up = enrichGO(gene = selpeaks_up, 
                    OrgDb = org.Hs.eg.db,
                    ont = "ALL", 
@@ -706,7 +712,8 @@ for(i in 1:length(list_deseq_volcano)) {
   if(length(selpeaks_down) != 0) {
     pathwayDown = enrichPathway(selpeaks_down)
     tab_d = data.frame(pathwayDown)
-    if(nrow(tab_d) != 0) {tab_d = tab_d  %>% dplyr::mutate(Peak_Category = "Down_regulated", .before = "ID")}
+    if(nrow(tab_d) != 0) {tab_d = tab_d %>%
+      dplyr::mutate(Peak_Category="Down_regulated", .before="ID")}
     ego_down = enrichGO(gene = selpeaks_down, 
                    OrgDb = org.Hs.eg.db,
                    ont = "ALL", 
@@ -810,7 +817,8 @@ peaks_dynamics_fun = function(df_readcount, df_peaks_in, choice_annot, condition
     df_readcount = df_readcount %>%
       dplyr::select(region, seqnames, start, end, 
                     str_subset(colnames(df_readcount), pattern = condition),
-                    - str_subset(colnames(df_readcount), pattern = "[:alnum:]+_[:digit:]{2}h_D[:digit:]_downsampled.bam"))
+                    - str_subset(colnames(df_readcount), 
+                                 pattern = "[:alnum:]+_[:digit:]{2}h_D[:digit:]_downsampled.bam"))
     
     # Keep only peaks corresponding to the wanted genomic annotation
     df_readcount = left_join(df_readcount, df_peaks_in, by = c("region", "seqnames", "start", "end"))

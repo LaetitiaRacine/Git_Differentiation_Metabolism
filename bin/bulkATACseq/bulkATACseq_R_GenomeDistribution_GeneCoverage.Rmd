@@ -81,7 +81,7 @@ list_gene = unique(c(list_genes_metabo,
                      list_genes_metabo_glut,
                      list_genes_metabo_glycolysis,
                      list_genes_metabo_tca,
-                     list_genes_TH_hemato))
+                     list_genes_TF_hemato))
 
 ```
 
@@ -117,7 +117,7 @@ for( i in 1:length(gr_ann_list)) {
     list_sample_chr[[i]] = as.ggplot(expression(
       plotKaryotype(genome = "hg19", plot.type = 2) %>%
         kpPlotRegions(data=gr, avoid.overlapping = FALSE, col = color_code[name_cond]) %>%
-        kpAddMainTitle(main = paste0("Peaks distribution on hg19 genome from ", name_sample), cex = 1.5) %>%
+        kpAddMainTitle(main = paste0("Peaks distribution on hg19 genome from ", name_sample), cex=1.5) %>%
         kpPlotDensity(data=gr, data.panel = 2)
       ))
   
@@ -126,7 +126,7 @@ for( i in 1:length(gr_ann_list)) {
        width = 1000, height = 1400)
    kp = plotKaryotype(genome = "hg19", plot.type = 2) %>%
      kpPlotRegions(data=gr, avoid.overlapping = FALSE, col = color_code[name_cond]) %>%
-     kpAddMainTitle(main = paste0("Peaks distribution on hg19 genome from ", name_sample), cex = 1.5) %>%
+     kpAddMainTitle(main = paste0("Peaks distribution on hg19 genome from ", name_sample), cex=1.5) %>%
      kpPlotDensity(data=gr, data.panel = 2)
   dev.off()
   
@@ -151,7 +151,7 @@ chromosomes = c("chr1", "chr2", "chr3", "chr4", "chr5", "chr6", "chr7", "chr8",
                 "chr16", "chr17", "chr18", "chr19", "chr20", "chr21", "chr22", 
                 "chrX", "chrY")
 
-# Display settings : https://bernatgel.github.io/karyoploter_tutorial//Tutorial/PlotParams/PlotParams.html 
+# Display settings: https://bernatgel.github.io/karyoploter_tutorial//Tutorial/PlotParams/PlotParams.html 
 pp = getDefaultPlotParams(plot.type=1)
 pp$data1height = 10
 pp$ideogramheight = 6
@@ -418,7 +418,8 @@ for(i in 1:length(gr_ann_list)) { # track for each sample
   for(j in 1:nrow(df_region_genes)){  # track for each gene
 
     track = track_sample_fun(var_name_sample = name_sample, 
-                             var_col = color_code[str_extract(name_sample, pattern ="[:alnum:]+(?=_[:digit:]{2}h)")],
+                             var_col = color_code[str_extract(name_sample, 
+                                          pattern ="[:alnum:]+(?=_[:digit:]{2}h)")],
                              var_bam_path = var_bam_path,
                              var_grange_sample = gr_ann_list[[name_sample]],
                              var_ranges_gene = df_region_genes[j,])
@@ -496,7 +497,8 @@ for(i in 1:length(conditions)){
                                          showTitle = TRUE, 
                                          add = TRUE)))))
     # save graph 
-    pdf(file =  paste0(directory_output, conditions[i], "_", gene_info$gene, "_coverage_plot_alltime.pdf"), 
+    pdf(file =  paste0(directory_output, conditions[i], "_", 
+                       gene_info$gene, "_coverage_plot_alltime.pdf"), 
         width = 24, height = 20)
     plotTracks(list_to_plot, from = gene_info$start, to = gene_info$end, showTitle = TRUE)
     dev.off()  
