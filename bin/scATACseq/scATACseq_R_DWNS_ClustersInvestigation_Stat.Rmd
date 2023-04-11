@@ -1,0 +1,617 @@
+---
+title: "scATACseq_R_DWNS_ClustersInvestigation_Stat"
+author: "Laëtitia Racine"
+date: "2023-04-02"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r, Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(Seurat)
+library(Signac)
+library(knitr)
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(kableExtra)
+library(tidyverse)
+library(ggrepel)
+library(gridExtra)
+
+```
+
+```{r, Working directories and external script}
+
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_ClustersInvestigation_Stat/"))
+dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_ClustersInvestigation_Stat/", current_date))
+directory_output = paste0(directory,"exp/","scATACseq_R_DWNS_ClustersInvestigation_Stat/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_NormalizationReduction/"))
+seurat_merged = readRDS(paste0(dir, "/", "merged_seurat_qc_filter_annot_normreduc.rds"))
+
+```
+
+
+<br><br><br>
+
+
+# Overview 
+
+This code aims at exploring the clusters of cells and the repartition among conditions.
+
+As a reminder : 
+
+```{r, fig.width=16, fig.height=5}
+
+seurat_merged = SetIdent(object = seurat_merged, value = "orig.ident")
+ind_umap = list() 
+
+for (i in 1:length(unique(seurat_merged$orig.ident))) {
+  
+  # Select condition to highlight
+  highlight_cond = unique(seurat_merged$orig.ident)[i]
+  color = unname(noquote(color_code[highlight_cond]))
+  others_cond = setdiff(unique(seurat_merged$orig.ident), highlight_cond)
+  others_cond_group = paste(others_cond, collapse=", ")
+  
+  # Sort cell according to their condition
+  cell_highlight = unlist(CellsByIdentities(object = seurat_merged, idents = highlight_cond))
+  cell_nohighlight = unlist(CellsByIdentities(object = seurat_merged, idents = others_cond))
+  
+  # Plot 
+  plot_umap = DimPlot(object = seurat_merged,
+                      group.by = "orig.ident",
+                      reduction ="umap",
+                      pt.size = 0.1,
+                      cells.highlight = list(cell_highlight, cell_nohighlight),
+                      cols.highlight = c(color,"grey")) +
+    ggtitle(highlight_cond) +
+    theme(legend.position = "none")
+  
+  ind_umap[[i]] = plot_umap
+  
+}
+
+clust_umap = DimPlot(seurat_merged, 
+                     reduction = "umap", 
+                     group.by = "peaks_snn_res.0.25") + 
+  ggtitle("Resolution_0.25") 
+
+clust_umap | ind_umap[[1]] | ind_umap[[2]] | ind_umap[[3]] | ind_umap[[4]]
+
+```
+
+
+<br><br><br>
+
+
+# Cluster's cell composition
+
+First, we want to know how many cells of each conditions we have in each cluster.    
+Documentation : https://github.com/satijalab/seurat/issues/738   
+
+```{r}
+
+# Cells' number in cluster per condition
+tab_number = as.data.frame(table(seurat_merged@meta.data$peaks_snn_res.0.25, 
+                                 seurat_merged@meta.data$orig.ident)) %>%
+  dplyr::rename("cluster" = "Var1", "condition" = "Var2", "nbCells" = "Freq") %>%
+  tidyr::pivot_wider(names_from = "cluster", values_from = "nbCells")
+colnames(tab_number) = c("condition", paste0("cluster_", colnames(tab_number)[2:ncol(tab_number)]))
+tab_number$total_cell_per_condition = rowSums(tab_number[,-1])
+
+# Add total per cluster
+temp = as.data.frame(t(data.frame(colSums(tab_number[,-1]))))
+rownames(temp) = "total_cell_per_cluster"
+temp = temp %>% tibble::rownames_to_column(var = "condition")
+tab_number = rbind(tab_number, temp)
+
+# Display data frame
+tab_number %>%
+  kable(caption = "Not normalized cells' distribution") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+<br>
+
+We don't start with the same number of cells in each condition. A **normalization step** based on the initial number of cells per condition is required to be able to compare the conditions.
+Documentation : https://stackoverflow.com/questions/54030049/divide-all-columns-by-a-chosen-column-using-mutate-all  
+
+```{r}
+
+# Divide per the number of cells, multiply by a 1000 factor and round
+tab_number_norm = tab_number[-nrow(tab_number),]%>%
+  dplyr::mutate_at(vars(-condition, -total_cell_per_condition), 
+                   ~ round((./ total_cell_per_condition)*1000)) %>%
+  dplyr::select(-total_cell_per_condition)
+tab_number_norm$total_cell_per_condition = rowSums(tab_number_norm[,-1])
+
+# Add total per cluster
+temp = as.data.frame(t(data.frame(colSums(tab_number_norm[,-1]))))
+rownames(temp) = "total_cell_per_cluster"
+temp = temp %>% tibble::rownames_to_column(var = "condition")
+tab_number_norm = rbind(tab_number_norm, temp)
+
+# Display dataframe
+tab_number_norm %>%
+  kable(caption = "Normalized cells' distribution based on the initial number of cells in each condition.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+
+<br>
+
+Cluster 0 : CTRL and DON same / 2DG a little less / AOA very less  
+Cluster 1 : CTRL, DON and 2DG same / AOA less  
+Cluster 2 : all close  
+Cluster 3 : CTRL and 2DG same / DON very less / AOA very much   
+Cluster 4 : CTRL and DON same / 2DG little much / AOA very much   
+Cluster 5 : CTRL and DON same / 2DG and AOA same    
+Cluster 6 : all close   
+Cluster 7 : CTRL and 2DG same / DON little less / AOA little much   
+Cluster 8 : CTRL and 2DG same / DON little less / AOA very much   
+Cluster 9 : CTRL, DON and 2DG same / AOA much   
+Cluster 10 : 2DG < DON < CTRL < AOA  
+Cluster 11 : CTRL, 2DG and AOA close / DON little less   
+Cluster 12 : 2DG and DON close / CTRL less / AOA much  
+Cluster 13 : CTRL and 2DG close / DON less / AOA much  
+Cluster 14 : CTRL, DON and 2DG same / AOA much  
+Cluster 15 : DON < 2DG < CTRL < AOA  
+  
+<br>
+
+Then we study the data in two alternative ways :  
+- the condition composition : percentages of each cluster for a condition (tab_percent_cond)  
+- the cluster composition : percentages of cells from each condition for a cluster (tab_percent_clust)    
+    
+```{r}
+
+# Cells' percentage in cluster per condition
+tab_percent_cond = tab_number_norm %>% dplyr::filter(condition != "total_cell_per_cluster")
+tab_percent_cond = tab_percent_cond %>%
+  dplyr::mutate_at(vars(-condition, -total_cell_per_condition), 
+                   ~ round((./ total_cell_per_condition)*100)) %>%
+  dplyr::select(-total_cell_per_condition)
+
+tab_percent_cond %>%
+  kable(caption = "Normalized cells' percentage distribution per condition.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+# Cells' percentage in condition per cluster 
+tab_percent_clust = tab_number_norm %>% dplyr::select(-total_cell_per_condition)
+tab_percent_clust = as.data.frame(t(tab_percent_clust))
+colnames(tab_percent_clust) = tab_percent_clust[1,]
+tab_percent_clust = tab_percent_clust[-1,] %>% 
+  mutate_if(is.character, ~as.numeric(.)) %>%
+  rownames_to_column(var = "cluster")
+tab_percent_clust = tab_percent_clust %>%
+  dplyr::mutate_at(vars(-cluster, -total_cell_per_cluster), 
+                   ~ round((./ total_cell_per_cluster)*100)) %>%
+  dplyr::select(-total_cell_per_cluster)
+
+tab_percent_clust %>%
+  kable(caption = "Normalized cells' percentage distribution per cluster.") %>%
+  kable_styling() %>%
+  scroll_box(height = "250px", width = "100%")
+
+```
+  
+<br>
+
+We represent the table on plots.
+  
+```{r, bp plots, fig.width = 14, fig.height = 8}
+
+###########
+# Cluster #
+###########
+
+temp_clust = tab_percent_clust %>% tidyr::pivot_longer(cols = 2:ncol(tab_percent_clust),
+                                                       names_to = "condition",
+                                                       values_to = "percentage")
+temp_clust$cluster =  factor(temp_clust$cluster,
+                             levels = c("cluster_0", "cluster_1", "cluster_2", 
+                                        "cluster_3", "cluster_4", "cluster_5",
+                                        "cluster_6", "cluster_7", "cluster_8",
+                                        "cluster_9", "cluster_10", "cluster_11", 
+                                        "cluster_12", "cluster_13", "cluster_14",
+                                        "cluster_15"))
+
+bp_clust = ggplot(temp_clust, aes(x=cluster, y=percentage, fill=condition))+
+  geom_bar(width = 0.8, stat = "identity") +
+  scale_fill_manual(values = color_code, limits = force) +
+  coord_flip()
+bp_clust
+
+#############
+# Condition #
+#############
+
+temp_cond = tab_percent_cond %>% tidyr::pivot_longer(cols = 2:ncol(tab_percent_cond),
+                                    names_to = "cluster",
+                                    values_to = "percentage")
+temp_cond$cluster =  factor(temp_cond$cluster,
+                            levels = c("cluster_0", "cluster_1", "cluster_2", 
+                                       "cluster_3", "cluster_4", "cluster_5",
+                                       "cluster_6", "cluster_7", "cluster_8",
+                                       "cluster_9", "cluster_10", "cluster_11", 
+                                       "cluster_12", "cluster_13", "cluster_14",
+                                       "cluster_15"))
+
+bp_cond = ggplot(temp_cond, aes(x=condition, y=percentage, fill=cluster))+
+  geom_bar(width = 0.8, stat = "identity", color="#737373") +
+  coord_flip()
+bp_cond
+
+```
+
+```{r, pie plots1, fig.width = 14, fig.height = 24}
+
+###########
+# Cluster #
+###########
+
+clust_list = tab_percent_clust$cluster
+list_clust_pie = list()
+
+for (i in 1:length(clust_list)) {
+  
+  temp2 = temp_clust %>% 
+    dplyr::filter(cluster == clust_list[i]) %>% 
+    dplyr::mutate(csum = rev(cumsum(rev(percentage))), 
+                  pos = percentage/2 + lead(csum, 1),
+                  pos = if_else(is.na(pos), percentage/2, pos))
+  
+  pie = ggplot(temp2, aes(x="", y=percentage, fill=condition))+
+    geom_col(width = 1, color = 1) +
+    coord_polar("y", start=0) + 
+    scale_fill_manual(values = color_code, limits = force) +
+    geom_label_repel(data = temp2,
+                     aes(y = pos, label = paste0(percentage, "%")),
+                     size = 4, nudge_x = 1, show.legend = FALSE, 
+                     segment.color = "#999999",
+                     col = "black") +
+    theme_minimal() +
+    ggtitle(label = clust_list[i]) +
+    theme(axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.title.y = element_blank(),
+          panel.border = element_blank(),
+          panel.grid=element_blank(),
+          axis.ticks = element_blank(),
+          plot.title=element_text(size=14, face="bold")
+    )
+  
+  list_clust_pie[[i]] = pie
+}
+
+do.call("grid.arrange", c(list_clust_pie, ncol = 3))
+
+```
+
+```{r, pie plots2, fig.width = 14, fig.height = 12}
+
+#############
+# Condition #
+#############
+
+cond_list = tab_percent_cond$condition
+list_cond_pie = list()
+
+for (i in 1:length(cond_list)) {
+
+  temp2 = temp_cond %>% 
+    dplyr::filter(condition == cond_list[i]) %>%
+    dplyr::mutate(cluster = sort(cluster)) %>%
+    dplyr::mutate(csum = rev(cumsum(rev(percentage))),
+                  pos = percentage/2 + lead(csum, 1),
+                  pos = if_else(is.na(pos), percentage/2, pos))
+
+  pie = ggplot(temp2, aes(x="", y=percentage, fill=cluster))+
+    geom_col(width = 1, color = 1) +
+    coord_polar("y", start=0) +
+    geom_label_repel(data = temp2,
+                     aes(y = pos, label = paste0(percentage, "%")),
+                     size = 4, nudge_x = 1, show.legend = FALSE,
+                     segment.color = "#999999",
+                     col = "black") +
+    theme_minimal() +
+    ggtitle(label = cond_list[i]) +
+    theme(axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.title.y = element_blank(),
+          panel.border = element_blank(),
+          panel.grid=element_blank(),
+          axis.ticks = element_blank(),
+          plot.title=element_text(size=14, face="bold")
+    )
+
+  list_cond_pie[[i]] = pie
+
+}
+
+do.call("grid.arrange", c(list_cond_pie, ncol = 2))
+
+```
+
+```{r, fig.show="hide"}
+
+write.csv2(tab_number, paste0(directory_output, "nbcell_perclust_percond.csv"))
+write.csv2(tab_number_norm, paste0(directory_output, "nbcell_perclust_percond_norm.csv"))
+write.csv2(tab_percent_clust, paste0(directory_output, "percent_cond_inclust.csv"))
+write.csv2(tab_percent_cond, paste0(directory_output, "percent_clust_incond.csv"))
+
+ggsave(plot = bp_clust | bp_cond, width = 12, height = 6,
+       filename = paste0(directory_output, "barplot_clust_cellcomp.svg"))
+ggsave(plot = do.call("grid.arrange", c(list_clust_pie, ncol = 3)), width = 16, 
+       height=20, filename = paste0(directory_output, "pieplot1_clust_cellcomp.svg"))
+ggsave(plot = do.call("grid.arrange", c(list_cond_pie, ncol = 2)), width=10, 
+       height=10, filename = paste0(directory_output, "pieplot2_clust_cellcomp.svg"))
+
+```
+
+```{r}
+
+list_to_keep = c("directory_output", "start_time", "color_code",
+                 "seurat_merged")
+rm(list = setdiff(ls(), list_to_keep))
+gc()
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Cluster's peaks composition
+
+Documentation :    
+https://github.com/satijalab/seurat/issues/1053    
+   
+
+```{r, Change DefaultAssay and choose resolution}
+
+# Change back to working with peaks instead of gene activities
+DefaultAssay(seurat_merged) <- 'peaks'
+
+# Choose working resolution
+res = "res.0.25"
+meta_col = paste0("peaks_snn_", res)
+Idents(seurat_merged) = (seurat_merged@meta.data)[,meta_col]
+
+```
+
+```{r, Subset seurat_merged based on cluster}
+
+# Subset seurat obj to create one object per cluster
+for (i in 1:length(levels((seurat_merged@meta.data)[,meta_col])) ) {
+
+  # Extract cluster number
+  clust = levels((seurat_merged@meta.data)[,meta_col])[i]
+  print(paste("Cells extraction for clust ", clust))
+  # Create subset of seurat object with cells from clust x
+  expr = FetchData(object = seurat_merged, vars = meta_col)
+  seurat_clust = seurat_merged[, which(expr == clust)]                       # ligne qui prend du temps
+  # Check if the subset was correctly done
+  print(table((seurat_clust@meta.data)[,meta_col]))
+
+  # Extract peak count matrix of clust x from general seurat object
+  print("Matrix count extraction")
+  tab_clust = as.data.frame(GetAssayData(seurat_clust, slot = "data"))    # ligne qui prend du temps
+
+  # Save object
+  saveRDS(tab_clust, file = paste0(directory_output, "/tab_dim2-50_", res, 
+                                   "_matrix_count_clust", clust, ".rds"))
+  saveRDS(seurat_clust, file = paste0(directory_output,  "/seurat_clust", 
+                                      clust, "_dim2-50_", res, ".rds"))
+
+}
+
+```
+
+```{r, Peaks distribution per cell across clusters - tabs creation}
+
+# Create dataframe with summary of peaks per cell and/or per annotation
+tab_distripeaks_clust = data.frame()
+tab_bulkpeaks_clust = data.frame()
+  
+for ( i in 1:length(levels((seurat_merged@meta.data)[,meta_col])) ) {
+  
+  # Extract cluster number
+  clust = levels((seurat_merged@meta.data)[,meta_col])[i]
+  print(paste("Cells extraction for clust ", clust))
+  
+  # Load subset of seurat object with cells from clust x and corresponding matrix count
+  seurat_clust = readRDS(paste0(directory_output, "seurat_clust", clust, 
+                                "_dim2-50_", res, ".rds"))
+  range_clust = seurat_clust@assays$peaks@ranges
+  print("Load matrix count")
+  tab_clust = readRDS(paste0(directory_output, "tab_dim2-50_", res,
+                             "_matrix_count_clust", clust, ".rds"))
+  # Transform matrix count into logical
+  tab_clust = tab_clust %>% mutate_all(as.logical)
+  
+  # Extract peaks_name according to genomic annotation
+  print("Calcul peaks vs genomic annotation")
+  peaks_name_list = list(
+    total_peaks = range_clust$peak_name,
+    peaks_promoter = (range_clust[range_clust$hg38_genes_promoters == TRUE])$peak_name,
+    peaks_UTR3P = (range_clust[range_clust$hg38_genes_3UTRs == TRUE])$peak_name,
+    peaks_UTR5P = (range_clust[range_clust$hg38_genes_5UTRs == TRUE])$peak_name,
+    peaks_CpG = (range_clust[range_clust$hg38_cpg_islands == TRUE])$peak_name,
+    peaks_enhancer = (range_clust[range_clust$hg38_enhancers_fantom == TRUE])$peak_name,
+    peaks_gene = (range_clust[range_clust$hg38_genes_1to5kb == TRUE])$peak_name,
+    peaks_cds = (range_clust[range_clust$hg38_genes_cds == TRUE])$peak_name,
+    peaks_exons = (range_clust[range_clust$hg38_genes_exons  == TRUE])$peak_name,
+    peaks_introns = (range_clust[range_clust$hg38_genes_introns == TRUE])$peak_name,
+    peaks_intergenic = (range_clust[range_clust$hg38_genes_intergenic == TRUE])$peak_name)
+
+  # Calculate number of peaks total per annotation and per cell per annotation
+  temp_distripeaks = lapply(peaks_name_list, function(x) {
+    tab_filtered = tab_clust %>% dplyr::filter(row.names(tab_clust) %in% unlist(x))
+    tab_calc = data.frame(colSums(tab_filtered)) 
+    tab_calc = tab_calc %>% tibble::rownames_to_column(var = "cell")})
+  temp_distripeaks = bind_rows(temp_distripeaks, .id = "peaks_category") %>% 
+    dplyr::mutate(clust = clust)
+  colnames(temp_distripeaks) = c("peaks_category", "cell", "total_nbpeaks_percell", "clust")
+  
+  temp_bulkpeaks = tibble(annotation = names(peaks_name_list), 
+                              total_nbpeaks = as.numeric(lapply(peaks_name_list, length))) %>% 
+    dplyr::mutate(clust = clust, .before = "total_nbpeaks")
+  
+  # Bind in general tab
+  tab_bulkpeaks_clust = rbind(tab_bulkpeaks_clust, temp_bulkpeaks)
+  tab_distripeaks_clust = rbind(tab_distripeaks_clust, temp_distripeaks)
+
+}
+
+tab_distripeaks_clust$clust = factor(tab_distripeaks_clust$clust,
+                                    levels = c("0", "1", "2", "3", "4", "5",
+                                               "6", "7", "8", "9", "10", "11", 
+                                               "12", "13", "14", "15"))
+# Add statistical information
+tab_distripeaks_stat = tab_distripeaks_clust %>%
+  dplyr::group_by(clust, peaks_category) %>%
+  dplyr::mutate(nbcells_clust = n(),
+                median_nbpeaks_percell = median(total_nbpeaks_percell),
+                mean_nbpeaks_percell = round(mean(total_nbpeaks_percell)),
+                max_nbpeaks_percell = max(total_nbpeaks_percell),
+                min_nbpeaks_percell = min(total_nbpeaks_percell),
+                var_nbpeaks_percell = round(sd(total_nbpeaks_percell))) %>%
+  dplyr::mutate(percent_cell_clust = round((nbcells_clust/ncol(seurat_merged))*100)) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(peaks_category, clust, nbcells_clust, percent_cell_clust, median_nbpeaks_percell, 
+                mean_nbpeaks_percell, max_nbpeaks_percell, min_nbpeaks_percell, var_nbpeaks_percell) %>%
+  dplyr::distinct()
+
+
+```
+
+```{r, fig.width = 16, fig.height = 16}
+
+med_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y = median_nbpeaks_percell, fill = clust)) +
+  geom_col() +
+  facet_wrap(facets = .~peaks_category) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "none")
+
+mean_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y = mean_nbpeaks_percell, fill = clust)) +
+  geom_col() +
+  facet_wrap(facets = .~peaks_category) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "none")
+
+max_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y = max_nbpeaks_percell, fill = clust)) +
+  geom_col() +
+  facet_wrap(facets = .~peaks_category) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "none")
+
+min_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y = min_nbpeaks_percell, fill = clust)) +
+  geom_col() +
+  facet_wrap(facets = .~peaks_category) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "none")
+
+var_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y = var_nbpeaks_percell, fill = clust)) +
+  geom_col() +
+  facet_wrap(facets = .~peaks_category) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+(med_plot | mean_plot) /
+  (max_plot | min_plot | var_plot)
+
+```
+
+```{r, fig.width = 20, fig.height = 18}
+
+plot = ggplot(tab_distripeaks_clust, aes(x = total_nbpeaks_percell)) +
+  geom_histogram(binwidth = 100, aes(col = clust)) +
+  ylab("Number of cells") +
+  xlab("Number of peaks") +
+  facet_grid(peaks_category~clust, scales = "free_y") +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90))
+plot
+
+```
+
+```{r, fig.show="hide"}
+
+write_csv2(tab_bulkpeaks_clust, 
+           file = paste0(directory_output, "/tab_dim2-50", res, "_bulkpeaks.csv"))
+write_csv2(tab_distripeaks_clust, 
+           file = paste0(directory_output,"/tab_dim2-50", res, "_distripeaks.csv"))
+write_csv2(tab_distripeaks_stat, 
+           file = paste0(directory_output, "/tab_dim2-50", res, "_distripeaks_stat.csv"))
+ggsave(plot = (med_plot | mean_plot) / (max_plot | min_plot | var_plot), width = 16,
+       height = 10, filename = paste0(directory_output, "stat_peakscomp.svg"))
+ggsave(plot, width=16, height=14, filename=paste0(directory_output, "distri_peakscomp.svg"))
+
+```
+
+
+
+<br><br><br>
+
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results = "hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+
