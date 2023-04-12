@@ -341,6 +341,9 @@ ggsave(plot = plot_clusters,
 saveRDS(object = seurat_common_merged, 
         file = paste0(directory_output, "merged_seurat_qc_filter_annot_normreduc.rds"))
 
+mat = as.data.frame(seurat_common_merged@assays$peaks@data)
+saveRDS(mat, paste0(directory_output, "mat.rds"))
+
 ```
 
 
