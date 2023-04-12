@@ -35,6 +35,7 @@ library(tibble)
 library(karyoploteR)
 library(ggplotify)
 library(gridExtra)
+library(tidyr)
 
 ```
 
@@ -46,8 +47,10 @@ start_time = Sys.time()
 # Create a unique folder for output corresponding to the date of the day
 current_date = format(Sys.time(), "%Y%m%d")
 dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_GeneActivity_GeneCoverage/"))
-dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_GeneActivity_GeneCoverage/", current_date))
-directory_output = paste0(directory,"exp/","scATACseq_R_DWNS_GeneActivity_GeneCoverage/", current_date, "/")
+dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_GeneActivity_GeneCoverage/", 
+                         current_date))
+directory_output = paste0(directory,"exp/","scATACseq_R_DWNS_GeneActivity_GeneCoverage/", 
+                          current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
@@ -58,6 +61,7 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 
 dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_NormalizationReduction/"))
 seurat_obj = readRDS(paste0(dir, "/", "merged_seurat_qc_filter_annot_normreduc.rds"))
+# mat =readRDS("/home/lracine/Documents/Git_Differentiation_Metabolism/exp/scATACseq_R_DWNS_GeneActivity_GeneCoverage/20230412/mat.rds")
 
 # Extract localisation of hg38 annotation (see annotationsFiles_createGrange.Rmd)
 dir = pic_last_dir(paste0(directory, "exp/AnnotationsFiles_createGrange/"))
@@ -357,70 +361,79 @@ for(i in 1:length(list_gene)) {
 <br><br><br>
 
 
-********************************************************************************
 
 # Peaks distribution on chromosomes
 
-Note : karyoplotR uses the list of peaks inside the Grange of the seurat object. Here, we have the exact same list of peaks for all the conditions, we need to use the fragments repartition to see something so we can't use karyoplotR.  
-We extract the size of each chromosome (https://genome.ucsc.edu/cgi-bin/hgTracks?chromInfoPage=) to represent the fragments repartition on it.    
-  
+Really slow part, require a lot of memory. If possible, run it on cluster or big computer. 
 ```{r}
 
-chrom_gr = data.frame(seqnames = c("chr1", "chr2", "chr3", "chr4", "chr5", "chr6", 
-                                   "chr7", "chr8", "chr9", "chr10", "chr11", 
-                                   "chr12", "chr13", "chr14", "chr15", "chr16", 
-                                   "chr17", "chr18", "chr19", "chr20", "chr21", 
-                                   "chr22", "chrX", "chrY"),
-                      start = rep(0, 24),
-                      end = c(248956422, 242193529, 198295559, 190214555,
-                              181538259,170805979,159345973,145138636,138394717,
-                              133797422, 135086622,133275309,114364328,107043718,
-                              101991189,90338345,83257441,80373285,58617616,
-                              64444167,46709983,50818468,156040895,57227415))
+dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_NormalizationReduction/"))
+mat = readRDS(paste0(dir, "/", "mat_fragments.rds"))
 
 ```
 
 <br>
 
-Our problem here is that the chromosomes are too big to be represented in one plot with CoveragePlot function. It would require such a big amount of memory and end with an unreadable plot (see discussion : https://stackoverflow.com/questions/14629607/long-vector-plot-coverage-plot-in-r).  
-
+We sample 500 cells of each condition to plot.  
 ```{r}
 
-for (i in 1:nrow(chrom_gr)) {
-  
-  limits = chrom_gr[i,]
-  chr = limits$seqnames
-  chr_end = limits$end
-  start = 0
-  end = 0
-  
-  for (j in 1:2) {
-    
-    end = end + round(chr_end/20)
-    region = paste0(chr, "-", start, "-", end)
+list_graph = list()
+list_graph_stat = list()
 
-    CoveragePlot(
-      object = seurat_obj,
-      assay = "peaks",
-      region = region,
-      extend.upstream = 0,
-      extend.downstream = 0,
-      peaks = TRUE,
-      tile = TRUE)
-    
-    start = end
-    
-  }
+for (i in 1:length(unique(seurat_obj$orig.ident))) {
   
+  cond = unique(seurat_obj$orig.ident)[i]
+  cells_to_keep = sample(str_subset(colnames(mat), cond), 500)
+  mat_cond = mat %>% dplyr::select(all_of(cells_to_keep))
+  mat_cond = mat_cond %>% rownames_to_column("peak_name")
+  mat_cond = mat_cond %>% separate(col = peak_name, 
+                                   into = c("seqname", "start", "end")) 
+  mat_cond = mat_cond %>% pivot_longer(cols = c(5:ncol(mat_cond)), 
+                                       names_to = "cell", 
+                                       values_to = "nbfragments")
+  mat_cond$condition = cond
+
+  plot_nbfragment = ggplot(mat_cond, aes(x=condition, y=nbfragments, col=condition)) +
+    geom_violin() +
+    geom_point(position = "jitter", alpha = 0.5) +
+    facet_wrap(seqname~.) +
+    scale_color_manual(values = color_code, limits = force) +
+    theme(legend.position = "none")
   
+  list_graph[[cond]] = plot_nbfragment
+  
+  mat_stat = mat_cond %>% 
+    dplyr::group_by(condition, cell, seqname) %>%
+    dplyr::mutate(median_fragment = median(nbfragments)) %>%
+    dplyr::mutate(mean_fragment = mean(nbfragments)) %>%
+    dplyr::mutate(min_fragment = min(nbfragments)) %>%
+    dplyr::mutate(max_fragment = max(nbfragments)) %>%
+    dplyr::select(-start, -end, -nbfragments)
+  mat_stat = mat_stat %>%
+    pivot_longer(cols = c("median_fragment", "mean_fragment", 
+                          "min_fragment", "max_fragment"),
+                 names_to = "stat", values_to = "stat_value")
+  
+  plot_stat_nbfragment = ggplot(mat_stat, aes(x=condition, y=stat_value, col=condition)) +
+    geom_violin() +
+    geom_point(position = "jitter", alpha = 0.5) +
+    facet_grid(seqname~stat) +
+    scale_color_manual(values = color_code, limits = force) +
+    theme(legend.position = "none")
+  
+  list_graph_stat[[cond]] = plot_stat_nbfragment
   
 }
 
 ```
 
+```{r}
 
 
-********************************************************************************
+
+```
+
+
 
 <br><br><br>
 
