@@ -361,100 +361,64 @@ for(i in 1:length(list_gene)) {
 
 # Peaks distribution on chromosomes
 
-## One plot per sample with all chromosomes
-
-```{r, fig.show = "hide"}
-
-list_sample_chr = list()
-expr = FetchData(object = seurat_obj, vars = "orig.ident")
-
-for( i in 1:length(unique(seurat_obj$orig.ident))) {
+Note : karyoplotR uses the list of peaks inside the Grange of the seurat object. Here, we have the exact same list of peaks for all the conditions, we need to use the fragments repartition to see something so we can't use karyoplotR.  
+We extract the size of each chromosome (https://genome.ucsc.edu/cgi-bin/hgTracks?chromInfoPage=) to represent the fragments repartition on it.    
   
-    name_sample = unique(seurat_obj$orig.ident)[i]
-    gr = seurat_obj[, which(expr == name_sample)]         
-    gr = gr@assays$peaks@ranges
+```{r}
 
-    # visualize on html file
-    list_sample_chr[[name_sample]] = as.ggplot(expression(
-      plotKaryotype(genome = "hg38", plot.type = 2) %>%
-        kpPlotRegions(data=gr, avoid.overlapping = FALSE, col = color_code[name_sample]) %>%
-        kpAddMainTitle(main = paste0("Peaks distribution on hg38 genome from ", name_sample), cex=1.5) %>%
-        kpPlotDensity(data=gr, data.panel = 2)
-      ))
-  
-   # save the plot
-   png(filename = paste0(directory_output, "plot_allchr_", name_sample, ".png"),
-       width = 1000, height = 1400)
-  plotKaryotype(genome = "hg38", plot.type = 2) %>%
-        kpPlotRegions(data=gr, avoid.overlapping = FALSE, col = color_code[name_sample]) %>%
-        kpAddMainTitle(main = paste0("Peaks distribution on hg38 genome from ", name_sample), cex=1.5) %>%
-        kpPlotDensity(data=gr, data.panel = 2)
-  dev.off()
-  
-}
-
-```
-
-```{r, fig.width = 25, fig.height = 20}
-
-do.call("grid.arrange", c(list_sample_chr, ncol = 2))
+chrom_gr = data.frame(seqnames = c("chr1", "chr2", "chr3", "chr4", "chr5", "chr6", 
+                                   "chr7", "chr8", "chr9", "chr10", "chr11", 
+                                   "chr12", "chr13", "chr14", "chr15", "chr16", 
+                                   "chr17", "chr18", "chr19", "chr20", "chr21", 
+                                   "chr22", "chrX", "chrY"),
+                      start = rep(0, 24),
+                      end = c(248956422, 242193529, 198295559, 190214555,
+                              181538259,170805979,159345973,145138636,138394717,
+                              133797422, 135086622,133275309,114364328,107043718,
+                              101991189,90338345,83257441,80373285,58617616,
+                              64444167,46709983,50818468,156040895,57227415))
 
 ```
 
 <br>
 
-## One plot per chromosome with all samples
+Our problem here is that the chromosomes are too big to be represented in one plot with CoveragePlot function. It would require such a big amount of memory and end with an unreadable plot (see discussion : https://stackoverflow.com/questions/14629607/long-vector-plot-coverage-plot-in-r).  
 
-```{r, fig.width = 16, fig.height = 10}
+```{r}
 
-chromosomes = c("chr1", "chr2", "chr3", "chr4", "chr5", "chr6", "chr7", "chr8", 
-                "chr9", "chr10", "chr11", "chr12", "chr13", "chr14", "chr15", 
-                "chr16", "chr17", "chr18", "chr19", "chr20", "chr21", "chr22", 
-                "chrX", "chrY")
-
-# Display settings: https://bernatgel.github.io/karyoploter_tutorial//Tutorial/PlotParams/PlotParams.html 
-pp = getDefaultPlotParams(plot.type=1)
-pp$data1height = 10
-pp$data1inmargin = 6
-pp$ideogramheight = 6
-pp$data1outmargin = 1
-pp$bottommargin = 6
-pp$topmargin = 30
-expr = FetchData(object = seurat_obj, vars = "orig.ident")
-
-for (i in 1:length(chromosomes)) { 
-
-  # visualize on html file
-    kp = plotKaryotype(plot.type = 1, chromosomes=chromosomes[i], plot.params = pp)
-    for (j in 1:length(unique(seurat_obj$orig.ident))) {
-      name_sample = unique(seurat_obj$orig.ident)[j]
-      kp = plotKaryotype(plot.type = 1, chromosomes=chromosomes[i], plot.params = pp)
-      gr = seurat_obj[, which(expr == name_sample)]         
-      gr = gr@assays$peaks@ranges
-      kpPlotRegions(kp, data=gr, border=color_code[name_sample], r0=j-1, r1=j-0.6)
-      kpPlotDensity(kp, data=gr, data.panel = 1, r0=j-0.6, r1=j-0.2)
-      kpAddLabels(kp, labels=name_sample, data.panel = 1, r0=j-1, r1=j-0.6)
-    }
+for (i in 1:nrow(chrom_gr)) {
   
-  # save plot
-  png(paste0(directory_output, "plot_allsamples_",chromosomes[i], ".png"), 
-      width = 2000, height = 1000)
-  kp = plotKaryotype(plot.type = 1, chromosomes=chromosomes[i], plot.params = pp)
-  for (j in 1:length(unique(seurat_obj$orig.ident))) {
-      name_sample = unique(seurat_obj$orig.ident)[j]
-      gr = seurat_obj[, which(expr == name_sample)]         
-      gr = gr@assays$peaks@ranges
-      kpPlotRegions(kp, data=gr, border=color_code[name_sample], r0=j-1, r1=j-0.6)
-      kpPlotDensity(kp, data=gr, data.panel = 1, r0=j-0.6, r1=j-0.2)
-      kpAddLabels(kp, labels=name_sample, data.panel = 1, r0=j-1, r1=j-0.6)
-    }
-  dev.off()
+  limits = chrom_gr[i,]
+  chr = limits$seqnames
+  chr_end = limits$end
+  start = 0
+  end = 0
+  
+  for (j in 1:2) {
+    
+    end = end + round(chr_end/20)
+    region = paste0(chr, "-", start, "-", end)
+
+    CoveragePlot(
+      object = seurat_obj,
+      assay = "peaks",
+      region = region,
+      extend.upstream = 0,
+      extend.downstream = 0,
+      peaks = TRUE,
+      tile = TRUE)
+    
+    start = end
+    
+  }
+  
+  
   
 }
 
 ```
 
-=> PROBLEM : all graphs are identical
+
 
 ********************************************************************************
 
