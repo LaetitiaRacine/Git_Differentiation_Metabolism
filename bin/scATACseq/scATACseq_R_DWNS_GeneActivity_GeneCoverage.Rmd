@@ -1,0 +1,482 @@
+---
+title: "scATACseq_R_DWNS_GeneActivity_GeneCoverage.Rmd"
+author: "Laëtitia"
+date: "24/08/2022"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r, Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(Seurat)
+library(Signac)
+library(knitr)
+library(stringr)
+library(ggplot2)
+library(Gviz)
+library(tibble)
+library(karyoploteR)
+library(ggplotify)
+library(gridExtra)
+
+```
+
+```{r, Working directories and external script}
+
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_GeneActivity_GeneCoverage/"))
+dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_GeneActivity_GeneCoverage/", current_date))
+directory_output = paste0(directory,"exp/","scATACseq_R_DWNS_GeneActivity_GeneCoverage/", current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_NormalizationReduction/"))
+seurat_obj = readRDS(paste0(dir, "/", "merged_seurat_qc_filter_annot_normreduc.rds"))
+
+# Extract localisation of hg38 annotation (see annotationsFiles_createGrange.Rmd)
+dir = pic_last_dir(paste0(directory, "exp/AnnotationsFiles_createGrange/"))
+annot_hg38 = readRDS(paste0(dir, "/", "hg38_annotations_gr.rds"))
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Overview
+
+As a reminder : 
+
+```{r, fig.width=16, fig.height=5}
+
+seurat_obj = SetIdent(object = seurat_obj, value = "orig.ident")
+ind_umap = list() 
+
+for (i in 1:length(unique(seurat_obj$orig.ident))) {
+  
+  # Select condition to highlight
+  highlight_cond = unique(seurat_obj$orig.ident)[i]
+  color = unname(noquote(color_code[highlight_cond]))
+  others_cond = setdiff(unique(seurat_obj$orig.ident), highlight_cond)
+  others_cond_group = paste(others_cond, collapse=", ")
+  
+  # Sort cell according to their condition
+  cell_highlight = unlist(CellsByIdentities(object = seurat_obj, idents = highlight_cond))
+  cell_nohighlight = unlist(CellsByIdentities(object = seurat_obj, idents = others_cond))
+  
+  # Plot 
+  plot_umap = DimPlot(object = seurat_obj,
+                      group.by = "orig.ident",
+                      reduction ="umap",
+                      pt.size = 0.1,
+                      cells.highlight = list(cell_highlight, cell_nohighlight),
+                      cols.highlight = c(color,"grey")) +
+    ggtitle(highlight_cond) +
+    theme(legend.position = "none")
+  
+  ind_umap[[i]] = plot_umap
+  
+}
+
+clust_umap = DimPlot(seurat_obj, 
+                     reduction = "umap", 
+                     group.by = "peaks_snn_res.0.25") + 
+  ggtitle("Resolution_0.25") 
+
+clust_umap | ind_umap[[1]] | ind_umap[[2]] | ind_umap[[3]] | ind_umap[[4]]
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Gene activity matrix
+
+https://stuartlab.org/signac/articles/pbmc_vignette.html#create-a-gene-activity-matrix  
+Note : "The activities will be much noisier than scRNAseq measurements. This is because they represent measurements from sparse chromatin data, and because they assume a general correspondence between gene body/promoter accessibility and gene expression which may not always be the case."    
+It is just an indicative measurement.  
+
+**Create the gene activity matrix**  
+"To create a gene activity matrix, we extract gene coordinates and extend them to include the 2 kb upstream region (as promoter accessibility is often correlated with gene expression). We then count the number of fragments for each cell that map to each of these regions."  
+```{r, Really slow, eval = FALSE}
+
+gene.activities <- GeneActivity(seurat_obj)
+saveRDS(gene.activities, paste0(directory_output, "gene.activities.rds"))
+
+```
+
+```{r}
+gene.activities = readRDS(paste0(directory_output, "gene.activities.rds"))
+```
+
+```{r}
+
+seurat_obj[['RNA']] <- CreateAssayObject(counts = gene.activities)
+
+seurat_obj <- NormalizeData(
+  object = seurat_obj,
+  assay = 'RNA',
+  normalization.method = 'LogNormalize',
+  scale.factor = median(seurat_obj$nCount_RNA)
+)
+
+```
+
+<br>
+
+**Visualize the putative activity of marker genes - list of characteristic genes**
+```{r, results='hold', fig.width=16, fig.height=12, message=TRUE}
+
+DefaultAssay(seurat_obj) <- 'RNA'
+
+plot_TF = FeaturePlot(
+  object = seurat_obj,
+  features = list_genes_TF_hemato,
+  pt.size = 0.1,
+  max.cutoff = 'q95',
+  ncol = 3,
+  cols = c('#1873CC','#1798E5','#00BFFF','#4AC596','#00CC00',
+           '#A2E700','#FFFF00','#FFD200','#FFA500')
+)
+
+plot_gl = FeaturePlot(
+  object = seurat_obj,
+  features = c(list_genes_metabo_glut, list_genes_metabo_glycolysis),
+  pt.size = 0.1,
+  max.cutoff = 'q95',
+  ncol = 3,
+  cols = c('#1873CC','#1798E5','#00BFFF','#4AC596','#00CC00',
+           '#A2E700','#FFFF00','#FFD200','#FFA500')
+)
+
+plot_mettca = FeaturePlot(
+  object = seurat_obj,
+  features = c(list_genes_metabo, list_genes_metabo_tca),
+  pt.size = 0.1,
+  max.cutoff = 'q95',
+  ncol = 3,
+  cols = c('#1873CC','#1798E5','#00BFFF','#4AC596','#00CC00',
+           '#A2E700','#FFFF00','#FFD200','#FFA500')
+)
+
+plot_TF
+plot_gl
+plot_mettca
+
+```
+
+<br>
+
+**Visualize the putative activity of marker genes - list of more variable genes between cells**
+```{r, fig.width=16, fig.height=22}
+
+seurat_obj <- FindVariableFeatures(object = seurat_obj, assay = 'RNA', nfeatures = 100)
+
+plot_varfeature = FeaturePlot(
+  object = seurat_obj,
+  features = seurat_obj[['RNA']]@var.features[1:20],
+  pt.size = 0.1,
+  max.cutoff = 'q95',
+  ncol = 3,
+    cols = c('#1873CC','#1798E5','#00BFFF','#4AC596','#00CC00',
+           '#A2E700','#FFFF00','#FFD200','#FFA500')
+)
+plot_varfeature
+
+```
+
+<br>
+
+```{r, Save, fig.show="hide"}
+
+ggsave(plot = plot_varfeature, 
+       filename = paste0(directory_output, "plot_geneactvity_varfeature.png"), 
+       width = 18, height = 22)
+
+ggsave(plot = plot_TF, 
+       filename = paste0(directory_output,"plot_geneactivity_TF.png"), 
+       width = 18, height = 20)
+
+ggsave(plot = plot_gl, 
+       filename = paste0(directory_output,"plot_geneactivity_glutglyc.png"), 
+       width = 18, height = 20)
+
+ggsave(plot = plot_mettca, 
+       filename = paste0(directory_output,"plot_geneactivity_mettca.png"), 
+       width = 18, height = 20)
+
+```
+
+```{r}
+
+list_to_keep = c("directory_output", "start_time", "color_code", "seurat_obj",
+                 "list_genes_metabo", "list_genes_metabo_glut", "list_genes_TF_hemato",
+                 "list_genes_metabo_glycolysis","list_genes_metabo_tca", "annot_hg38")
+rm(list = setdiff(ls(), list_to_keep))
+gc()
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Gene coverage
+
+For each peak, we look for the closest feature manually based on hg38 annotations table.  
+Then, we can do coverage plot on peaks related to interesting genes. 
+https://stuartlab.org/signac/reference/coverageplot
+Note : we can't use the closestfeature function here because it uses the info stored in *annotation slot*. Those annotations only indicate cds, gap, exons or cds but we don't have promoters localisation. To study promoter, we use the annotations from annotatr package and so we do it manually.  
+
+```{r}
+
+list_gene = unique(c(list_genes_metabo, list_genes_metabo_glut, 
+                     list_genes_metabo_glycolysis, list_genes_metabo_tca,
+                     list_genes_TF_hemato), "PKM")
+# PKM and PKM2 same gene
+annot = annot_hg38[annot_hg38$symbol %in% list_gene]
+
+```
+
+```{r, results="hold", fig.width=14, fig.height=8}
+
+for(i in 1:length(list_gene)) {
+  
+  # Extract region limits for the studied gene
+  annot_genes = annot[annot$symbol == list_gene[i]]
+  if(length(annot_genes) != 0) {
+    limits = c(min(start(annot_genes@ranges)), max(end(annot_genes@ranges)))
+    chr = as.character(unique(seqnames(annot_genes)))
+    region = paste(chr, paste(limits, collapse="-"), sep="-")
+    
+    # Keep cds and promoter info
+    annot1 = annot_genes[annot_genes$type %in% c("hg38_genes_promoters", "hg38_genes_cds")]
+    plot1 = CoveragePlot(
+      object = seurat_obj,
+      assay = "peaks",
+      region = region,
+      extend.upstream = 40000,
+      extend.downstream = 20000,
+      peaks = TRUE,
+      annotation = FALSE,
+      ranges = annot1,
+      ranges.group.by = "type",
+      ranges.title = "annotation",
+      tile = FALSE)
+    
+    plot1_tile = CoveragePlot(
+      object = seurat_obj,
+      assay = "peaks",
+      region = region,
+      extend.upstream = 40000,
+      extend.downstream = 20000,
+      peaks = TRUE,
+      annotation = FALSE,
+      ranges = annot1,
+      ranges.group.by = "type",
+      ranges.title = "annotation",
+      tile = TRUE)
+    
+    # Keep exons and introns info
+    annot2 = annot_genes[annot_genes$type %in% c("hg38_genes_exons", "hg38_genes_introns")]
+    plot2 = CoveragePlot(
+      object = seurat_obj,
+      assay = "peaks",
+      region = region,
+      extend.upstream = 40000,
+      extend.downstream = 20000,
+      peaks = TRUE,
+      annotation = FALSE,
+      ranges = annot2,
+      ranges.group.by = "type",
+      ranges.title = "annotation",
+      tile = FALSE)
+    
+    plot2_tile = CoveragePlot(
+      object = seurat_obj,
+      assay = "peaks",
+      region = region,
+      extend.upstream = 40000,
+      extend.downstream = 20000,
+      peaks = TRUE,
+      annotation = FALSE,
+      ranges = annot2,
+      ranges.group.by = "type",
+      ranges.title = "annotation",
+      tile = TRUE)
+    
+    # show and save
+    print(plot1|plot2)
+    print(plot1_tile|plot2_tile)
+    ggsave(plot = plot1|plot2, width = 12, height = 6,
+           filename = paste0(directory_output, list_gene[i], "_coverage_allcond.svg"))
+     ggsave(plot = plot1_tile|plot2_tile, width = 12, height = 8,
+           filename = paste0(directory_output, list_gene[i], "_coverage_tile_allcond.svg"))
+    
+  }
+
+}
+
+```
+
+
+
+<br><br><br>
+
+
+********************************************************************************
+
+# Peaks distribution on chromosomes
+
+## One plot per sample with all chromosomes
+
+```{r, fig.show = "hide"}
+
+list_sample_chr = list()
+expr = FetchData(object = seurat_obj, vars = "orig.ident")
+
+for( i in 1:length(unique(seurat_obj$orig.ident))) {
+  
+    name_sample = unique(seurat_obj$orig.ident)[i]
+    gr = seurat_obj[, which(expr == name_sample)]         
+    gr = gr@assays$peaks@ranges
+
+    # visualize on html file
+    list_sample_chr[[name_sample]] = as.ggplot(expression(
+      plotKaryotype(genome = "hg38", plot.type = 2) %>%
+        kpPlotRegions(data=gr, avoid.overlapping = FALSE, col = color_code[name_sample]) %>%
+        kpAddMainTitle(main = paste0("Peaks distribution on hg38 genome from ", name_sample), cex=1.5) %>%
+        kpPlotDensity(data=gr, data.panel = 2)
+      ))
+  
+   # save the plot
+   png(filename = paste0(directory_output, "plot_allchr_", name_sample, ".png"),
+       width = 1000, height = 1400)
+  plotKaryotype(genome = "hg38", plot.type = 2) %>%
+        kpPlotRegions(data=gr, avoid.overlapping = FALSE, col = color_code[name_sample]) %>%
+        kpAddMainTitle(main = paste0("Peaks distribution on hg38 genome from ", name_sample), cex=1.5) %>%
+        kpPlotDensity(data=gr, data.panel = 2)
+  dev.off()
+  
+}
+
+```
+
+```{r, fig.width = 25, fig.height = 20}
+
+do.call("grid.arrange", c(list_sample_chr, ncol = 2))
+
+```
+
+<br>
+
+## One plot per chromosome with all samples
+
+```{r, fig.width = 16, fig.height = 10}
+
+chromosomes = c("chr1", "chr2", "chr3", "chr4", "chr5", "chr6", "chr7", "chr8", 
+                "chr9", "chr10", "chr11", "chr12", "chr13", "chr14", "chr15", 
+                "chr16", "chr17", "chr18", "chr19", "chr20", "chr21", "chr22", 
+                "chrX", "chrY")
+
+# Display settings: https://bernatgel.github.io/karyoploter_tutorial//Tutorial/PlotParams/PlotParams.html 
+pp = getDefaultPlotParams(plot.type=1)
+pp$data1height = 10
+pp$data1inmargin = 6
+pp$ideogramheight = 6
+pp$data1outmargin = 1
+pp$bottommargin = 6
+pp$topmargin = 30
+expr = FetchData(object = seurat_obj, vars = "orig.ident")
+
+for (i in 1:length(chromosomes)) { 
+
+  # visualize on html file
+    kp = plotKaryotype(plot.type = 1, chromosomes=chromosomes[i], plot.params = pp)
+    for (j in 1:length(unique(seurat_obj$orig.ident))) {
+      name_sample = unique(seurat_obj$orig.ident)[j]
+      kp = plotKaryotype(plot.type = 1, chromosomes=chromosomes[i], plot.params = pp)
+      gr = seurat_obj[, which(expr == name_sample)]         
+      gr = gr@assays$peaks@ranges
+      kpPlotRegions(kp, data=gr, border=color_code[name_sample], r0=j-1, r1=j-0.6)
+      kpPlotDensity(kp, data=gr, data.panel = 1, r0=j-0.6, r1=j-0.2)
+      kpAddLabels(kp, labels=name_sample, data.panel = 1, r0=j-1, r1=j-0.6)
+    }
+  
+  # save plot
+  png(paste0(directory_output, "plot_allsamples_",chromosomes[i], ".png"), 
+      width = 2000, height = 1000)
+  kp = plotKaryotype(plot.type = 1, chromosomes=chromosomes[i], plot.params = pp)
+  for (j in 1:length(unique(seurat_obj$orig.ident))) {
+      name_sample = unique(seurat_obj$orig.ident)[j]
+      gr = seurat_obj[, which(expr == name_sample)]         
+      gr = gr@assays$peaks@ranges
+      kpPlotRegions(kp, data=gr, border=color_code[name_sample], r0=j-1, r1=j-0.6)
+      kpPlotDensity(kp, data=gr, data.panel = 1, r0=j-0.6, r1=j-0.2)
+      kpAddLabels(kp, labels=name_sample, data.panel = 1, r0=j-1, r1=j-0.6)
+    }
+  dev.off()
+  
+}
+
+```
+
+=> PROBLEM : all graphs are identical
+
+********************************************************************************
+
+<br><br><br>
+
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results = "hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+
