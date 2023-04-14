@@ -1,0 +1,698 @@
+---
+title: "scATACseq_R_DWNS_ClustersInvestigation_DA"
+author: "Laëtitia Racine"
+date: "2023-04-07"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r, Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(Seurat)
+library(Signac)
+library(knitr)
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(kableExtra)
+library(GenomicRanges)
+library(tibble)
+library(pheatmap)
+# motif analysis
+library(JASPAR2020)
+library(TFBSTools)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(gridExtra)
+# GO analysis
+library(org.Hs.eg.db)
+library(clusterProfiler)
+
+```
+
+```{r, Working directories and external script}
+
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_ClustersInvestigation_DA/"))
+dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_ClustersInvestigation_DA/", 
+                         current_date))
+directory_output = paste0(directory,"exp/","scATACseq_R_DWNS_ClustersInvestigation_DA/", 
+                          current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_NormalizationReduction/"))
+seurat_obj = readRDS(paste0(dir, "/", "merged_seurat_qc_filter_annot_normreduc.rds"))
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Overview 
+
+This code aims at exploring the clusters of cells by performing **differential accessibility analysis**.  
+"To find differentially accessible regions between clusters of cells, we can perform a differential accessibility (DA) test. We utilize logistic regression for DA, as suggested by Ntranos et al. 2018 for scRNA-seq data, and add the total number of fragments as a latent variable to mitigate the effect of differential sequencing depth on the result. For sparse data (such as scATAC-seq), we find it is often necessary to lower the min.pct threshold in FindMarkers() from the default (0.1, which was designed for scRNA-seq data)."  
+  
+As a reminder : 
+
+```{r, fig.width=16, fig.height=4}
+
+seurat_obj = SetIdent(object = seurat_obj, value = "orig.ident")
+ind_umap = list() 
+
+for (i in 1:length(unique(seurat_obj$orig.ident))) {
+  
+  # Select condition to highlight
+  highlight_cond = unique(seurat_obj$orig.ident)[i]
+  color = unname(noquote(color_code[highlight_cond]))
+  others_cond = setdiff(unique(seurat_obj$orig.ident), highlight_cond)
+  others_cond_group = paste(others_cond, collapse=", ")
+  
+  # Sort cell according to their condition
+  cell_highlight = unlist(CellsByIdentities(object = seurat_obj, idents = highlight_cond))
+  cell_nohighlight = unlist(CellsByIdentities(object = seurat_obj, idents = others_cond))
+  
+  # Plot 
+  plot_umap = DimPlot(object = seurat_obj,
+                      group.by = "orig.ident",
+                      reduction ="umap",
+                      pt.size = 0.1,
+                      cells.highlight = list(cell_highlight, cell_nohighlight),
+                      cols.highlight = c(color,"grey")) +
+    ggtitle(highlight_cond) +
+    theme(legend.position = "none")
+  
+  ind_umap[[i]] = plot_umap
+  
+}
+
+clust_umap = DimPlot(seurat_obj, 
+                     reduction = "umap", 
+                     group.by = "peaks_snn_res.0.25") + 
+  ggtitle("Resolution_0.25") 
+
+clust_umap | ind_umap[[1]] | ind_umap[[2]] | ind_umap[[3]] | ind_umap[[4]]
+
+```
+
+
+<br><br><br>
+
+
+# Extract list of DA peaks for each cluster compare to all others
+
+Compare each cluster against all others and output the peaks that are differentially expressed/present.  
+This part of the code require a huge amount of memory and is extremely slow. We can only perform it on external cluster and it takes more than 24h. We did it on IFB (slurm job on long partition with memory 100GB accessible) and we saved it in the data folder.  "For sparse data (such as scATAC-seq), we find it is often necessary to lower the min.pct threshold in FindMarkers() from the default (0.1, which was designed for scRNA-seq data)."  
+```{r, eval=FALSE}
+
+# DefaultAssay(seurat_merged) <- 'peaks'
+# Idents(seurat_merged) = "peaks_snn_res.0.25"
+# 
+# clust_markers = FindAllMarkers(object = seurat_merged,
+#                       assay = "peaks",
+#                       features = NULL, #use all genes
+#                       test.use = "LR",
+#                       slot = "data",
+#                       only.pos = TRUE,
+#                       min.pct = 0.05, #default
+#                       random.seed = 42,
+#                       verbose = TRUE)
+# 
+# saveRDS(object = clust_markers, paste0(directory_output, "clust_markers_20230412.rds"))
+
+```
+
+```{r}
+
+# Load the clust_markers table from IFBcluster
+clust_markers = readRDS(paste0(directory, "data/scATACseq/clust_markers_20230412.rds"))
+cat("Number of DA peaks for each cluster : \n")
+table(clust_markers$cluster)
+
+clust_markers = clust_markers %>%
+  dplyr::rename("peak_name" = "gene") %>%
+  tidyr::separate(col = "peak_name", into = c("seqnames", "start", "end"), remove=FALSE)
+
+saveRDS(clust_markers, paste0(directory_output, "clust_markers"))
+
+```
+
+```{r, results="hide"}
+
+list_to_keep = c("directory_output", "start_time", "seurat_obj", 
+                 "clust_markers", "pic_last_dir", "directory")
+rm(list = setdiff(ls(), list_to_keep))
+gc()
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Associated gene for each peak
+
+https://www.biostars.org/p/478325/  
+Note : the gene_id and symbol column of annot_hg38 table contains NA when the peak doesn't correspond to a gene (enhancer, intergenic...). However, the overlap doesn't work when there are NA in the initial annot grange. We decide to replace them by the annotation type.  
+```{r, results="hide"}
+
+# Extract localisation of hg38 annotation (see annotationsFiles_createGrange.Rmd)
+dir = pic_last_dir(paste0(directory, "exp/AnnotationsFiles_createGrange/"))
+annot_hg38 = readRDS(paste0(dir, "/", "hg38_annotations_gr.rds"))
+
+annot_df = data.frame(annot_hg38) %>%
+  dplyr::select(seqnames, start, end, gene_id, symbol, type) 
+annot_df = annot_df %>%
+  dplyr::mutate(gene_id = ifelse(is.na(gene_id), type, gene_id)) %>%
+  dplyr::mutate(symbol = ifelse(is.na(symbol), type, symbol))
+
+rm(annot_hg38)
+gc()
+
+```
+
+<br>
+
+Then, we transform tables into dataframes to use findOverlaps function and we correlate the table to have the cluster information and the gene/annotation information in the same final dataframe.
+```{r}
+
+# transform tables into granges
+annot_gr = makeGRangesFromDataFrame(annot_df, keep.extra.columns = TRUE)
+clust_gr = makeGRangesFromDataFrame(clust_markers, keep.extra.columns = TRUE)
+
+# find overlaps between granges 
+overlaps = findOverlaps(query = annot_gr, subject = clust_gr, ignore.strand = TRUE)
+
+# add corresponding columns from query granges into subject granges
+mcols(clust_gr)$gene_id = NA
+mcols(clust_gr)$symbol = NA
+mcols(clust_gr)$type = NA
+mcols(clust_gr)$gene_id[subjectHits(overlaps)] <- mcols(annot_gr)$gene_id[queryHits(overlaps)]
+mcols(clust_gr)$symbol[subjectHits(overlaps)] <- mcols(annot_gr)$symbol[queryHits(overlaps)]
+mcols(clust_gr)$type[subjectHits(overlaps)] <- mcols(annot_gr)$type[queryHits(overlaps)]
+
+# final table
+tab_clust = data.frame(clust_gr)
+table(tab_clust$type, tab_clust$cluster)
+
+```
+
+```{r, results="hide"}
+
+list_to_keep = c("directory_output", "start_time", "seurat_obj", 
+                 "tab_clust", "directory")
+rm(list = setdiff(ls(), list_to_keep))
+gc()
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Select relevant peaks in the list (top 20) to plot on heatmap
+
+```{r, Select relevant markers}
+
+# filter on p value adjusted
+cat("We remove markers with p_val_adj superior to 0.05.")
+tab_clust_relevant = tab_clust %>% dplyr::filter(p_val_adj < 0.05)
+
+# Extract top 20 of positive markers based on avg_log2FC only 
+cat("We keep the positive markers with the biggest average_log2FC for each cluster.")
+top20_pos = tab_clust_relevant %>%
+  dplyr::filter(avg_log2FC >= 0) %>%
+  dplyr::group_by(cluster) %>%
+  top_n(n=20, wt = avg_log2FC) %>%
+  dplyr::select(cluster,symbol, p_val_adj, everything()) %>%
+  ungroup()
+
+# positive markers : calcul the difference between pct1 and pct2
+cat("We filter the positive markers to keep those with a difference > to 0.25 between pct.1 and pct.2.")
+top20_pos_filtered = tab_clust_relevant %>% 
+  dplyr::filter(avg_log2FC >= 0) %>%
+  dplyr::mutate(diff = pct.1 - pct.2) %>%
+  dplyr::filter(diff > 0.25) %>%
+  dplyr::group_by(cluster) %>%
+  top_n(n=20, wt = avg_log2FC) %>%
+  dplyr::select(cluster, symbol, p_val_adj, everything()) %>%
+  dplyr::select(-diff) %>%
+  ungroup()
+
+# Summary markers
+summary_clust = data.frame(cluster = 0:15, 
+                           nb_pos_markers = as.vector(table(top20_pos$cluster)),
+                           nb_pos_markers_filtered = as.vector(table(top20_pos_filtered$cluster)))
+
+summary_clust %>% 
+  kable() %>% 
+  kable_styling()
+
+```
+
+<br>
+
+As we don't have data in scale.data slot, we can't use DoHeatmap function.  
+https://davetang.org/muse/2018/05/15/making-a-heatmap-in-r-with-the-pheatmap-package/  
+https://github.com/tidyverse/stringr/issues/103  
+  
+```{r, Heatmap,  fig.height = 26, fig.width = 14}
+
+# Randomly downsample 200 cells of each cluster
+cells_df = as.data.frame(seurat_obj@meta.data)  %>%
+  tibble::rownames_to_column("cell") %>%
+  dplyr::select(cell, peaks_snn_res.0.25) %>%
+  dplyr::rename("cluster" = "peaks_snn_res.0.25")
+# table(cells_df$cluster)
+
+cells_to_keep = c()
+for(i in 1:length(unique(cells_df$cluster))) {
+  temp = (cells_df %>% dplyr::filter(cluster==unique(cells_df$cluster)[i]))$cell
+  if(length(temp) > 100){ temp = sample(temp,100) }
+  cells_to_keep = c(cells_to_keep, temp)
+}
+
+cells_df = cells_df %>% 
+  dplyr::filter(cell %in% cells_to_keep) %>%
+  tibble::column_to_rownames("cell")
+
+# Extract names of peaks to keep
+peaks_df = top20_pos_filtered %>% 
+  dplyr::select(symbol, peak_name) %>%
+  dplyr::distinct()
+peaks_to_keep = peaks_df$peak_name
+
+# Filter matrix to keep only wanted cells and peaks
+mat = as.data.frame(seurat_obj@assays$peaks@data[peaks_to_keep, cells_to_keep])
+mat = mat %>% rownames_to_column("peak_name")
+mat$peak_name = str_replace_all(string = mat$peak_name, pattern = "[.]", replacement = "-" )
+mat = left_join(mat, peaks_df, by = "peak_name") 
+
+mat_ht = mat %>% 
+  dplyr::mutate(peak_name = paste0(symbol, " - ", peak_name)) %>%
+  dplyr::select(-symbol) %>% 
+  tibble:::column_to_rownames("peak_name") 
+
+# scale the rows
+cal_z_score <- function(x){(x - mean(x)) / sd(x)}
+mat_ht <- t(apply(mat_ht, 1, cal_z_score))
+
+# Draw plot
+ht_all = pheatmap(mat = mat_ht, 
+                  annotation_col = cells_df,
+                  show_colnames = FALSE,
+                  cluster_cols = FALSE,
+                  cluster_rows = FALSE,
+                  fontsize_rows = 6)
+
+mat_filt = mat %>%
+  dplyr::filter(!symbol %in% str_subset(symbol, pattern = "hg38")) %>% 
+  dplyr::mutate(peak_name = paste0(symbol, " - ", peak_name)) %>%
+  dplyr::select(-symbol) %>% 
+  tibble:::column_to_rownames("peak_name") 
+mat_filt <- t(apply(mat_filt, 1, cal_z_score))
+
+ht_filt = pheatmap(mat = mat_filt, 
+                   annotation_col = cells_df,
+                   show_colnames = FALSE,
+                   cluster_cols = FALSE,
+                   cluster_rows = FALSE,
+                   fontsize_rows = 6)
+
+```
+
+```{r, results="hide"}
+
+save_pheatmap_png <- function(x, filename, width=1200, height=1200, res = 150) {
+  png(filename, width = width, height = height, res = res)
+  grid::grid.newpage()
+  grid::grid.draw(x$gtable)
+  dev.off()
+}
+ 
+save_pheatmap_png(ht_all, paste0(directory_output, "heatmap_DApeaks_clust_all.png"))
+save_pheatmap_png(ht_filt, paste0(directory_output, "heatmap_DApeaks_clust_genes.png"))
+
+```
+
+```{r, results="hide"}
+
+list_to_keep = c("directory_output", "start_time", "seurat_obj", 
+                 "tab_clust_relevant", "directory")
+rm(list = setdiff(ls(), list_to_keep))
+gc()
+
+```
+
+
+<br><br><br>
+
+
+# GO on list of peaks differentially accessible between clusters
+
+```{r, fig.show = "hide"}
+
+markers = tab_clust_relevant %>% dplyr::select(cluster, symbol, gene_id)
+markers = markers %>% dplyr::filter(!symbol %in% str_subset(symbol, "hg38"))
+
+list_GO_analysis = list()
+
+for (i in 1:length(unique(tab_clust_relevant$cluster))) {
+
+  cat("Cluster", i-1, "\n")
+  markers_clust = (markers %>% dplyr::filter(cluster == i-1))$gene_id
+
+  ego = enrichGO(gene = markers_clust,
+                 OrgDb = "org.Hs.eg.db",
+                 ont = "ALL",
+                 pAdjustMethod = "BH",
+                 pvalueCutoff = 0.05,
+                 qvalueCutoff = 0.2,
+                 readable = TRUE,
+                 keyType = "ENTREZID")
+
+  ego_df = ego@result %>% dplyr::mutate(cluster = i-1)
+  
+  list_GO_analysis[[paste0("clust_", i-1)]]$ego = ego_df
+  
+  if (nrow(ego_df) !=0) { 
+    
+    plot = dotplot(ego, showCategory = 25) +
+      facet_grid(ONTOLOGY ~ ., scales="free") +
+      ggtitle(paste0("DApeaks - Closest genes enrichment - Clust", i-1)) +
+      theme(axis.text.y = element_text(size = 8))
+    
+    list_GO_analysis[[paste0("clust_", i-1)]]= list(dotplot = plot,
+                                                    ego = ego_df)
+    
+  } else {
+      
+    list_GO_analysis[[paste0("clust_", i-1)]] = list(ego = ego_df)
+    
+  }
+
+}
+
+saveRDS(list_GO_analysis, paste0(directory_output, "list_GO_clust.rds"))
+
+```
+
+```{r, fig.width=16, fig.height=40}
+
+list = unlist(list_GO_analysis, recursive = FALSE)
+list_dotplot = list[str_subset(names(list), "dotplot")]
+do.call("grid.arrange", c(list_dotplot, ncol = 3))
+
+list_tab = list[str_subset(names(list), "ego")]
+tab_ego = do.call("rbind", list_tab)
+tab_ego %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height="250px")
+
+```
+
+```{r, fig.show="hide"}
+
+ggsave(plot = do.call("grid.arrange", c(list_dotplot, ncol=4)), width=40,
+       height=30, filename=paste0(directory_output, "GO_DApeaks_clust.svg"))
+
+write.csv2(tab_ego, paste0(directory_output, "tab_go_DApeaks_clust.csv"), row.names=FALSE)
+
+```
+
+```{r, results="hide"}
+
+list_to_keep = c("directory_output", "start_time", "seurat_obj", 
+                 "tab_clust_relevant", "directory")
+rm(list = setdiff(ls(), list_to_keep))
+gc()
+
+```
+
+
+
+<br><br><br>
+
+
+
+# Motif analysis on list of peaks differentially accessible between clusters
+
+Documentation :   
+https://stuartlab.org/signac/articles/motif_vignette.html  
+https://www.rdocumentation.org/packages/TFBSTools/versions/1.10.3/topics/getMatrixSet  
+https://stuartlab.org/signac/reference/addmotifs  
+
+```{r}
+
+# Get a list of motif position frequency matrices from the JASPAR database
+pfm <- getMatrixSet(
+  x = JASPAR2020,
+  opts = list(collection = "CORE", species = "Homo sapiens", 
+              tax_group = 'vertebrates', all_versions = FALSE)
+)
+
+# add motif information
+seurat_obj <- AddMotifs(
+  object = seurat_obj,
+  genome = BSgenome.Hsapiens.UCSC.hg38,
+  pfm = pfm
+)
+
+```
+
+<br>
+
+This part of the code with ChromVar is quite long. 
+```{r, eval=FALSE}
+
+# Compute a per-cell motif activity score !!extremely slow!!
+seurat_obj <- RunChromVAR(
+  object = seurat_obj,
+  genome = BSgenome.Hsapiens.UCSC.hg38
+)
+
+saveRDS(seurat_obj, paste0(directory_output, "seurat_motif.rds"))
+
+```
+
+```{r}
+
+# To gain time
+seurat_obj = readRDS(paste0(directory, "exp/scATACseq_R_DWNS_ClustersInvestigation_DA/seurat_motif.rds"))
+
+```
+
+<br>
+
+Search for DNA motifs that are overrepresented in a set of peaks that are differentially accessible between clusters.  
+```{r}
+
+list_enrich_clust = list()
+
+for (i in 1:length(unique(tab_clust_relevant$cluster))) {
+  
+  # extract list of peaks
+  peaks_clust = tab_clust_relevant %>% dplyr::filter(cluster == i-1)
+  peaks_clust = peaks_clust$peak_name
+
+  # test enrichment
+  enriched.motifs <- FindMotifs(object = seurat_obj,
+                                features = peaks_clust)
+  enriched.motifs$clust = paste0("clust_", i-1)
+    
+  # plot more enriched motifs
+  plot = MotifPlot(object = seurat_obj,
+                   motifs = head(rownames(enriched.motifs))) +
+    ggtitle(paste0("clust_", i-1))
+  
+  # save in a list 
+  list_enrich_clust[[paste0("cluster_", i-1)]] = list(tab_motif = enriched.motifs,
+                                                      plot_motif = plot)
+  
+}
+
+```
+
+```{r, fig.width=20, fig.height=22}
+
+list = unlist(list_enrich_clust, recursive = FALSE)
+list_tab = list[str_detect(names(list), "tab")]
+list_plot = list[str_detect(names(list), "plot")]
+
+glob_enrich_tab = do.call("rbind", list_tab)
+glob_enrich_tab[1:10,] %>%
+  kable(caption = "First 10 rows of the table") %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "250px")
+
+do.call("grid.arrange", c(list_plot, ncol = 2))
+
+```
+
+```{r, results="hide", fig.show="hide"}
+
+ggsave(plot = do.call("grid.arrange", c(list_plot, ncol = 3)),
+       filename = paste0(directory_output, "enriched_motifs_clust_plot.png"),
+       width = 40, height = 40)
+
+write.csv2(glob_enrich_tab, paste0(directory_output, "enriched_motifs_clust_tab.csv"))
+
+```
+
+<br>
+
+Visualize motif activities per cell and provide an alternative method of identifying differentially-active motifs between cell clusters. 
+```{r}
+
+# identify interesting and/or common motifs
+
+motif_df = glob_enrich_tab %>% dplyr::filter(p.adjust < 0.01)
+common_motif_df = motif_df[motif_df$motif %in% motif_df$motif[duplicated(motif_df$motif)],]
+common_motif_list = unique(common_motif_df$motif)
+unique_motif_df = motif_df[!motif_df$motif %in% motif_df$motif[duplicated(motif_df$motif)],]
+unique_motif_list = unique(unique_motif_df$motif)
+  
+# Display table 
+
+common_motif_df %>%
+  kable(caption = "Enriched motif in clusters with padj < 0.01 - shared motifs") %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "250px")
+  
+unique_motif_df %>%
+  kable(caption = "Enriched motif in clusters with padj < 0.01 - unique motifs") %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "250px")
+
+# Plot the results
+
+DefaultAssay(seurat_obj) <- 'chromvar'
+
+unique_motif_plot = list()
+common_motif_plot = list()
+
+for(i in 1:length(unique_motif_list)){
+  unique_motif_plot[[i]] = FeaturePlot(
+    object = seurat_obj,
+    features = unique_motif_list[i],
+    min.cutoff = 'q10',    
+    max.cutoff = 'q90',
+    pt.size = 0.1)
+}
+
+for(j in 1:length(common_motif_list)){
+  common_motif_plot[[j]] = FeaturePlot(
+    object = seurat_obj,
+    features = common_motif_list[j],
+    min.cutoff = 'q10',    
+    max.cutoff = 'q90',
+    pt.size = 0.1)
+}
+
+```
+
+```{r, fig.width=40, fig.height=45, fig.show="hold"}
+
+cat("Motifs enriched in only one cluster.")
+do.call("grid.arrange", c(unique_motif_plot[1:36], ncol = 6))
+do.call("grid.arrange", c(unique_motif_plot[37:73], ncol = 6))
+
+```
+
+```{r, fig.width=40, fig.height=45, fig.show="hold"}
+
+cat("Sample of motifs enriched in multiple clusters.")
+do.call("grid.arrange", c(common_motif_plot[1:36], ncol = 6))
+do.call("grid.arrange", c(common_motif_plot[37:74], ncol = 6))
+
+```
+
+```{r, fig.show="hide"}
+
+write.csv2(unique_motif_df, paste0(directory_output, "unique_enriched_motif_clust.csv"))
+write.csv2(common_motif_df, paste0(directory_output, "common_enriched_motif_clust.csv"))
+
+ggsave(plot= do.call("grid.arrange", c(unique_motif_plot[1:36], ncol=6)), width=40,
+       height=40, filename=paste0(directory_output, "unique_enriched_motif_clust_plot1.png"))
+ggsave(plot= do.call("grid.arrange", c(unique_motif_plot[37:73], ncol=6)), width=40,
+       height=40, filename=paste0(directory_output, "unique_enriched_motif_clust_plot2.png"))
+
+ggsave(plot= do.call("grid.arrange", c(common_motif_plot[1:36], ncol=6)), width=40,
+       height=40, filename=paste0(directory_output, "common_enriched_motif_clust_plot1.png"))
+ggsave(plot= do.call("grid.arrange", c(common_motif_plot[37:74], ncol=6)), width=40,
+       height=40, filename=paste0(directory_output, "common_enriched_motif_clust_plot2.png"))
+ggsave(plot= do.call("grid.arrange", c(common_motif_plot[75:111], ncol=6)), width=40,
+       height=40, filename=paste0(directory_output, "common_enriched_motif_clust_plot3.png"))
+ggsave(plot= do.call("grid.arrange", c(common_motif_plot[112:148], ncol=6)), width=40,
+       height=40, filename=paste0(directory_output, "common_enriched_motif_clust_plot4.png"))
+ggsave(plot= do.call("grid.arrange", c(common_motif_plot[149:185], ncol=6)), width=40,
+       height=40, filename=paste0(directory_output, "common_enriched_motif_clust_plot5.png"))
+ggsave(plot= do.call("grid.arrange", c(common_motif_plot[186:222], ncol=6)), width=40,
+       height=40, filename=paste0(directory_output, "common_enriched_motif_clust_plot6.png"))
+ggsave(plot= do.call("grid.arrange", c(common_motif_plot[223:259], ncol=6)), width=40,
+       height=40, filename=paste0(directory_output, "common_enriched_motif_clust_plot7.png"))
+ggsave(plot= do.call("grid.arrange", c(unique_motif_plot[260:296], ncol=6)), width=40,
+       height=40, filename=paste0(directory_output, "common_enriched_motif_clust_plot8.png"))
+ggsave(plot= do.call("grid.arrange", c(common_motif_plot[297:337], ncol=6)), width=40,
+       height=40, filename=paste0(directory_output, "common_enriched_motif_clust_plot9.png"))
+
+```
+
+
+
+<br><br><br>
+
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results = "hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+
