@@ -1,7 +1,7 @@
 ---
 title: "scATACseq_R_DWNS_GeneActivity_GeneCoverage.Rmd"
 author: "Laëtitia"
-date: "24/08/2022"
+date: "2023-03-28"
 subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
@@ -39,7 +39,7 @@ library(tidyr)
 
 ```
 
-```{r, Working directories and external script}
+```{r, Working directories and external script, eval=FALSE}
 
 directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
 start_time = Sys.time()
@@ -57,15 +57,24 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 
 ```
 
-```{r, Input loading}
+```{r, Input loading, eval=FALSE}
 
 dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_NormalizationReduction/"))
 seurat_obj = readRDS(paste0(dir, "/", "merged_seurat_qc_filter_annot_normreduc.rds"))
-# mat =readRDS("/home/lracine/Documents/Git_Differentiation_Metabolism/exp/scATACseq_R_DWNS_GeneActivity_GeneCoverage/20230412/mat.rds")
 
 # Extract localisation of hg38 annotation (see annotationsFiles_createGrange.Rmd)
 dir = pic_last_dir(paste0(directory, "exp/AnnotationsFiles_createGrange/"))
 annot_hg38 = readRDS(paste0(dir, "/", "hg38_annotations_gr.rds"))
+
+```
+
+```{r, for IFBcluster}
+
+start_time = Sys.time()
+directory_output = "/shared/ifbstor1/home/lracine/scATACseq/scATACseq_R_DWNS_GeneActivity_GeneCoverage"
+seurat_obj = readRDS("/shared/ifbstor1/home/lracine/scATACseq/merged_seurat_qc_filter_annot_normreduc.rds")
+annot_hg38 = readRDS("/shared/ifbstor1/home/lracine/scATACseq/hg38_annotations_gr.rds")
+source(file = "/shared/ifbstor1/home/lracine/functions_constants.R")
 
 ```
 
@@ -133,14 +142,14 @@ It is just an indicative measurement.
 
 **Create the gene activity matrix**  
 "To create a gene activity matrix, we extract gene coordinates and extend them to include the 2 kb upstream region (as promoter accessibility is often correlated with gene expression). We then count the number of fragments for each cell that map to each of these regions."  
-```{r, Really slow, eval = FALSE}
+```{r, Really slow}
 
 gene.activities <- GeneActivity(seurat_obj)
 saveRDS(gene.activities, paste0(directory_output, "gene.activities.rds"))
 
 ```
 
-```{r}
+```{r, eval=FALSE}
 gene.activities = readRDS(paste0(directory_output, "gene.activities.rds"))
 ```
 
@@ -242,7 +251,7 @@ ggsave(plot = plot_mettca,
 
 ```
 
-```{r}
+```{r, results="hide"}
 
 list_to_keep = c("directory_output", "start_time", "color_code", "seurat_obj",
                  "list_genes_metabo", "list_genes_metabo_glut", "list_genes_TF_hemato",
@@ -356,6 +365,14 @@ for(i in 1:length(list_gene)) {
 
 ```
 
+```{r, results="hide"}
+
+list_to_keep = c("directory_output", "start_time", "color_code", "seurat_obj")
+rm(list = setdiff(ls(), list_to_keep))
+gc()
+
+```
+
 
 
 <br><br><br>
@@ -364,26 +381,147 @@ for(i in 1:length(list_gene)) {
 
 # Peaks distribution on chromosomes
 
-Really slow part, require a lot of memory. If possible, run it on cluster or big computer. 
+<br>
+
+We extracted the size of each chromosome (https://genome.ucsc.edu/cgi-bin/hgTracks?chromInfoPage=).   
+
 ```{r}
 
-dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_NormalizationReduction/"))
-mat = readRDS(paste0(dir, "/", "mat_fragments.rds"))
+chrom_gr = data.frame(seqnames = c("chr1", "chr2", "chr3", "chr4", "chr5", "chr6", 
+                                   "chr7", "chr8", "chr9", "chr10", "chr11", 
+                                   "chr12", "chr13", "chr14", "chr15", "chr16", 
+                                   "chr17", "chr18", "chr19", "chr20", "chr21", 
+                                   "chr22", "chrX", "chrY"),
+                      start = rep(0, 24),
+                      end = c(248956422, 242193529, 198295559, 190214555,
+                              181538259,170805979,159345973,145138636,138394717,
+                              133797422, 135086622,133275309,114364328,107043718,
+                              101991189,90338345,83257441,80373285,58617616,
+                              64444167,46709983,50818468,156040895,57227415))
 
 ```
 
 <br>
 
-We sample 500 cells of each condition to plot.  
+**Possibility 1 : use karyoplotR**  
+We first tried to use karyoplotR as we did for bulkATACseq. The problem is that it uses only the list of peaks inside the Grange of the seurat object and not the matrix count. Here, we have the exact same list of peaks for all the conditions. In bulkATACseq, it was not a problem because every condition had its own set of peaks, the common list of peaks was done after for multiparametric and differential analysis only. For scATACseq with common list of peaks, we need to use the fragments repartition  so we try the *kpPlotBAMDensity* function.  
+https://bernatgel.github.io/karyoploter_tutorial//Tutorial/PlotBAMCoverage/PlotBAMCoverage.html  
+"This function plots the actual base-level coverage and so it’s use is limited to relatively small regions. By default it will error if we try to plot a region larger than 1Mb, but this is configurable and with sufficient time and memory there should be no hard limit the size of the plot region, we simply should change the max.valid.region.size to the size of the region we want to plot. However, if we want to plot a global view of coverage along the whole genome, for example, we should consider using kpPlotBAMDensity instead, which is much faster."  
+
+=> to try on external cluster
 ```{r}
 
+path_bam_CTRL = paste0(directory, "/data/scATAcseq/CTRL_possorted_bam.bam")
+path_bam_DON = paste0(directory, "/data/scATAcseq/DON_possorted_bam.bam")
+path_bam_2DG = paste0(directory, "/data/scATAcseq/CTRL_possorted_bam.bam")
+path_bam_AOA = paste0(directory, "/data/scATAcseq/CTRL_possorted_bam.bam")
+
+list_bam_plot = list() 
+
+for(i in 1:nrow(chrom_gr)){
+  
+  chr = chrom_gr$chr[i]
+  max = (chrom_gr %>% dplyr::filter(seqnames == chr))$end
+
+  # find max value of peak to put the same axe on all coverages
+  kp <- plotKaryotype(genome = "hg38", chromosomes = chr)
+  temp <- kpPlotBAMCoverage(kp, data=path_bam_CTRL, max.valid.region.size = max)
+  max = temp$latest.plot$computed.values$max.coverage
+  temp <- kpPlotBAMCoverage(kp, data=path_bam_DON, max.valid.region.size = max)
+  if (max < temp$latest.plot$computed.values$max.coverage) {max = temp$latest.plot$computed.values$max.coverage}
+  temp <- kpPlotBAMCoverage(kp, data=path_bam_2DG, max.valid.region.size = max)
+  if (max < temp$latest.plot$computed.values$max.coverage) {max = temp$latest.plot$computed.values$max.coverage}
+  temp <- kpPlotBAMCoverage(kp, data=path_bam_AOA, max.valid.region.size = max)
+  if (max < temp$latest.plot$computed.values$max.coverage) {max = temp$latest.plot$computed.values$max.coverage}
+  rm(kp)
+    
+  # draw coverage
+  
+  png(filename = paste0(directory_output, "coverage_kpbam_", chrom, ".png"),
+       width = 1000, height = 1400)
+  
+  kp <- plotKaryotype(genome = "hg38", chromosomes = chr)
+  kpAddBaseNumbers(kp, tick.dist = 50000, add.units = TRUE)
+  kp <- kpPlotBAMCoverage(kp, data=path_bam_CTRL, max.valid.region.size = max, col = color_code["CTRL"], r1=0.4)
+  kpAddLabels(kp, "CTRL", r0=0, r1=0.5, label.margin = 0.05)
+  kp <- kpPlotBAMCoverage(kp, data=path_bam_DON, max.valid.region.size = max, col = color_code["DON"], r1=0.6)
+  kpAddLabels(kp, "DON", r0=0.5, r1=1, label.margin = 0.05)
+  kp <- kpPlotBAMCoverage(kp, data=path_bam_2DG, max.valid.region.size = max, col = color_code["2DG"], r1=0.8)
+  kpAddLabels(kp, "2DG", r0=1, r1=1.5, label.margin = 0.05)
+  kp <- kpPlotBAMCoverage(kp, data=path_bam_AOA, max.valid.region.size = max, col = color_code["AOA"], r1=1)
+  kpAddLabels(kp, "AOA", r0=1.5, r1=2, label.margin = 0.05)
+
+  dev.off()
+  
+}
+
+```
+
+<br>
+
+**Possibility 2 : use CoveragePlot**  
+Our problem here is that the chromosomes are too big to be represented in only one plot with the CoveragePlot function. It would require such a big amount of memory and end with an unreadable plot (see discussion : https://stackoverflow.com/questions/14629607/long-vector-plot-coverage-plot-in-r). We try to split the chromosomes plot in multiple windows but it's not really readable.  
+Functional but extremely long !  
+
+```{r}
+
+list_plot_chr = list()
+
+for (i in 1:nrow(chrom_gr)) {
+  
+  limits = chrom_gr[i,]
+  chr = limits$seqnames
+  chr_end = limits$end
+  start = 0
+  end = 0
+  list_temp = list()
+  
+  for (j in 1:100) {
+    
+    end = end + round(chr_end/100)
+    region = paste0(chr, "-", start, "-", end)
+
+    list_temp[[j]] = CoveragePlot(object = seurat_obj,
+                                  assay = "peaks",
+                                  region = region,
+                                  extend.upstream = 0,
+                                  extend.downstream = 0,
+                                  peaks = TRUE,
+                                  tile = TRUE)
+    
+    start = end
+    
+  }
+  
+  list_plot_chr[[chr]] = list_temp
+}
+
+```
+
+
+<br>
+
+**Possibility 3 : calcul average number of fragments per cell per condition **  
+Require a lot of memory. Not possible on basic computer, run it on external cluster.
+```{r, eval=FALSE}
+dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_NormalizationReduction/"))
+mat = readRDS(paste0(dir, "/", "mat_fragments.rds"))
+```
+
+```{r,load mat on IFBcluster}
+mat = readRDS("/shared/ifbstor1/home/lracine/scATACseq/mat.rds")
+```
+
+```{r}
+
+# we sample 100 cells of each condition
 list_graph = list()
 list_graph_stat = list()
 
 for (i in 1:length(unique(seurat_obj$orig.ident))) {
   
   cond = unique(seurat_obj$orig.ident)[i]
-  cells_to_keep = sample(str_subset(colnames(mat), cond), 500)
+  cells_to_keep = sample(str_subset(colnames(mat), cond), 100)
   mat_cond = mat %>% dplyr::select(all_of(cells_to_keep))
   mat_cond = mat_cond %>% rownames_to_column("peak_name")
   mat_cond = mat_cond %>% separate(col = peak_name, 
@@ -425,11 +563,28 @@ for (i in 1:length(unique(seurat_obj$orig.ident))) {
   
 }
 
+rm(mat, mat_cond, mat_stat)
+saveRDS(list_graph, paste0(directory_output, "list_graph.rds"))
+saveRDS(list_graph_stat, paste0(directory_output, "list_graph_stat.rds"))
+
 ```
 
-```{r}
+```{r, fig.height=14, fig.width=20}
 
+to_draw = unlist(list_graph, recursive=FALSE)
+do.call("grid.arrange", c(to_draw, ncol = 3))
 
+to_draw_stat = unlist(list_graph_stat, recursive=FALSE)
+do.call("grid.arrange", c(to_draw_stat, ncol = 3))
+
+```
+
+```{r, fig.show="hide"}
+
+ggsave(plot = do.call("grid.arrange", c(to_draw, ncol = 3)),
+       filename = paste0(directory_output, "chromosome_distribution_nbfrag.svg"))
+ggsave(plot = do.call("grid.arrange", c(to_draw_stat, ncol = 3)),
+       filename = paste0(directory_output, "chromosome_distribution_stat.svg"))
 
 ```
 
