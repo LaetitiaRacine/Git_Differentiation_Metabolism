@@ -132,30 +132,43 @@ clust_umap | ind_umap[[1]] | ind_umap[[2]] | ind_umap[[3]] | ind_umap[[4]]
 
 # Extract list of DA peaks for each condition compare to all others
 
-We used the FindAllMarkers function to extract differentially accessible peaks for each condition. This function is really slow so we run it on IFB external cluster to have more performance. We used the slurm job on long partition with memory 100GB accessible.  
-```{r, eval=FALSE}
+We used the FindAllMarkers function to extract differentially accessible peaks for each condition. This function is really slow so we run it on IFB external cluster to have more performance. We used the slurm job on long partition with memory 100GB accessible. https://satijalab.org/seurat/reference/findallmarkers    
+```{r, Markers FAM on IFB, eval=FALSE}
 
-# DefaultAssay(seurat_obj) <- 'peaks'
-# Idents(seurat_obj) = "orig.ident"
-# 
-# cond_markers = FindAllMarkers(object = seurat_obj,
-#                       assay = "peaks",
-#                       features = NULL, #use all genes
-#                       test.use = "LR",
-#                       slot = "data",
-#                       only.pos = TRUE,
-#                       min.pct = 0.05, 
-#                       random.seed = 42,
-#                       verbose = TRUE)
-# 
-# saveRDS(object = cond_markers, paste0(directory_output, "cond_markers_202304113.rds"))
+DefaultAssay(seurat_obj) <- 'peaks'
+Idents(seurat_obj) = "orig.ident"
+
+cond_markers = FindAllMarkers(object = seurat_obj,
+                              assay = "peaks",
+                              features = NULL, # use all genes
+                              logfcthreshold = 0.25,
+                              test.use = "LR", # not default
+                              slot = "data",
+                              min.pct = 0.05, # not default
+                              min.diff.pct = -Inf,
+                              node = NULL,
+                              verbose = TRUE,
+                              only.pos = TRUE, # to keep only positives markers
+                              max.cells.per.ident = Inf,
+                              random.seed = 42, # not default
+                              latent.vars = NULL,
+                              min.cells.feature = 3,
+                              min.cells.group = 3,
+                              mean.fxn = NULL,
+                              fc.name = NULL,
+                              base = 2,
+                              return.thresh = 2, # to remove threshold on pvalue
+                              densify = FALSE)
+
+saveRDS(object = cond_markers, paste0(directory_output, "cond_markers_FAM_",
+                              current_date, ".rds"))
 
 ```
 
 ```{r}
 
 # Load the cond_markers table from IFBcluster
-cond_markers = readRDS(paste0(directory, "data/scATACseq/cond_markers_202304113.rds"))
+cond_markers = readRDS(paste0(directory, "data/scATACseq/cond_markers_FAM_20230416.rds"))
 cat("Number of DA peaks for each condition : \n")
 table(cond_markers$cluster)
 
@@ -170,79 +183,146 @@ saveRDS(cond_markers, paste0(directory_output, "cond_markers.rds"))
 
 <br>
 
-We tried in parallel to use FindMarkers manually and we compared the results. We obtained really close results between FindMarkers and FindAllMarkers but the number of peaks is bigger with the first function. Indeed, it must have a default threshold in FindAllMarkers that we don't have in FindMarkers. For the rest of the analysis, we are going to use the FindAllMarkers results.  
-```{r, eval=FALSE}
+We tried in parallel to use FindMarkers manually and we compared the results. We obtained the same results (it all depends of the value of return.thresh parameter in FindAllMarkers). The advantage of this method is that there are intermediate savings. If something happens between each conditions calculation, we still have the previous results saved whereas with FindAllMarkers, it's more automatic but we loose everything.   https://satijalab.org/seurat/reference/findmarkers      
+```{r, Markers FM on IFB, eval=FALSE}
 
-# cond_markers_CTRL = FindMarkers(object = seurat_obj,
-#                                 assay = "peaks",
-#                                 features = NULL, #use all genes
-#                                 test.use = "LR",
-#                                 slot = "data",
-#                                 only.pos = TRUE,
-#                                 min.pct = 0.05, #default
-#                                 random.seed = 42,
-#                                 verbose = TRUE,
-#                                 ident.1 = "CTRL",
-#                                 ident.2 = c("DON", "2DG", "AOA")) 
-# 
-# cond_markers_CTRL$condition = "CTRL"
-# saveRDS(cond_markers_CTRL, paste0(directory_output, "cond_markers_CTRL.rds"))
-# 
-# cond_markers_DON = FindMarkers(object = seurat_obj,
-#                                assay = "peaks",
-#                                features = NULL, #use all genes
-#                                test.use = "LR",
-#                                slot = "data",
-#                                only.pos = TRUE,
-#                                min.pct = 0.05, #default
-#                                random.seed = 42,
-#                                verbose = TRUE,
-#                                ident.1 = "DON",
-#                                ident.2 = c("CTRL", "2DG", "AOA")) 
-# 
-# cond_markers_DON$condition = "DON"
-# saveRDS(cond_markers_DON, paste0(directory_output, "cond_markers_DON.rds"))
-# 
-# cond_markers_2DG = FindMarkers(object = seurat_obj,
-#                                assay = "peaks",
-#                                features = NULL, #use all genes
-#                                test.use = "LR",
-#                                slot = "data",
-#                                only.pos = TRUE,
-#                                min.pct = 0.05, #default
-#                                random.seed = 42,
-#                                verbose = TRUE,
-#                                ident.1 = "2DG",
-#                                ident.2 = c("DON", "CTRL", "AOA")) 
-# 
-# cond_markers_2DG$condition = "2DG"
-# saveRDS(cond_markers_2DG, paste0(directory_output, "cond_markers_2DG.rds"))
-# 
-# cond_markers_AOA = FindMarkers(object = seurat_obj,
-#                                assay = "peaks",
-#                                features = NULL, #use all genes
-#                                test.use = "LR",
-#                                slot = "data",
-#                                only.pos = TRUE,
-#                                min.pct = 0.05, #default
-#                                random.seed = 42,
-#                                verbose = TRUE,
-#                                ident.1 = "AOA",
-#                                ident.2 = c("DON", "2DG", "CTRL")) 
-# 
-# cond_markers_AOA$condition = "AOA"
-# saveRDS(cond_markers_AOA, paste0(directory_output, "cond_markers_AOA.rds"))
-# 
-# cond_markers = rbind(cond_markers_CTRL, cond_markers_DON,
-#                      cond_markers_AOA, cond_markers_2DG)
-# 
-# cond_markers = cond_markers %>%
-#   tibble::rownames_to_column("peak_name") %>%
-#   tidyr::separate(col = "peak_name", into = c("seqnames", "start", "end"), remove=FALSE)
-# 
-# saveRDS(cond_markers, paste0(directory_output, "cond_markers.rds"))
+DefaultAssay(seurat_obj) <- 'peaks'
+Idents(seurat_obj) = "orig.ident"
+
+cond_markers_CTRL = FindMarkers(object = seurat_obj,
+                                ident.1 = "CTRL",
+                                ident.2 = c("DON", "2DG", "AOA"),
+                                group.by = NULL,
+                                subset.ident = NULL,
+                                assay = "peaks",
+                                slot = "data",
+                                reduction = NULL,
+                                features = NULL, #use all genes
+                                logfc.threshold = 0.25,
+                                test.use = "LR",
+                                min.pct = 0.05,
+                                min.diff.pct = -Inf,
+                                verbose = TRUE,
+                                only.pos = TRUE,
+                                max.cells.per.ident = Inf,
+                                random.seed = 42,
+                                latent.vars = NULL,
+                                min.cells.feature = 3,
+                                min.cells.group = 3,
+                                mean.fxn = NULL,
+                                fc.name = NULL,
+                                base = 2,
+                                densify = FALSE)
+
+cond_markers_CTRL$condition = "CTRL"
+saveRDS(cond_markers_CTRL, paste0(directory_output,
+                                  "cond_markers_CTRL_",
+                                  current_date,
+                                  ".rds"))
+
+cond_markers_DON = FindMarkers(object = seurat_obj,
+                               ident.1 = "DON",
+                               ident.2 = c("CTRL", "2DG", "AOA"),
+                               group.by = NULL,
+                               subset.ident = NULL,
+                               assay = "peaks",
+                               slot = "data",
+                               reduction = NULL,
+                               features = NULL, #use all genes
+                               logfc.threshold = 0.25,
+                               test.use = "LR",
+                               min.pct = 0.05,
+                               min.diff.pct = -Inf,
+                               verbose = TRUE,
+                               only.pos = TRUE,
+                               max.cells.per.ident = Inf,
+                               random.seed = 42,
+                               latent.vars = NULL,
+                               min.cells.feature = 3,
+                               min.cells.group = 3,
+                               mean.fxn = NULL,
+                               fc.name = NULL,
+                               base = 2,
+                               densify = FALSE)
+cond_markers_DON$condition = "DON"
+saveRDS(cond_markers_DON, paste0(directory_output,
+                                 "cond_markers_DON_",
+                                 current_date, ".rds"))
+
+cond_markers_2DG = FindMarkers(object = seurat_obj,
+                               ident.1 = "2DG",
+                               ident.2 = c("CTRL", "DON", "AOA"),
+                               group.by = NULL,
+                               subset.ident = NULL,
+                               assay = "peaks",
+                               slot = "data",
+                               reduction = NULL,
+                               features = NULL, #use all genes
+                               logfc.threshold = 0.25,
+                               test.use = "LR",
+                               min.pct = 0.05,
+                               min.diff.pct = -Inf,
+                               verbose = TRUE,
+                               only.pos = TRUE,
+                               max.cells.per.ident = Inf,
+                               random.seed = 42,
+                               latent.vars = NULL,
+                               min.cells.feature = 3,
+                               min.cells.group = 3,
+                               mean.fxn = NULL,
+                               fc.name = NULL,
+                               base = 2,
+                               densify = FALSE)
+
+cond_markers_2DG$condition = "2DG"
+saveRDS(cond_markers_2DG, paste0(directory_output,
+                                 "cond_markers_2DG_",
+                                 current_date, ".rds"))
+
+cond_markers_AOA = FindMarkers(object = seurat_obj,
+                               ident.1 = "AOA",
+                               ident.2 = c("CTRL", "2DG", "DON"),
+                               group.by = NULL,
+                               subset.ident = NULL,
+                               assay = "peaks",
+                               slot = "data",
+                               reduction = NULL,
+                               features = NULL, #use all genes
+                               logfc.threshold = 0.25,
+                               test.use = "LR",
+                               min.pct = 0.05,
+                               min.diff.pct = -Inf,
+                               verbose = TRUE,
+                               only.pos = TRUE,
+                               max.cells.per.ident = Inf,
+                               random.seed = 42,
+                               latent.vars = NULL,
+                               min.cells.feature = 3,
+                               min.cells.group = 3,
+                               mean.fxn = NULL,
+                               fc.name = NULL,
+                               base = 2,
+                               densify = FALSE)
+
+cond_markers_AOA$condition = "AOA"
+saveRDS(cond_markers_AOA, paste0(directory_output,
+                                 "cond_markers_AOA_",
+                                 current_date, ".rds"))
+
+cond_markers = rbind(cond_markers_CTRL, cond_markers_DON,
+                     cond_markers_AOA, cond_markers_2DG)
+
+cond_markers = cond_markers %>%
+  tibble::rownames_to_column("peak_name") %>%
+  tidyr::separate(col = "peak_name", into = c("seqnames", "start", "end"), remove=FALSE)
+
+saveRDS(cond_markers, paste0(directory_output, "cond_markers.rds"))
 
 ```
+
+<br>
+
+See branch FAM_FM_IFBcluster on git project to access .R and .sh scripts used for this part.    
 
 ```{r, results="hide"}
 
@@ -299,6 +379,9 @@ mcols(cond_gr)$type[subjectHits(overlaps)] <- mcols(annot_gr)$type[queryHits(ove
 tab_cond = data.frame(cond_gr)
 table(tab_cond$type, tab_cond$condition)
 
+# save 
+write.csv2(tab_cond, paste0(directory_output, "tab_cond_DApeaks_annotation.csv"), row.names = FALSE)
+
 ```
 
 ```{r, results="hide"}
@@ -354,6 +437,10 @@ summary_cond = data.frame(condition = c("2DG", "AOA", "CTRL", "DON"),
 summary_cond %>%
   kable() %>%
   kable_styling()
+
+# save 
+write.csv2(top20_pos, paste0(directory_output, "top20_pos.csv"), row.names = FALSE)
+write.csv2(top20_pos_filtered, paste0(directory_output, "top20_pos_filtered.csv"), row.names = FALSE)
 
 ```
 
@@ -517,7 +604,7 @@ tab_ego %>%
 ggsave(plot = do.call("grid.arrange", c(list_dotplot, ncol=2)), width=22,
        height=30, filename=paste0(directory_output, "GO_DApeaks_cond.svg"))
 
-write.csv2(tab_ego, paste0(directory_output, "tab_go_DApeaks_cond.csv"), row.names=FALSE)
+write.csv2(tab_ego, paste0(directory_output, "tab_GO_DApeaks_cond.csv"), row.names=FALSE)
 
 ```
 

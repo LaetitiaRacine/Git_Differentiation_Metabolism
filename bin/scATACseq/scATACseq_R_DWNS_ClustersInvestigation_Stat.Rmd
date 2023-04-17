@@ -46,8 +46,10 @@ start_time = Sys.time()
 # Create a unique folder for output corresponding to the date of the day
 current_date = format(Sys.time(), "%Y%m%d")
 dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_ClustersInvestigation_Stat/"))
-dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_ClustersInvestigation_Stat/", current_date))
-directory_output = paste0(directory,"exp/","scATACseq_R_DWNS_ClustersInvestigation_Stat/", current_date, "/")
+dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_ClustersInvestigation_Stat/", 
+                         current_date))
+directory_output = paste0(directory,"exp/","scATACseq_R_DWNS_ClustersInvestigation_Stat/", 
+                          current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
@@ -85,8 +87,8 @@ for (i in 1:length(unique(seurat_merged$orig.ident))) {
   others_cond_group = paste(others_cond, collapse=", ")
   
   # Sort cell according to their condition
-  cell_highlight = unlist(CellsByIdentities(object = seurat_merged, idents = highlight_cond))
-  cell_nohighlight = unlist(CellsByIdentities(object = seurat_merged, idents = others_cond))
+  cell_highlight = unlist(CellsByIdentities(object= seurat_merged, idents= highlight_cond))
+  cell_nohighlight = unlist(CellsByIdentities(object= seurat_merged, idents= others_cond))
   
   # Plot 
   plot_umap = DimPlot(object = seurat_merged,
@@ -525,35 +527,35 @@ tab_distripeaks_stat = tab_distripeaks_clust %>%
 
 ```{r, fig.width = 16, fig.height = 16}
 
-med_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y = median_nbpeaks_percell, fill = clust)) +
+med_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y=median_nbpeaks_percell, fill=clust)) +
   geom_col() +
   facet_wrap(facets = .~peaks_category) +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         legend.position = "none")
 
-mean_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y = mean_nbpeaks_percell, fill = clust)) +
+mean_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y=mean_nbpeaks_percell, fill=clust)) +
   geom_col() +
   facet_wrap(facets = .~peaks_category) +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         legend.position = "none")
 
-max_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y = max_nbpeaks_percell, fill = clust)) +
+max_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y=max_nbpeaks_percell, fill=clust)) +
   geom_col() +
   facet_wrap(facets = .~peaks_category) +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         legend.position = "none")
 
-min_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y = min_nbpeaks_percell, fill = clust)) +
+min_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y=min_nbpeaks_percell, fill=clust)) +
   geom_col() +
   facet_wrap(facets = .~peaks_category) +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),
         legend.position = "none")
 
-var_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y = var_nbpeaks_percell, fill = clust)) +
+var_plot = ggplot(tab_distripeaks_stat, aes(x=clust, y=var_nbpeaks_percell, fill=clust)) +
   geom_col() +
   facet_wrap(facets = .~peaks_category) +
   theme(axis.text.x = element_blank(),

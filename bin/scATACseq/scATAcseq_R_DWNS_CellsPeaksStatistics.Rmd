@@ -43,8 +43,10 @@ start_time = Sys.time()
 # Create a unique folder for output corresponding to the date of the day
 current_date = format(Sys.time(), "%Y%m%d")
 dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_CellsPeaksStatistics/"))
-dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_CellsPeaksStatistics/", current_date))
-directory_output = paste0(directory,"exp/","scATACseq_R_DWNS_CellsPeaksStatistics/", current_date, "/")
+dir.create(path = paste0(directory,"exp/","scATACseq_R_DWNS_CellsPeaksStatistics/", 
+                         current_date))
+directory_output = paste0(directory,"exp/","scATACseq_R_DWNS_CellsPeaksStatistics/", 
+                          current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
@@ -140,7 +142,7 @@ saveRDS(binary_mat, paste0(directory_output, "list_binary_matrix.rds"))
 ```{r, Number of peaks per cell, results = 'hold',  fig.width = 12, fig.height = 10}
 
 # Histogram 
-plot_nbpeaks_cell = ggplot(data = global_tab_cell, aes(x = NbPeaksInThisCell, fill = Condition)) +
+plot_nbpeaks_cell = ggplot(data=global_tab_cell, aes(x=NbPeaksInThisCell, fill=Condition)) +
   geom_histogram(binwidth = 500, color = "black", alpha = 0.5) +
   scale_fill_manual(values = color_code, limits = force) +
   facet_wrap(facets = .~Condition) +
@@ -179,7 +181,7 @@ tab_stat_cell %>%
 
 write.csv2(x = global_tab_cell, file = paste0(directory_output, "global_tab_cell.csv"))
 write.csv2(x = tab_stat_cell, file = paste0(directory_output, "statistic_tab_cell.csv"))
-ggsave(plot = plot_nbpeaks_cell, filename = paste0(directory_output, "nbpeaks_per_cell_quali_plot.svg"))
+ggsave(plot=plot_nbpeaks_cell, filename=paste0(directory_output, "nbpeaks_per_cell_quali_plot.svg"))
 
 ```
 

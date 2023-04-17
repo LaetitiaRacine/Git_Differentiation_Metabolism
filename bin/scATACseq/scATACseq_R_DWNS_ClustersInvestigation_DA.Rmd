@@ -131,40 +131,110 @@ clust_umap | ind_umap[[1]] | ind_umap[[2]] | ind_umap[[3]] | ind_umap[[4]]
 # Extract list of DA peaks for each cluster compare to all others
 
 Compare each cluster against all others and output the peaks that are differentially expressed/present.  
-This part of the code require a huge amount of memory and is extremely slow. We can only perform it on external cluster and it takes more than 24h. We did it on IFB (slurm job on long partition with memory 100GB accessible) and we saved it in the data folder.  "For sparse data (such as scATAC-seq), we find it is often necessary to lower the min.pct threshold in FindMarkers() from the default (0.1, which was designed for scRNA-seq data)."  
-```{r, eval=FALSE}
+This part of the code require a huge amount of memory and is extremely slow. We can only perform it on external cluster and it takes really long time. We did it on IFB (slurm job on long partition with memory 100GB accessible) and we saved it in the data folder.     
+"For sparse data (such as scATAC-seq), we find it is often necessary to lower the min.pct threshold in FindMarkers() from the default (0.1, which was designed for scRNA-seq data)."  
+```{r, Markers on IFB, eval=FALSE}
 
-# DefaultAssay(seurat_merged) <- 'peaks'
-# Idents(seurat_merged) = "peaks_snn_res.0.25"
-# 
-# clust_markers = FindAllMarkers(object = seurat_merged,
-#                       assay = "peaks",
-#                       features = NULL, #use all genes
-#                       test.use = "LR",
-#                       slot = "data",
-#                       only.pos = TRUE,
-#                       min.pct = 0.05, #default
-#                       random.seed = 42,
-#                       verbose = TRUE)
-# 
-# saveRDS(object = clust_markers, paste0(directory_output, "clust_markers_20230412.rds"))
+################################
+# Possibility 1 : FindAllMarkers
+################################
+
+DefaultAssay(seurat_obj) <- 'peaks'
+Idents(seurat_obj) = "peaks_snn_res.0.25"
+
+clust_markers = FindAllMarkers(object = seurat_obj,
+                      assay = "peaks",
+                      features = NULL, #use all genes
+                      logfcthreshold = 0.25,
+                      test.use = "LR", # not default
+                      slot = "data",
+                      min.pct = 0.05, # not default
+                      min.diff.pct = -Inf,
+                      node = NULL,
+                      verbose = TRUE,
+                      only.pos = TRUE,
+                      max.cells.per.ident = Inf,
+                      random.seed = 42, # not default
+                      latent.vars = NULL,
+                      min.cells.feature = 3,
+                      min.cells.group = 3,
+                      mean.fxn = NULL,
+                      fc.name = NULL,
+                      base = 2,
+                      return.thresh = 2,
+                      densify = FALSE)
+
+saveRDS(object = clust_markers, paste0(directory_output,
+                              "clust_markers_FAM_",
+                              current_date,
+                              ".rds"))
+
+#############################
+# Possibility 2 : FindMarkers
+#############################
+
+## Example with cluster 0 => do it for each cluster
+
+DefaultAssay(seurat_obj) <- 'peaks'
+Idents(seurat_obj) = "peaks_snn_res.0.25"
+
+clust_markers_choice = FindMarkers(object = seurat_obj,
+                                   ident.1 = 0,
+                                   ident.2 = setdiff(seq(0,15), 0),
+                                   group.by = NULL,
+                                   subset.ident = NULL,
+                                   assay = "peaks",
+                                   slot = "data",
+                                   reduction = NULL,
+                                   features = NULL, #use all genes
+                                   logfc.threshold = 0.25,
+                                   test.use = "LR",
+                                   min.pct = 0.05,
+                                   min.diff.pct = -Inf,
+                                   verbose = TRUE,
+                                   only.pos = TRUE,
+                                   max.cells.per.ident = Inf,
+                                   random.seed = 42,
+                                   latent.vars = NULL,
+                                   min.cells.feature = 3,
+                                   min.cells.group = 3,
+                                   mean.fxn = NULL,
+                                   fc.name = NULL,
+                                   base = 2,
+                                   densify = FALSE)
+
+saveRDS(clust_markers_choice, paste0(directory_output,
+                                  "clust_markers_",
+                                  current_date,
+                                  ".rds"))
 
 ```
 
+<br>
+
+We decided to use FindMarkers instead of FindAllMarkers to be able to parrallelize on multiple cores on the cluster. We showed previoulsy that with the right parameters, they give the same results.  
 ```{r}
 
-# Load the clust_markers table from IFBcluster
-clust_markers = readRDS(paste0(directory, "data/scATACseq/clust_markers_20230412.rds"))
+# Load the clust_markers from IFBcluster
+files_clust_markers = list.files(paste0(directory, "data/scATACseq/"), pattern = "clust_markers_", full.names = TRUE)
+list_clust_markers = lapply(files_clust_markers, readRDS)
+list_clust_markers = lapply(list_clust_markers, function(x) { x = x %>% rownames_to_column("peak_name")})
+names(list_clust_markers) = paste0("cluster_", str_extract(files_clust_markers, pattern = "(?<=markers_)[:digit:]+(?=_2023)"))
+clust_markers = bind_rows(list_clust_markers, .id = 'cluster')
+
 cat("Number of DA peaks for each cluster : \n")
 table(clust_markers$cluster)
 
 clust_markers = clust_markers %>%
-  dplyr::rename("peak_name" = "gene") %>%
   tidyr::separate(col = "peak_name", into = c("seqnames", "start", "end"), remove=FALSE)
 
 saveRDS(clust_markers, paste0(directory_output, "clust_markers"))
 
 ```
+
+<br>
+
+See branch FAM_FM_IFBcluster on git project to access .R and .sh scripts used for this part.  
 
 ```{r, results="hide"}
 
@@ -226,6 +296,9 @@ mcols(clust_gr)$type[subjectHits(overlaps)] <- mcols(annot_gr)$type[queryHits(ov
 tab_clust = data.frame(clust_gr)
 table(tab_clust$type, tab_clust$cluster)
 
+# save 
+write.csv2(tab_clust, paste0(directory_output, "tab_clust_DApeaks_annotation.csv"), row.names = FALSE)
+
 ```
 
 ```{r, results="hide"}
@@ -280,6 +353,11 @@ summary_clust = data.frame(cluster = 0:15,
 summary_clust %>% 
   kable() %>% 
   kable_styling()
+
+
+# save 
+write.csv2(top20_pos, paste0(directory_output, "top20_pos.csv"), row.names = FALSE)
+write.csv2(top20_pos_filtered, paste0(directory_output, "top20_pos_filtered.csv"), row.names = FALSE)
 
 ```
 
@@ -450,7 +528,7 @@ tab_ego %>%
 ggsave(plot = do.call("grid.arrange", c(list_dotplot, ncol=4)), width=40,
        height=30, filename=paste0(directory_output, "GO_DApeaks_clust.svg"))
 
-write.csv2(tab_ego, paste0(directory_output, "tab_go_DApeaks_clust.csv"), row.names=FALSE)
+write.csv2(tab_ego, paste0(directory_output, "tab_GO_DApeaks_clust.csv"), row.names=FALSE)
 
 ```
 
