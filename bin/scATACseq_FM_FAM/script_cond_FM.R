@@ -5,12 +5,13 @@ library(stringr)
 library(ggplot2)
 library(dplyr)
 library(kableExtra)
-library(future)
-options(future.globals.maxSize=2*2^30)
-plan(strategy = "multicore", workers = 6)
+# library(future)
+# options(future.globals.maxSize=2*2^30)
+# plan(strategy = "multicore", workers = 6)
 
-directory_output = "/shared/projects/humancd34_diff_rna_atacseq/scATACseq/exp"
-seurat_merged = readRDS("/shared/projects/humancd34_diff_rna_atacseq/data/merged_seurat_qc_filter_annot_normreduc.rds")
+print("script_cond_FM")
+directory_output = "/shared/projects/humancd34_diff_rna_atacseq/scATACseq/exp/"
+seurat_merged = readRDS("/shared/projects/humancd34_diff_rna_atacseq/scATACseq/data/merged_seurat_qc_filter_annot_normreduc.rds")
 current_date = format(Sys.time(), "%Y%m%d")
 DefaultAssay(seurat_merged) <- 'peaks'
 Idents(seurat_merged) = "orig.ident"
