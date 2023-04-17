@@ -20,7 +20,7 @@ rule Create_Seurat_Object :
 		fragment = "data/scATACseq/{sample}_fragments.tsv.gz",
 		metadata = "data/scATACseq/{sample}_singlecell.csv"
 	output : "exp/scATACseq_SKMK_preprocessing/{sample}_seurat.rds"
-	conda : "env/scATACseq_10X_env.yaml"
+	conda : "env/scATACseq_10X_env_locked.yaml"
 	shell : """ Rscript bin/scATACseq/scATACseq_SKMK_CreateSeuratObject.R {input.matrixh5} {input.fragment} {input.metadata} {output}"""
 
 rule QualityControl :
@@ -33,5 +33,5 @@ rule QualityControl :
 		plots_panel = "exp/scATACseq_SKMK_preprocessing/{sample}_plots_quality_control.svg",
 		plots_list = "exp/scATACseq_SKMK_preprocessing/{sample}_plots_qc_list.rds",
 		tab = "exp/scATACseq_SKMK_preprocessing/{sample}_df_filter.csv"
-	conda : "env/scATACseq_10X_env.yaml"
+	conda : "env/scATACseq_10X_env_locked.yaml"
 	shell : """ Rscript bin/scATACseq/scATACseq_SKMK_QualityControl.R {wildcards.sample} {input} {output.seurat} {output.seurat_filtered} {output.plots_panel} {output.plots_list} {output.tab} """
