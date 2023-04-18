@@ -54,7 +54,5 @@ Our analysis here begins with .bam files and is carried out with Snakemake and R
 
 ## III. Analysis description
 
-< insert power point with script's order here >  
-< describe src files here and how to use them >  
-
-
+Refer to README_workflow.pptx to understand script's order.  
+Read src files and use them to launch all the analysis.  
