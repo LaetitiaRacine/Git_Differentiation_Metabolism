@@ -1,0 +1,274 @@
+---
+title: "src3_scATACseq_R_dwns"
+author: "Laëtitia"
+date: "2022-09-02"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+```{r, Setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+
+
+# scATAcseq_R_DWNS_CellsPeaksStatistics
+
+*OBJECTIVE*  
+Qualitative analysis of the peaks detection :  
+- for each cell of each condition, the number of peaks/region in which the cell have at least one fragment inside
+- for each condition, the number of peaks/region with cells containing fragments inside it  Quantitative analysis of the peaks detection :  
+- min/max/med/mean of the number of fragments in the peaks detected for each cell  
+- min/max/med/mean of the number of fragments in the peaks for each cell that detected this peak  
+  
+*INPUTS*    
+- functions_constants.R  
+- merged_seurat_qc_filter_annot_normreduc.rds (cf. scATACseq_R_NormalizationReduction)  
+
+*OUTPUTS*  
+- list_tab_nbcells_peak.rds  
+- list_tab_nbpeaks_percell.rds  
+- list_binary_matrix.rds  
+- global_tab_cell.csv  
+- statistic_tab_cell.csv  
+- nbpeaks_per_cell_quali_plot.svg  
+- global_tab_peak.csv  
+- statistic_tab_peak.csv  
+- nbcell_sharing_peaks_quali_plot.svg  
+- mat_df.rds  
+- mat_df_cut.rds  
+- stat_nbfragments_perpeak_percell.csv  
+- nbpeaks_per_cell_quanti_plot.svg  
+- stat_nbfragments_percell_perpeaks.csv  
+- nbcell_sharing_peaks_quanti_plot.svg  
+  
+!!! Note : part binary count of the first script makes Rstudio crashes each time with knitr. Do it by hand before to run the entire knitr. !!!    
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATAcseq_R_DWNS_CellsPeaksStatistics_part1.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "scATAcseq_R_DWNS_CellsPeaksStatistics_part1.html"))
+
+.rs.restartR()
+
+```
+
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATAcseq_R_DWNS_CellsPeaksStatistics_part2.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "scATAcseq_R_DWNS_CellsPeaksStatistics_part2.html"))
+
+.rs.restartR()
+
+```
+
+
+# scATACseq_R_DWNS_ClustersInvestigation_Stat
+
+*OBJECTIVE*    
+Count the number of cells of each condition per cluster.  
+Normalize it by the number of initial cells per condition.  
+Visualize the cluster compositions of cells with tables and plots (barplot, pieplot).  
+Associate peaks with their genome annotation and count the number of peaks per annotation per cluster.  
+
+*INPUTS*    
+- functions_constants.R  
+- merged_seurat_qc_filter_annot_normreduc.rds (cf. scATACseq_R_NormalizationReduction)  
+  
+*OUTPUTS*     
+- nbcell_perclust_percond.csv  
+- nbcell_perclust_percond_norm.csv  
+- percent_cond_inclust.csv  
+- percent_clust_incond.csv  
+- barplot_clust_cellcomp.svg  
+- pieplot1_clust_cellcomp.svg  
+- pieplot2_clust_cellcomp.svg  
+- tab_dim2-50_res.0.25_bulkpeaks.csv  
+- tab_dim2-50_res.0.25_distripeaks.csv  
+- tab_dim2-50_res.0.25_distripeaks_stat.csv  
+- stat_peakscomp.svg  
+- distri_peakscomp.svg  
+
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATACseq_R_DWNS_ClustersInvestigation_Stat.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_R_DWNS_ClustersInvestigation_Stat.html"))
+
+.rs.restartR()
+
+```
+
+
+# scATACseq_R_DWNS_ClustersInvestigation_DA
+
+*OBJECTIVE*    
+Extract list of differentially accessible peaks between cell's cluster.  
+Associate the genomic annotation based on hg38 database from annotatr.   
+Extract the most relevant DA peaks based on pvalue and difference in pct populations.  
+Draw heatmap on the most relevant DA peaks. 
+Proceed GO on list of DA peaks for each cluster.  
+Proceed motif enrichment analysis on list of DA peaks for each cluster.  
+
+*INPUTS*    
+- functions_constants.R  
+- merged_seurat_qc_filter_annot_normreduc.rds (cf. scATACseq_R_NormalizationReduction)  
+=> Note : first part of the code to run on IFB because it requires  a lot of memory.  
+- clust_markers_[X]_20230417.rds  
+
+*OUTPUTS*     
+- clust_markers.rds  
+- tab_clust_DApeaks_annotation.csv  
+- top20_pos.csv  
+- top20_pos_filtered.csv  
+- heatmap_DApeaks_clust_all.png  
+- heatmap_DApeaks_clust_genes.png  
+- list_GO_clust.rds  
+- GO_DApeaks_clust.svg  
+- tab_GO_DApeaks_clust.csv  
+- seurat_motif.rds  
+- enriched_motifs_clust_plot.png  
+- enriched_motifs_clust_tab.csv  
+- unique_enriched_motif_clust.csv  
+- common_enriched_motif_clust.csv  
+- unique_enriched_motif_clust_plot1.png  
+- unique_enriched_motif_clust_plot2.png  
+- common_enriched_motif_clust_plot1.png
+- common_enriched_motif_clust_plot2.png
+- common_enriched_motif_clust_plot3.png
+- common_enriched_motif_clust_plot4.png
+- common_enriched_motif_clust_plot5.png
+- common_enriched_motif_clust_plot6.png
+- common_enriched_motif_clust_plot7.png
+- common_enriched_motif_clust_plot8.png
+- common_enriched_motif_clust_plot9.png
+
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATACseq_R_DWNS_ClustersInvestigation_DA.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_R_DWNS_ClustersInvestigation_DA.html"))
+
+.rs.restartR()
+
+```
+
+
+# scATACseq_R_DWNS_CompareConditions_DA
+
+*OBJECTIVE*    
+Extract list of differentially accessible peaks between conditions.    
+Associate the genomic annotation based on hg38 database from annotatr.   
+Extract the most relevant DA peaks based on pvalue and difference in pct populations.  
+Draw heatmap on the most relevant DA peaks. 
+Proceed GO on list of DA peaks for each condition  
+Proceed motif enrichment analysis on list of DA peaks for each condition    
+  
+*INPUTS*    
+- functions_constants.R  
+- merged_seurat_qc_filter_annot_normreduc.rds (cf. scATACseq_R_NormalizationReduction)  
+=> Note : first part of the code to run on IFB because it requires  a lot of memory.  
+- cond_markers_FAM_20230416.rds  
+- seurat_motif.rds (cf. scATACseq_R_DWNS_ClustersInvestigation) => facultative, to save time  
+  
+*OUTPUTS*     
+- cond_markers.rds  
+- tab_cond_DApeaks_annotation.csv  
+- top20_pos.csv  
+- top20_pos_filtered.csv  
+- heatmap_DApeaks_cond_all.png  
+- heatmap_DApeaks_cond_genes.png  
+- list_GO_cond.rds  
+- GO_DApeaks_cond.svg  
+- tab_GO_DApeaks_GO.csv  
+- seurat_motif.rds  
+- enriched_motifs_cond_plot.png  
+- enriched_motifs_cond_tab.csv  
+- unique_enriched_motif_cond.csv  
+- common_enriched_motif_cond.csv  
+- unique_enriched_motif_cond_plot1.png  
+- unique_enriched_motif_cond_plot2.png  
+- unique_enriched_motif_cond_plot3.png  
+- common_enriched_motif_cond_plot1.png
+- common_enriched_motif_cond_plot2.png
+- common_enriched_motif_cond_plot3.png
+- common_enriched_motif_cond_plot4.png
+- common_enriched_motif_cond_plot5.png
+
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATACseq_R_DWNS_CompareConditions_DA.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_R_DWNS_CompareConditions_DA.html"))
+
+.rs.restartR()
+
+```
+
+
+# scATACseq_R_DWNS_GeneActivity_GeneCoverage
+
+*OBJECTIVE*    
+Visualize the putative activity of markers genes based on chromatine accessibility (gene activity).  
+Draw coverage plot for list of specific genes.  
+Visualize reads peaks distribution on chromosomes.  
+
+*INPUTS*  
+- functions_constants.R  
+- merged_seurat_qc_filter_annot_normreduc.rds (cf. scATACseq_R_NormalizationReduction)  
+- hg38_annotations_gr.rds (cf. AnnotationsFiles_createGrange)  
+- mat.rds (cf. scATACseq_R_NormalizationReduction)  
+
+*OUTPUTS*  
+- gene.activities.rds  
+- plot_geneactivity_TF.png  
+- plot_geneactivity_varfeature.png  
+- plot_geneactivity_glutglyc.png  
+- plot_geneactivity_mettca.png  
+- [GENE]_coverage_allcond.svg  
+- [GENE]_coverage_tile_allcond.svg  
+- list_plot_chr.rds  
+- list_graph.rds  
+- list_graph_stat.rds  
+- chromosome_distribution_nbfrag.svg  
+- chromosome_distribution_stat.svg  
+=> Note : part to run on IFB because require lots of memory. 
+- coverage_kpbam_chr[X].png  
+    
+```{r}
+
+directory = getwd()
+
+rmarkdown::render(input = paste0(directory, "/bin/scATACseq/", "scATACseq_R_DWNS_GeneActivity_GeneCoverage.Rmd"),
+                  output_format = "html_document",
+                  output_dir = paste0(directory, "/report/"),
+                  output_file = paste0(Sys.Date(), '_', "scATACseq_R_DWNS_GeneActivity_GeneCoverage.html"))
+
+```
+
+

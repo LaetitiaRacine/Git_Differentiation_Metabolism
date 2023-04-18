@@ -387,7 +387,7 @@ write.csv2(tab_cond, paste0(directory_output, "tab_cond_DApeaks_annotation.csv")
 ```{r, results="hide"}
 
 list_to_keep = c("directory_output", "start_time", "seurat_obj", 
-                 "tab_cond", "directory")
+                 "tab_cond", "directory", "pic_last_dir")
 rm(list = setdiff(ls(), list_to_keep))
 gc()
 
@@ -417,8 +417,7 @@ top20_pos = tab_cond_relevant %>%
   ungroup()
 
 # positive markers : calcul the difference between pct1 and pct2
-cat("We filter the positive markers to keep those with a difference > to 0.1 between pct.1 and pct.2.", "\n",
-    "Note : we don't use the same threshold on diff as in cluster investigation because the difference between conditions are more less important.")
+cat("We filter the positive markers to keep those with a difference > to 0.1 between pct.1 and pct.2.")
 top20_pos_filtered = tab_cond_relevant %>% 
   dplyr::filter(avg_log2FC >= 0) %>%
   dplyr::mutate(diff = pct.1 - pct.2) %>%
@@ -525,7 +524,7 @@ save_pheatmap_png(ht_filt, paste0(directory_output, "heatmap_DApeaks_cond_genes.
 ```{r, results="hide"}
 
 list_to_keep = c("directory_output", "start_time", "seurat_obj", 
-                 "tab_cond_relevant", "directory")
+                 "tab_cond_relevant", "directory", "pic_last_dir")
 rm(list = setdiff(ls(), list_to_keep))
 gc()
 
@@ -611,7 +610,7 @@ write.csv2(tab_ego, paste0(directory_output, "tab_GO_DApeaks_cond.csv"), row.nam
 ```{r, results="hide"}
 
 list_to_keep = c("directory_output", "start_time", "seurat_obj", 
-                 "tab_cond_relevant", "directory")
+                 "tab_cond_relevant", "directory", "pic_last_dir")
 rm(list = setdiff(ls(), list_to_keep))
 gc()
 
@@ -651,7 +650,7 @@ seurat_obj <- AddMotifs(
 <br>
 
 This part of the code with ChromVar is quite long. We can use the same object as in scATACseq_R_DWNS_ClustersInvestigation_DA.Rmd to go faster.  
-```{r}
+```{r, eval=FALSE}
 
 # Compute a per-cell motif activity score !!extremely slow!!
 seurat_obj <- RunChromVAR(
@@ -663,10 +662,11 @@ saveRDS(seurat_obj, paste0(directory_output, "seurat_motif.rds"))
 
 ```
 
-```{r, eval=FALSE}
+```{r}
 
 # To gain time
-seurat_obj = readRDS(paste0(directory, "exp/scATACseq_R_DWNS_ClustersInvestigation_DA/seurat_motif.rds"))
+dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_R_DWNS_ClustersInvestigation_DA/"))
+seurat_obj = readRDS(paste0(dir, "/seurat_motif.rds"))
 
 ```
 

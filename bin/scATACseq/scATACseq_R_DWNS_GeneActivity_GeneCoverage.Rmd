@@ -278,7 +278,7 @@ annot = annot_hg38[annot_hg38$symbol %in% list_gene]
 ```{r, results="hold", fig.width=14, fig.height=8}
 
 for(i in 1:length(list_gene)) {
-  
+
   # Extract region limits for the studied gene
   annot_genes = annot[annot$symbol == list_gene[i]]
   if(length(annot_genes) != 0) {
@@ -299,7 +299,7 @@ for(i in 1:length(list_gene)) {
       ranges = annot1,
       ranges.group.by = "type",
       ranges.title = "annotation",
-      tile = FALSE)
+      tile = FALSE) + ggtitle(list_gene[i])
     
     plot1_tile = CoveragePlot(
       object = seurat_obj,
@@ -343,6 +343,7 @@ for(i in 1:length(list_gene)) {
       tile = TRUE)
     
     # show and save
+    print(list_gene[i])
     print(plot1|plot2)
     print(plot1_tile|plot2_tile)
     ggsave(plot = plot1|plot2, width = 12, height = 6,

@@ -84,7 +84,7 @@ This code aims at exploring the clusters of cells by performing **differential a
   
 As a reminder : 
 
-```{r, fig.width=16, fig.height=4}
+```{r, Reminder, fig.width=20, fig.height=4}
 
 seurat_obj = SetIdent(object = seurat_obj, value = "orig.ident")
 ind_umap = list() 
@@ -213,7 +213,7 @@ saveRDS(clust_markers_choice, paste0(directory_output,
 <br>
 
 We decided to use FindMarkers instead of FindAllMarkers to be able to parrallelize on multiple cores on the cluster. We showed previoulsy that with the right parameters, they give the same results.  
-```{r}
+```{r, Load IFB files}
 
 # Load the clust_markers from IFBcluster
 files_clust_markers = list.files(paste0(directory, "data/scATACseq/"), pattern = "clust_markers_", full.names = TRUE)
@@ -334,11 +334,11 @@ top20_pos = tab_clust_relevant %>%
   ungroup()
 
 # positive markers : calcul the difference between pct1 and pct2
-cat("We filter the positive markers to keep those with a difference > to 0.25 between pct.1 and pct.2.")
+cat("We filter the positive markers to keep those with a difference > to 0.1 between pct.1 and pct.2.")
 top20_pos_filtered = tab_clust_relevant %>% 
   dplyr::filter(avg_log2FC >= 0) %>%
   dplyr::mutate(diff = pct.1 - pct.2) %>%
-  dplyr::filter(diff > 0.25) %>%
+  dplyr::filter(diff > 0.1) %>%
   dplyr::group_by(cluster) %>%
   top_n(n=20, wt = avg_log2FC) %>%
   dplyr::select(cluster, symbol, p_val_adj, everything()) %>%
@@ -471,7 +471,7 @@ list_GO_analysis = list()
 for (i in 1:length(unique(tab_clust_relevant$cluster))) {
 
   cat("Cluster", i-1, "\n")
-  markers_clust = (markers %>% dplyr::filter(cluster == i-1))$gene_id
+  markers_clust = (markers %>% dplyr::filter(cluster == paste0("cluster_", i-1)))$gene_id
 
   ego = enrichGO(gene = markers_clust,
                  OrgDb = "org.Hs.eg.db",
@@ -554,7 +554,7 @@ https://stuartlab.org/signac/articles/motif_vignette.html
 https://www.rdocumentation.org/packages/TFBSTools/versions/1.10.3/topics/getMatrixSet  
 https://stuartlab.org/signac/reference/addmotifs  
 
-```{r}
+```{r, Motif Jaspar}
 
 # Get a list of motif position frequency matrices from the JASPAR database
 pfm <- getMatrixSet(
@@ -575,7 +575,7 @@ seurat_obj <- AddMotifs(
 <br>
 
 This part of the code with ChromVar is quite long. 
-```{r, eval=FALSE}
+```{r, Motif ChromVar}
 
 # Compute a per-cell motif activity score !!extremely slow!!
 seurat_obj <- RunChromVAR(
@@ -587,7 +587,7 @@ saveRDS(seurat_obj, paste0(directory_output, "seurat_motif.rds"))
 
 ```
 
-```{r}
+```{r, eval=FALSE}
 
 # To gain time
 seurat_obj = readRDS(paste0(directory, "exp/scATACseq_R_DWNS_ClustersInvestigation_DA/seurat_motif.rds"))
@@ -604,7 +604,7 @@ list_enrich_clust = list()
 for (i in 1:length(unique(tab_clust_relevant$cluster))) {
   
   # extract list of peaks
-  peaks_clust = tab_clust_relevant %>% dplyr::filter(cluster == i-1)
+  peaks_clust = tab_clust_relevant %>% dplyr::filter(cluster == paste0("cluster_", i-1))
   peaks_clust = peaks_clust$peak_name
 
   # test enrichment
