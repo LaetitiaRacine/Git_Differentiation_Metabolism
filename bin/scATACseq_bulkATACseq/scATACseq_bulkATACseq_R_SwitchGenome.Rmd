@@ -21,10 +21,12 @@ body {text-align: justify}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning = FALSE)
 knitr::opts_chunk$set(message = FALSE)
+# pour faire le knitr, à mettre en commentaire sinon
+knitr::opts_chunk$set(eval = FALSE) 
 
 ```
 
-```{r, Dependencies}
+```{r, Dependencies, eval=TRUE}
 
 library(dplyr)
 library(stringr)
@@ -36,7 +38,7 @@ library(kableExtra)
 
 ```
 
-```{r, Working directory }
+```{r, Working directory, eval=TRUE}
 
 # Load working directories
 directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
@@ -45,8 +47,10 @@ start_time = Sys.time()
 # Create a unique folder for output corresponding to the date of the day
 current_date = format(Sys.time(), "%Y%m%d")
 dir.create(path = paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/"))
-dir.create(path = paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/", current_date))
-directory_output = paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/", current_date, "/")
+dir.create(path = paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/", 
+                         current_date))
+directory_output = paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/", 
+                          current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
@@ -75,19 +79,20 @@ To do so, we need to load the initial hg38 matrix, the corresponding hg19 list o
 
 **Initial list of peaks vs new list of peaks**\
 Some peaks are lost during the conversion while others are split. The .bed file that we obtained with the LiftOver tool is composed of the new peak from hg19 genome and the old peak of hg38 (start+1). Here, we apply start-1 to recover the real name of old hg38 peak.  
-```{r}
+```{r, eval=TRUE}
 
 # Initial list of hg38 peaks - directory and loading
-features_hg38_list = list.files(path = paste0(directory, "data/scATACseq/"), pattern = "_filtered_peak_bc_matrix_peaks.bed")
+features_hg38_list = list.files(path = paste0(directory, "data/scATACseq/"), 
+                                pattern = "_filtered_peak_bc_matrix_peaks.bed")
 features_hg38_list = paste0(directory, "data/scATACseq/", features_hg38_list)
-names(features_hg38_list) = str_extract(features_hg38_list, pattern = "(?<=scATACseq/)[:alnum:]+(?=_filtered)")
+names(features_hg38_list) = str_extract(features_hg38_list, 
+                                        pattern = "(?<=scATACseq/)[:alnum:]+(?=_filtered)")
 features_hg38_bed = lapply(features_hg38_list, function(x) {
   read_table(x, col_names = FALSE, col_types = list("c", "c", "c"))})
 
 # Corresponding list of hg19 peak - loading
-dir = pic_last_dir(paste0(directory, "exp/", "scATACseq_bulkATACseq_R_SwitchGenome_LiftOver/"))
-features_hg19_list = list.files(path = paste0(dir, "/"), pattern = "_hg19_peaks.bed")
-features_hg19_list = paste0(paste0(dir, "/"), features_hg19_list)
+dir = pic_last_dir(paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/"))
+features_hg19_list = list.files(path = paste0(dir, "/"), pattern = "_hg19_peaks.bed", full.names=TRUE)
 names(features_hg19_list) = str_extract(features_hg19_list, pattern = "(?<=24h_)[:alnum:]+(?=_hg19)")
 # !!! read_table use the scientific notation that change peak start if we don't precise the col_types !!!
 features_hg19_list = lapply(features_hg19_list, function(x) {
@@ -122,6 +127,7 @@ features_hg19_list = lapply(features_hg19_list, function(x) {
   dplyr::filter(X1 %in% standard_chr) %>%
   dplyr::select(peak_hg38, peak_hg19)
 })
+gc()
 
 ```
 
@@ -140,8 +146,8 @@ for (i in 1:length(features_hg19_list)) {
 
   list_peaks = features_hg19_list[[i]] %>%
     dplyr::select(peak_hg19) %>%
-    tidyr::separate(col = peak_hg19, into = c("seqnames", "start", "end"), remove = FALSE) %>%
-    dplyr::mutate(start = as.integer(start), end = as.integer(end)) %>%
+    tidyr::separate(col=peak_hg19, into=c("seqnames", "start", "end"), remove=F) %>%
+    dplyr::mutate(start=as.integer(start), end=as.integer(end)) %>%
     dplyr::rename("peak_name" = "peak_hg19")
 
   peaks_gr =  GRanges(seqnames = list_peaks$seqnames,
@@ -154,6 +160,7 @@ for (i in 1:length(features_hg19_list)) {
 }
 
 saveRDS(list_hg19_gr, paste0(directory_output, "list_hg19_gr.rds"))
+gc()
 
 ```
 
@@ -180,11 +187,11 @@ for (i in 1:length(list_hg19_gr)) {
   
   # First a matrix is created filled with FALSE and added to the Grange
   annotations_types = levels(factor(hg19_annotations$type))
-  metadata = matrix(FALSE, ncol = length(annotations_types), nrow = length(seqnames(grange)))
+  metadata = matrix(FALSE, ncol= length(annotations_types), nrow= length(seqnames(grange)))
   colnames(metadata) = annotations_types
   mcols(grange) = metadata
 
-  # An overlap is calculated and used to assigned the peak as TRUE when overlapping with the annotation
+# An overlap is calculated and used to assigned the peak as T when overlapping with the annotation
   for (i in 1:ncol(metadata)){
     sub_annot = hg19_annotations[hg19_annotations$type == annotations_types[i]]
     overlaps = findOverlaps(grange, sub_annot)
@@ -199,6 +206,8 @@ for (i in 1:length(list_hg19_gr)) {
 }
 
 saveRDS(list_hg19_gr_ann, paste0(directory_output, "list_hg19_gr_ann.rds"))
+rm(list_hg19_gr)
+gc()
 
 ```
 
@@ -208,12 +217,14 @@ saveRDS(list_hg19_gr_ann, paste0(directory_output, "list_hg19_gr_ann.rds"))
 NB : we are not using the seurat object created in scATACseq_CreateSeuratObject because some peaks are absent due to filters.\
 We used the initial .bed file.
 
-```{r, eval = FALSE}
+```{r}
 
 # List directions
-barcode_list = list.files(path = paste0(directory, "data/scATACseq/"), pattern = "_filtered_peak_bc_matrix_barcodes.tsv")
+barcode_list = list.files(path = paste0(directory, "data/scATACseq/"),
+                          pattern = "_filtered_peak_bc_matrix_barcodes.tsv")
 barcode_list = paste0(directory, "data/scATACseq/", barcode_list)
-mtx_list = list.files(path = paste0(directory, "data/scATACseq/"), pattern = "_filtered_peak_bc_matrix_matrix.mtx")
+mtx_list = list.files(path = paste0(directory, "data/scATACseq/"), 
+                      pattern = "_filtered_peak_bc_matrix_matrix.mtx")
 mtx_list = paste0(directory, "data/scATACseq/", mtx_list)
 
 # Create matrices
@@ -222,7 +233,8 @@ list_mtx_hg38 = list()
 for (i in 1:length(features_hg38_list)) { # really long !!!
 
   # Condition
-  name_cond = str_extract(features_hg38_list[i], pattern = "(?<=scATACseq/)[:alnum:]+(?=_filtered)")
+  name_cond = str_extract(features_hg38_list[i], 
+                          pattern = "(?<=scATACseq/)[:alnum:]+(?=_filtered)")
 
   # Peaks mapped on hg38
   features_hg38 = readr::read_tsv(features_hg38_list[i], col_names = F) %>%
@@ -247,6 +259,8 @@ for (i in 1:length(features_hg38_list)) { # really long !!!
 }
 
 saveRDS(list_mtx_hg38, paste0(directory_output, "list_mtx_hg38.rds"))
+gc()
+rstudioapi::restartSession()
 
 ```
 

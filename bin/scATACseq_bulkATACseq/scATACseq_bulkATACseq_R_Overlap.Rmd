@@ -39,7 +39,7 @@ library(patchwork)
 
 ```
 
-```{r, Working directory}
+```{r, Working directory, eval=FALSE}
 
 # Load working directories
 directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
@@ -49,13 +49,25 @@ start_time = Sys.time()
 # Create a unique folder for output corresponding to the date of the day
 current_date = format(Sys.time(), "%Y%m%d")
 dir.create(path = paste0(directory, "exp/scATACseq_bulkATACseq_R_Overlap/"))
-dir.create(path = paste0(directory, "exp/scATACseq_bulkATACseq_R_Overlap/", current_date))
-directory_output = paste0(directory, "exp/scATACseq_bulkATACseq_R_Overlap/", current_date, "/")
+dir.create(path = paste0(directory, "exp/scATACseq_bulkATACseq_R_Overlap/", 
+                         current_date))
+directory_output = paste0(directory, "exp/scATACseq_bulkATACseq_R_Overlap/", 
+                          current_date, "/")
 
 # Load external script with functions and constants
 source(file = paste0(directory, "bin/", "functions_constants.R"))
 
 ```
+
+```{r, for IFB}
+
+directory = "/shared/projects/humancd34_diff_rna_atacseq/"
+start_time = Sys.time()
+source(file = paste0(directory, "functions_constants.R"))
+directory_output = paste0(directory, "scATAC_bulkATACseq/")
+
+```
+
 
 <br><br><br>
 
@@ -72,12 +84,15 @@ source(file = paste0(directory, "bin/", "functions_constants.R"))
 
 ```{r, Input loading}
 
-dir_sc = pic_last_dir(paste0(directory, "exp/", "scATACseq_bulkATACseq_R_SwitchGenome/"))
-sc_gr = readRDS(paste0(dir_sc, "/", "list_hg19_gr_ann.rds"))
-  
-dir_bulk = paste0(pic_last_dir(paste0(directory, "exp/", "bulkATACseq_R_ChangeAnnotation/")), "/")
-bulk_gr = list.files(dir_bulk, pattern = "update_annot.gr.rds")
-bulk_gr = paste0(dir_bulk, bulk_gr)  
+# dir_sc = pic_last_dir(paste0(directory, "exp/", "scATACseq_bulkATACseq_R_SwitchGenome/"))
+# sc_gr = readRDS(paste0(dir_sc, "/", "list_hg19_gr_ann.rds"))
+sc_gr = readRDS(paste0(directory_output, "/", "list_hg19_gr_ann.rds"))
+
+# dir_bulk = paste0(pic_last_dir(paste0(directory, "exp/", "bulkATACseq_R_ChangeAnnotation/")), "/")
+# bulk_gr = list.files(dir_bulk, pattern = "update_annot.gr.rds")
+# bulk_gr = paste0(dir_bulk, bulk_gr)  
+bulk_gr = list.files(directory_output, pattern = "update_annot.gr.rds")
+bulk_gr = paste0(directory_output, bulk_gr)  
 cond_time = str_extract(bulk_gr, pattern = "(?<=/)[:alnum:]+_[:digit:]{2}h(?=_D)")
 bulk_gr = lapply(bulk_gr, readRDS)
 names(bulk_gr) = cond_time
@@ -437,6 +452,8 @@ rm(bk_all, sc_all, bk_prom, sc_prom, bk_inter, sc_inter)
 write.csv2(x = tab_glob, row.names = FALSE,
            file = paste0(directory_output, "tab_percentage_peaks_shared.csv"))
 
+gc()
+
 ```
 
 
@@ -451,13 +468,14 @@ However, when we look at the scATACseq peaks we have more not shared peaks than 
 
 **Investigate not shared peaks for scATACseq**\
 How many cells of scATACseq are sharing the peaks that we can't detect in bulk ATACseq ? Those peaks correspond to which genomic annotation ?
-```{r, eval = FALSE}
+```{r}
 
 ### !!! Extremely long !!!
 
 # Load the matrix of counts
-dir =  pic_last_dir(paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/"))
-list_mtx_hg19 = readRDS(paste0(dir, "/", "list_mtx_hg19.rds"))
+# dir =  pic_last_dir(paste0(directory, "exp/scATACseq_bulkATACseq_R_SwitchGenome/"))
+# list_mtx_hg19 = readRDS(paste0(dir, "/", "list_mtx_hg19.rds"))
+list_mtx_hg19 = readRDS(paste0(directory_output, "/", "list_mtx_hg19.rds"))
 
 # Transform matrices into a binary one : detected/no detected
 list_mtx_hg19_bin = list()
@@ -469,10 +487,11 @@ for (i in 1:length(list_mtx_hg19)) {
 names(list_mtx_hg19_bin) = names(list_mtx_hg19)
 rm(list_mtx_hg19)
 saveRDS(list_mtx_hg19_bin, file = paste0(directory_output, "list_mtx_hg19_binary.rds"))
+gc()
 
 ```
 
-```{r}
+```{r, eval=FALSE}
 
 list_mtx_hg19_bin = readRDS(paste0(directory_output, "list_mtx_hg19_binary.rds"))
 
@@ -508,10 +527,10 @@ CTRL_peaks_shared$plot | DON_peaks_shared$plot | DDG_peaks_shared$plot | AOA_pea
 ```{r, fig.width = 16, fig.height = 16}
 
 # Create summary table (scATACseq peaks are in tab2)
-CTRL_over_tab = full_join(x = CTRL_overlap$tab2, y = CTRL_peaks_shared$df, by = "peak_name")
-DON_over_tab = full_join(x = DON_overlap$tab2, y = DON_peaks_shared$df, by = "peak_name")
-DDG_over_tab = full_join(x = DDG_overlap$tab2, y = DDG_peaks_shared$df, by = "peak_name")
-AOA_over_tab = full_join(x = AOA_overlap$tab2, y = AOA_peaks_shared$df, by = "peak_name")
+CTRL_over_tab = full_join(x= CTRL_overlap$tab2, y= CTRL_peaks_shared$df, by= "peak_name")
+DON_over_tab = full_join(x= DON_overlap$tab2, y= DON_peaks_shared$df, by= "peak_name")
+DDG_over_tab = full_join(x= DDG_overlap$tab2, y= DDG_peaks_shared$df, by= "peak_name")
+AOA_over_tab = full_join(x= AOA_overlap$tab2, y= AOA_peaks_shared$df, by= "peak_name")
 
 # Function definition : number of cells sharing the peaks depending if they are shared or not
 plot_shared_cells_fun = function(tab_recap, annotation, cond) {
@@ -520,8 +539,10 @@ plot_shared_cells_fun = function(tab_recap, annotation, cond) {
     print("annotation not recognize")
   } else {
     if (annotation == "all") { tab_recap = tab_recap }
-    if (annotation == "promoter") { tab_recap = tab_recap %>% dplyr::filter(hg19_genes_promoters == TRUE) }
-    if (annotation == "intergenic") { tab_recap = tab_recap %>% dplyr::filter(hg19_genes_intergenic == TRUE)} 
+    if (annotation == "promoter") { tab_recap = tab_recap %>% 
+      dplyr::filter(hg19_genes_promoters == TRUE) }
+    if (annotation == "intergenic") { tab_recap = tab_recap %>% 
+      dplyr::filter(hg19_genes_intergenic == TRUE)} 
     }
   # Calculate the median of nb cells sharing a peak per group
   tab_recap = tab_recap %>%
@@ -533,12 +554,16 @@ plot_shared_cells_fun = function(tab_recap, annotation, cond) {
   plot = ggplot(tab_recap, aes(x = nb_cells_sharing_this_peak, color = overlap)) +
     geom_histogram(aes(fill = overlap), alpha = 0.3, position = "identity", binwidth = 300) +
     geom_vline(aes(xintercept=sharing_cell_med, color=overlap),linetype="dashed") +
-    scale_discrete_manual(aesthetics = c("fill", "col"), values = c('Shared peaks'= "#D5269D", 'Not shared peaks'="#A9D23D")) +
+    scale_discrete_manual(aesthetics = c("fill", "col"), 
+                          values = c('Shared peaks'= "#D5269D", 
+                                     'Not shared peaks'="#A9D23D")) +
     ggtitle(label = paste(cond, "Distribution - Nb cells sharing peaks"),
             subtitle = paste("Total number of peaks :", nrow(tab_recap), "\n",
                            "Peaks genomic category :", annotation, "\n",
-                           "Median peaks common bulk/single cell :", median_shared, "cells sharing the peak \n",
-                           "Median peaks only single cell :", median_noshared, "cells sharing the peak \n"))
+                           "Median peaks common bulk/single cell :", 
+                           median_shared, "cells sharing the peak \n",
+                           "Median peaks only single cell :", 
+                           median_noshared, "cells sharing the peak \n"))
   # output function
   return(plot)
 }
