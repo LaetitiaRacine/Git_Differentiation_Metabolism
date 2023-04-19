@@ -1,0 +1,148 @@
+---
+title: "scRNAseq_CITEseq_R_DWNS_CondHeatmap"
+author: "Laëtitia Racine"
+date: "2022-10-03"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(Seurat)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+```
+
+```{r, Working directories and external script}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CondHeatmap/"))
+dir.create(path = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CondHeatmap/",
+                         current_date))
+directory_output = paste0(directory, "exp/scRNAseq_CITEseq_R_DWNS_CondHeatmap/",
+                          current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/", "scRNAseq_CITEseq_R_ReductionDimension/"))
+merged_prep = readRDS(file = paste0(dir, "/", "merged_all_prep_1-40dim.rds"))
+
+```
+
+
+
+# FindAllMarkers - Identify cell type
+
+<br>
+
+## Extract specific markers for each conditions and select the more relevant
+
+```{r, IFB FindAllMarkers}
+
+# Idents(merged_prep) = "orig.ident"
+# 
+# cond_markers = FindAllMarkers(object = merged_prep,
+#                                assay = "SCT",
+#                                features = NULL, #use all genes
+#                                logfcthreshold = 0.25, #default
+#                                test.use = "wilcox", #default
+#                                slot = "data",
+#                                only.pos = TRUE,
+#                                min.pct = 0.1, #default
+#                                random.seed = 42)
+
+# saveRDS(object = cond_markers, paste0(directory_output, "cond_markers.rds"))
+
+cond_markers = readRDS(paste0(directory, "data/scRNAseq/cond_markers.rds"))
+
+```
+
+```{r}
+
+# filter on p value adjusted
+cat("We remove markers with p_val_adj superior to 0.05.")
+cond_markers = cond_markers %>% dplyr::filter(p_val_adj < 0.05)
+
+# Extract top 20 of positive markers based on avg_log2FC only 
+cat("We keep the positive markers with the biggest average_log2FC for each condition.")
+top20_pos = cond_markers %>%
+  dplyr::filter(avg_log2FC >= 0) %>%
+  dplyr::group_by(cluster) %>%
+  top_n(n=20, wt = avg_log2FC) %>%
+  dplyr::select(cluster, gene, p_val_adj, everything())
+
+# positive markers : calcul the difference between pct1 and pct2
+cat("We filter the positive markers to keep those with a difference > to 0.25 between pct.1 and pct.2.")
+top20_pos_filtered = cond_markers %>% 
+  dplyr::filter(avg_log2FC >= 0) %>%
+  dplyr::mutate(diff = pct.1 - pct.2) %>%
+  dplyr::filter(diff > 0.25) %>%
+  dplyr::group_by(cluster) %>%
+  top_n(n=20, wt = avg_log2FC) %>%
+  dplyr::select(cluster, gene, p_val_adj, everything()) %>%
+  dplyr::select(-diff)
+
+```
+
+```{r}
+
+Idents(merged_prep) = "orig.ident"
+pos_heatmap = DoHeatmap(object = subset(merged_prep, downsample = 200),
+                        features = top20_pos_filtered$gene)
+pos_heatmap
+
+```
+
+```{r}
+
+merged_prep4drugs = subset(merged_prep, idents = c("CTRL", "DON", "2DG", "AOA"))
+
+pos_heatmap_4drugs_filt = DoHeatmap(object = subset(merged_prep4drugs, downsample = 200),
+                                    features = top20_pos_filtered$gene, group.colors = color_code) + 
+  scale_color_manual(values=color_code, limits=force)
+pos_heatmap_4drugs_filt
+
+pos_heatmap_4drugs = DoHeatmap(object = subset(merged_prep4drugs, downsample = 200),
+                               features = top20_pos$gene, group.colors = color_code) + 
+  scale_color_manual(values=color_code, limits=force)
+pos_heatmap_4drugs
+
+
+ggsave(plot = pos_heatmap_4drugs_filt, width = 8, height = 6,
+       filename = paste0(directory_output, "pos_heatmap_4drugs_filt.svg"))
+ggsave(plot = pos_heatmap_4drugs, width = 8, height = 10,
+       filename = paste0(directory_output, "pos_heatmap_4drugs.svg"))
+
+```
+
+
