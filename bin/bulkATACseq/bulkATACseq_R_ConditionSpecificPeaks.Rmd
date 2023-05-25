@@ -153,7 +153,11 @@ df = count_df %>% dplyr::select(all_of(col_names))
 
 # Peaks present in only one condition
 
-## Extract list of specific peaks (all conditions : MP/DON/2DG/AOA/MPaK/VPA)
+## Isolate specific peaks
+
+<br>
+
+### Extract list of specific peaks (all conditions : MP/DON/2DG/AOA/MPaK/VPA/Xvivo)
 
 ```{r}
 
@@ -213,7 +217,9 @@ spe_regions_all = list(
 
 ```
 
-## Extract list of specific peaks (just MP/DON/2DG/AOA)
+<br>
+
+### Extract list of specific peaks (just MP/DON/2DG/AOA)
 
 ```{r}
 
@@ -238,18 +244,18 @@ tab_filt %>%
 
 # Extract and store list of specific peaks 
 spe_peaks_filt = list(
-  "AOA_03h" = rownames(df_spe %>% dplyr::filter(peaks_in_AOA_03h_D1.D2.D3_threshold_10 == TRUE)),
-  "AOA_12h" = rownames(df_spe %>% dplyr::filter(peaks_in_AOA_12h_D1.D2.D3_threshold_10 == TRUE)), 
-  "AOA_24h" = rownames(df_spe %>% dplyr::filter(peaks_in_AOA_24h_D1.D2.D3_threshold_10 == TRUE)),
-  "DON_03h" = rownames(df_spe %>% dplyr::filter(peaks_in_DON_03h_D1.D2.D3_threshold_10 == TRUE)),
-  "DON_12h" = rownames(df_spe %>% dplyr::filter(peaks_in_DON_12h_D1.D2.D3_threshold_10 == TRUE)),
-  "DON_24h" = rownames(df_spe %>% dplyr::filter(peaks_in_DON_24h_D1.D2.D3_threshold_10 == TRUE)),
-  "2DG_03h" = rownames(df_spe %>% dplyr::filter(peaks_in_2DG_03h_D1.D2.D3_threshold_10 == TRUE)),
-  "2DG_12h" = rownames(df_spe %>% dplyr::filter(peaks_in_2DG_12h_D1.D2.D3_threshold_10 == TRUE)),
-  "2DG_24h" = rownames(df_spe %>% dplyr::filter(peaks_in_2DG_24h_D1.D2.D3_threshold_10 == TRUE)),
-  "MP_03h" = rownames(df_spe %>% dplyr::filter(peaks_in_MP_03h_D1.D2.D3_threshold_10 == TRUE)),
-  "MP_12h" = rownames(df_spe %>% dplyr::filter(peaks_in_MP_12h_D1.D2.D3_threshold_10 == TRUE)),
-  "MP_24h" = rownames(df_spe %>% dplyr::filter(peaks_in_MP_24h_D1.D2.D3.D5.D6_threshold_10 == TRUE))
+  "AOA_03h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_AOA_03h_D1.D2.D3_threshold_10 == TRUE)),
+  "AOA_12h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_AOA_12h_D1.D2.D3_threshold_10 == TRUE)), 
+  "AOA_24h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_AOA_24h_D1.D2.D3_threshold_10 == TRUE)),
+  "DON_03h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_DON_03h_D1.D2.D3_threshold_10 == TRUE)),
+  "DON_12h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_DON_12h_D1.D2.D3_threshold_10 == TRUE)),
+  "DON_24h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_DON_24h_D1.D2.D3_threshold_10 == TRUE)),
+  "2DG_03h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_2DG_03h_D1.D2.D3_threshold_10 == TRUE)),
+  "2DG_12h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_2DG_12h_D1.D2.D3_threshold_10 == TRUE)),
+  "2DG_24h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_2DG_24h_D1.D2.D3_threshold_10 == TRUE)),
+  "MP_03h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_MP_03h_D1.D2.D3_threshold_10 == TRUE)),
+  "MP_12h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_MP_12h_D1.D2.D3_threshold_10 == TRUE)),
+  "MP_24h" = rownames(df_spe_filt %>% dplyr::filter(peaks_in_MP_24h_D1.D2.D3.D5.D6_threshold_10 == TRUE))
 )
 
 spe_regions_filt = list(
@@ -264,15 +270,77 @@ spe_regions_filt = list(
   "2DG_24h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filt[["2DG_24h"]]))$region,
   "MP_03h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filt[["MP_03h"]]))$region,
   "MP_12h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filt[["MP_12h"]]))$region,
-  "MP_24h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filt[["MP_24h"]]))$region,
-  "MPaK_24h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filt[["MPaK_24h"]]))$region,
-  "VPA_24h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filt[["VPA_24h"]]))$region,
-  "Xvivo_00h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filt[["Xvivo_00h"]]))$region
+  "MP_24h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filt[["MP_24h"]]))$region
 )
 
 ```
 
+<br>
+
+### Extract list of specific peaks (just Xvivo/MP/DON/2DG/AOA)
+
+```{r}
+
+# Remove the unwanted condition and keep only the specific peaks
+to_remove = str_subset(colnames(df), pattern = "CTRLaK|VPA")
+df_spe_filtx = df %>% 
+  dplyr::select(-all_of(to_remove)) %>%
+  dplyr::mutate(Sum = rowSums(., na.rm=TRUE)) %>%
+  dplyr::filter(Sum == 1)
+
+# Count the number of specific peaks for each condition  
+tab_filtx = data.frame(colSums(df_spe_filtx)) %>%
+  rownames_to_column(var = "Condition") %>%
+  dplyr::filter(Condition != "Sum") %>%
+  dplyr::mutate(Condition = str_extract(Condition, "(?<=peaks_in_)[:graph:]+_[:digit:]{2}h"))
+colnames(tab_filtx) = c("Condition", "NbPeaks_Specific")
+
+tab_filtx %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "300px")
+
+# Extract and store list of specific peaks 
+spe_peaks_filtx = list(
+  "AOA_03h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_AOA_03h_D1.D2.D3_threshold_10 == TRUE)),
+  "AOA_12h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_AOA_12h_D1.D2.D3_threshold_10 == TRUE)), 
+  "AOA_24h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_AOA_24h_D1.D2.D3_threshold_10 == TRUE)),
+  "DON_03h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_DON_03h_D1.D2.D3_threshold_10 == TRUE)),
+  "DON_12h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_DON_12h_D1.D2.D3_threshold_10 == TRUE)),
+  "DON_24h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_DON_24h_D1.D2.D3_threshold_10 == TRUE)),
+  "2DG_03h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_2DG_03h_D1.D2.D3_threshold_10 == TRUE)),
+  "2DG_12h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_2DG_12h_D1.D2.D3_threshold_10 == TRUE)),
+  "2DG_24h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_2DG_24h_D1.D2.D3_threshold_10 == TRUE)),
+  "MP_03h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_MP_03h_D1.D2.D3_threshold_10 == TRUE)),
+  "MP_12h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_MP_12h_D1.D2.D3_threshold_10 == TRUE)),
+  "MP_24h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_MP_24h_D1.D2.D3.D5.D6_threshold_10 == TRUE)),
+  "Xvivo_00h" = rownames(df_spe_filtx %>% dplyr::filter(peaks_in_Xvivo_00h_D1.D2.D3_threshold_10 == TRUE))
+)
+
+spe_regions_filtx = list(
+  "AOA_03h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["AOA_03h"]]))$region,
+  "AOA_12h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["AOA_12h"]]))$region, 
+  "AOA_24h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["AOA_24h"]]))$region,
+  "DON_03h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["DON_03h"]]))$region,
+  "DON_12h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["DON_12h"]]))$region,
+  "DON_24h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["DON_24h"]]))$region,
+  "2DG_03h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["2DG_03h"]]))$region,
+  "2DG_12h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["2DG_12h"]]))$region,
+  "2DG_24h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["2DG_24h"]]))$region,
+  "MP_03h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["MP_03h"]]))$region,
+  "MP_12h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["MP_12h"]]))$region,
+  "MP_24h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["MP_24h"]]))$region,
+  "Xvivo_00h" = (count_df %>% dplyr::filter(rownames(count_df) %in% spe_peaks_filtx[["Xvivo_00h"]]))$region
+)
+
+```
+
+<br>
+
+
 ## Visualize chromosome localisation
+
+<br>
 
 ### All chromosomes per condition
 
@@ -314,6 +382,8 @@ do.call("grid.arrange", c(list_sample_chr, ncol = 3))
 
 ```
 
+<br>
+
 **Conditions without MPaK, VPA and Xvivo**
 ```{r}
 
@@ -352,7 +422,51 @@ do.call("grid.arrange", c(list_sample_chr, ncol = 3))
 
 ```
 
+<br>
+
+**Conditions without MPaK and VPA**
+```{r}
+
+list_sample_chr = list()
+
+for( i in 1:length(spe_peaks_filtx)) {
+  
+  # filter grange to keep only peaks of interest 
+  gr_temp = subset(gr, region %in% spe_regions_filtx[[i]])
+  name_cond = str_extract(string = names(spe_regions_filtx)[i], 
+                              pattern = "[:alnum:]+(?=_[:digit:]{2}h)")
+  
+  list_sample_chr[[i]] = as.ggplot(expression(
+      plotKaryotype(genome = "hg19", plot.type = 2) %>%
+        kpPlotRegions(data=gr_temp, avoid.overlapping = FALSE, col = color_code[name_cond]) %>%
+        kpAddMainTitle(main = paste0("Peaks only detected in  ", names(spe_regions_filtx)[i]), cex=1.5) %>%
+        kpPlotDensity(data=gr_temp, data.panel = 2)
+      )) 
+  
+   # save the plot
+   png(filename = paste0(directory_output, "plot_allchr_specificpeaks_", names(spe_regions_filtx)[i], ".png"),
+       width = 1000, height = 1400)
+   kp = plotKaryotype(genome = "hg19", plot.type = 2) %>%
+     kpPlotRegions(data=gr_temp, avoid.overlapping = FALSE, col = color_code[name_cond]) %>%
+     kpAddMainTitle(main = paste0("Peaks only detected in ", names(spe_regions_filtx)[i]), cex=1.5) %>%
+     kpPlotDensity(data=gr_temp, data.panel = 2)
+  dev.off()
+  
+}
+
+```
+
+```{r, fig.width = 30, fig.height = 65}
+
+do.call("grid.arrange", c(list_sample_chr, ncol = 3))
+
+```
+
+<br>
+
 ### All conditions per chromosome
+
+<br>
 
 ```{r}
 
@@ -430,8 +544,8 @@ for (i in 1:length(chromosomes)) {
   png(paste0(directory_output, "plot_filtsamples_specificpeaks_",chromosomes[i], ".png"), 
       width = 2000, height = 1000)
   kp = plotKaryotype(plot.type = 1, chromosomes=chromosomes[i], plot.params = pp)
-  for (j in 1:length(spe_peaks_all)) {
-    gr_temp = subset(gr, region %in% spe_regions_all[[j]])
+  for (j in 1:length(spe_peaks_filt)) {
+    gr_temp = subset(gr, region %in% spe_regions_filt[[j]])
     name_cond = str_extract(string = names(spe_peaks_filt)[j], 
                               pattern = "[:alnum:]+(?=_[:digit:]{2}h)")
     name_sample = str_extract(string = names(spe_peaks_filt)[j], 
@@ -446,7 +560,49 @@ for (i in 1:length(chromosomes)) {
 
 ```
 
+**Conditions without MPaK and VPA**
+```{r}
+
+for (i in 1:length(chromosomes)) { 
+
+  # visualize on html file
+    kp = plotKaryotype(plot.type = 1, chromosomes=chromosomes[i], plot.params = pp)
+    for (j in 1:length(spe_peaks_filtx)) {
+      gr_temp = subset(gr, region %in% spe_regions_filtx[[j]])
+      name_cond = str_extract(string = names(spe_peaks_filtx)[j], 
+                              pattern = "[:alnum:]+(?=_[:digit:]{2}h)")
+      name_sample = str_extract(string = names(spe_peaks_filtx)[j], 
+                                pattern = "[:alnum:]+_[:digit:]{2}h")
+      kpPlotRegions(kp, data=gr_temp, border=color_code[name_cond], r0=j-1, r1=j-0.6)
+      kpPlotDensity(kp, data=gr_temp, data.panel = 1, r0=j-0.6, r1=j-0.2)
+      kpAddLabels(kp, labels=name_sample, data.panel = 1, r0=j-1, r1=j-0.6)
+    }
+  
+  # save plot
+  png(paste0(directory_output, "plot_filtXsamples_specificpeaks_",chromosomes[i], ".png"), 
+      width = 2000, height = 1000)
+  kp = plotKaryotype(plot.type = 1, chromosomes=chromosomes[i], plot.params = pp)
+  for (j in 1:length(spe_peaks_filtx)) {
+    gr_temp = subset(gr, region %in% spe_regions_filtx[[j]])
+    name_cond = str_extract(string = names(spe_peaks_filtx)[j], 
+                              pattern = "[:alnum:]+(?=_[:digit:]{2}h)")
+    name_sample = str_extract(string = names(spe_peaks_filtx)[j], 
+                            pattern = "[:alnum:]+_[:digit:]{2}h")
+      kpPlotRegions(kp, data=gr_temp, border=color_code[name_cond], r0=j-1, r1=j-0.6)
+      kpPlotDensity(kp, data=gr_temp, data.panel = 1, r0=j-0.6, r1=j-0.2)
+      kpAddLabels(kp, labels=name_sample, data.panel = 1, r0=j-1, r1=j-0.6) 
+    }
+  dev.off()
+  
+}
+
+```
+
+<br>
+
 ## Perform pathway and GO analysis 
+
+<br>
 
 ```{r}
 
@@ -458,14 +614,25 @@ for (i in 1:length(spe_peaks_all)) {
 
 pathgo_spe_peaks_filt = list()
 for (i in 1:length(spe_peaks_filt)) {
+  name = names(spe_peaks_filt)[i]
   pathgo_spe_peaks_filt[[i]] = path_go_fun(dfPA, spe_peaks_filt[[i]], name)
+}
+
+pathgo_spe_peaks_filtx = list()
+for (i in 1:length(spe_peaks_filtx)) {
+  name = names(spe_peaks_filtx)[i]
+  pathgo_spe_peaks_filtx[[i]] = path_go_fun(dfPA, spe_peaks_filtx[[i]], name)
 }
 
 saveRDS(pathgo_spe_peaks_all, file = paste0(directory_output, "pathgo_spe_peaks_all.rds"))
 saveRDS(pathgo_spe_peaks_filt, file = paste0(directory_output, "pathgo_spe_peaks_filt.rds"))
+saveRDS(pathgo_spe_peaks_filtx, file = paste0(directory_output, "pathgo_spe_peaks_filtx.rds"))
 
 ```
 
+<br>
+
+**All conditions**
 ```{r, fig.width = 20, fig.height=40}
 
 list_all = unlist(pathgo_spe_peaks_all, recursive=FALSE)
@@ -493,6 +660,9 @@ do.call("grid.arrange", c(list_all_plot, ncol = 3))
 
 ```
 
+<br>
+
+**Conditions MP, DON, 2DG and AOA**
 ```{r, fig.width = 20, fig.height=30}
 
 list_filt = unlist(pathgo_spe_peaks_filt, recursive=FALSE)
@@ -520,6 +690,38 @@ do.call("grid.arrange", c(list_filt_plot, ncol = 3))
 
 ```
 
+<br>
+
+**Conditions Xvivo, MP, DON, 2DG and AOA**
+```{r, fig.width = 20, fig.height=30}
+
+list_filtx = unlist(pathgo_spe_peaks_filtx, recursive=FALSE)
+list_filtx_pathway = list_filt[str_detect(names(list_filtx), "pathway")]
+list_filtx_plot = list_filt[str_detect(names(list_filtx), "dotplot")]
+list_filtx_plot = lapply(list_filtx_plot, function(x) {x= x+theme(axis.text.y=element_text(size=8))})
+
+pathway_tab = do.call("rbind", list_filtx_pathway) 
+pathway_tab = pathway_tab %>%
+  dplyr::mutate(Condition = str_extract(rownames(pathway_tab), "[:alnum:]+_[:digit:]{2}h(?=.pathway)"), .before = "ID")
+rownames(pathway_tab) = NULL
+write.csv2(x = pathway_tab, row.names = FALSE,
+           file = paste0(directory_output, "pathway_tab_spe_filtX_peaks.csv"))
+
+pathway_short = pathway_tab %>%
+  dplyr::group_by(Condition) %>%
+  dplyr::top_n(10)
+
+pathway_short %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(width="100%", height="500px")
+
+do.call("grid.arrange", c(list_filtx_plot, ncol = 3))
+
+```
+
+
+
 <br><br><br>
 
 
@@ -530,28 +732,31 @@ do.call("grid.arrange", c(list_filt_plot, ncol = 3))
 
 ```{r}
 
-# Keep the peaks that are present in all sample (all conditions : MP/DON/2DG/AOA/MPaK/VPA) at the same time
+# Keep the peaks that are present in all samples (all conditions : Xvivo/MP/DON/2DG/AOA/MPaK/VPA) at the same time
 df_all = df %>% 
   dplyr::mutate(Sum = rowSums(., na.rm=TRUE)) %>%
   dplyr::filter(Sum == ncol(df))
-cat("Number of shared peaks :", nrow(df_all))
+cat("Number of shared peaks :", nrow(df_all), "\n")
 peaks_all = rownames(df_all)
 regions_all = (count_df %>% dplyr::filter(rownames(count_df) %in% peaks_all))$region
   
-# Remove the unwanted condition and keep only the peaks that are present in samples MP/DON/2DG/AOA at the same time
-to_remove = str_subset(colnames(df), pattern = "CTRLaK|VPA|Xvivo")
-df_all_filt = df %>% 
+# Remove the unwanted condition and keep only the peaks that are present in samples Xvivo/MP/DON/2DG/AOA at the same time
+to_remove = str_subset(colnames(df), pattern = "CTRLaK|VPA")
+df_all_filtx = df %>% 
   dplyr::select(-all_of(to_remove)) %>%
   dplyr::mutate(Sum = rowSums(., na.rm=TRUE)) 
-df_all_filt = df_all_filt %>%
-  dplyr::filter(Sum == (ncol(df_all_filt) -1))
-cat("Number of shared peaks :", nrow(df_all_filt))
-peaks_all_filt = rownames(df_all_filt)
-regions_all_filt = (count_df %>% dplyr::filter(rownames(count_df) %in% peaks_all_filt))$region
+df_all_filtx = df_all_filtx %>%
+  dplyr::filter(Sum == (ncol(df_all_filtx) -1))
+cat("Number of shared peaks :", nrow(df_all_filtx), "\n")
+peaks_all_filtx = rownames(df_all_filtx)
+regions_all_filtx = (count_df %>% dplyr::filter(rownames(count_df) %in% peaks_all_filtx))$region
 
 ```
+<br>
 
 ## Visualize chromosome localisation
+
+<br>
 
 **All conditions**
 ```{r}
@@ -574,10 +779,12 @@ plotKaryotype(genome = "hg19", plot.type = 2) %>%
 
 ```
 
-**Conditions without MPaK, VPA and Xvivo**
+<br>
+
+**Conditions without MPaK and VPA**
 ```{r}
 
-gr_temp = subset(gr, region %in% regions_all_filt)
+gr_temp = subset(gr, region %in% regions_all_filtx)
 
 plotKaryotype(genome = "hg19", plot.type = 2) %>%
         kpPlotRegions(data=gr_temp, avoid.overlapping = FALSE) %>%
@@ -585,19 +792,24 @@ plotKaryotype(genome = "hg19", plot.type = 2) %>%
         kpPlotDensity(data=gr_temp, data.panel = 2)
 
 # save the plot
-   png(filename = paste0(directory_output, "plot_allfiltcondpeaks.png"),
+   png(filename = paste0(directory_output, "plot_allfiltXpeaks.png"),
        width = 1000, height = 1400)
    kp = plotKaryotype(genome = "hg19", plot.type = 2) %>%
         kpPlotRegions(data=gr_temp, avoid.overlapping = FALSE) %>%
-        kpAddMainTitle(main = "Peaks detected in MP/DON/2DG/AOA simulatenously", cex=1.5) %>%
+        kpAddMainTitle(main = "Peaks detected in Xvivo/MP/DON/2DG/AOA simulatenously", cex=1.5) %>%
         kpPlotDensity(data=gr_temp, data.panel = 2)
   dev.off()
 
 
 ```
 
+<br>
+
 ## Perform pathway and GO analysis 
 
+<br>
+
+**All conditions**
 ```{r, fig.width = 6, fig.height = 10}
 
 pathgo_all_peaks = path_go_fun(dfPA, peaks_all, "Peaks in all conditions simultaneously")
@@ -618,26 +830,198 @@ pathgo_all_peaks$dotplot +
 
 ```
 
+<br>
+
+**Conditions Xvivo/MP/DON/2DG/AOA**
 ```{r, fig.width = 6, fig.height = 10}
 
-pathgo_filt_peaks = path_go_fun(dfPA, peaks_all_filt, "Peaks in MP/DON/AOA/2DG simultaneously")
-saveRDS(pathgo_filt_peaks, file = paste0(directory_output, "pathgo_filt_peaks.rds"))
+pathgo_filtx_peaks = path_go_fun(dfPA, peaks_all_filtx, "Peaks in Xvivo/MP/DON/AOA/2DG simultaneously")
+saveRDS(pathgo_filtx_peaks, file = paste0(directory_output, "pathgo_filtx_peaks.rds"))
 
-pathway_tab = pathgo_filt_peaks$pathway
+pathway_tab = pathgo_filtx_peaks$pathway
 rownames(pathway_tab) = NULL
 write.csv2(x = pathway_tab, row.names = FALSE,
-           file = paste0(directory_output, "pathway_tab_sim_filt_peaks.csv"))
+           file = paste0(directory_output, "pathway_tab_sim_filtx_peaks.csv"))
 
 pathway_tab %>%
   kable() %>%
   kable_styling() %>%
   scroll_box(width="100%", height="500px")
 
-pathgo_filt_peaks$dotplot +
+pathgo_filtx_peaks$dotplot +
   theme(axis.text.y=element_text(size=8))
 
 ```
 
+
+
+<br><br><br>
+
+# Peaks specific and common (Xvivo/MP/DON/2DG/AOA) : chance or real localisation signification ?
+
+<br>
+
+Create the data.frame with windows on chromosome parts  
+http://www.insilicase.com/Web/Chromlen.aspx  
+```{r}
+
+chr_end = c("chr1"=247249719, "chr2"=242951149, "chr3"=199501827,
+            "chr4"=191273063, "chr5"=180857866,"chr6"=170899992, 
+            "chr7"=158821424,"chr8"=146274826,"chr9"=140273252,
+            "chr10"=135374737,"chr11"=134452384,"chr12"=132349534,
+            "chr13"=114142980,"chr14"=106368585,"chr15"=100338915,
+            "chr16"=88827254,"chr17"=78774742,"chr18"=76117153,
+            "chr19"=63811651,"chr20"=62435964,"chr21"=46944323,
+            "chr22"=49691432,"chrX"=154913754,"chrY"=57772954)	
+
+window_fun = function(chr, chr_end, length_window) {
+  size_chr = as.integer(chr_end[chr])
+  windows = round(seq(from=0, to=size_chr, by=length_window))
+  start = as.integer(windows)
+  start = start[-length(start)]
+  start = c(start[1], start[-1]+1) 
+  end = as.integer(windows[-1])
+  tab = data.frame(chromosome = chr,
+                 start_w = start,
+                 end_w = end,
+                 window = paste0(start,"-", end))
+  return(tab)
+}
+
+df_windows = data.frame()
+for (i in 1:length(chr_end)) {
+  temp = window_fun(names(chr_end)[i], chr_end, 100000)
+  df_windows = rbind(df_windows, temp)                  
+}
+
+```
+
+<br>
+
+Create a table with the list of specific peaks for each condition and the list of common peaks.  
+```{r}
+
+spe_peaks_df = data.frame()
+for (i in 1:length(spe_peaks_filtx)) {
+  temp = data.frame(peak = spe_peaks_filtx[[i]],
+                    condition = names(spe_peaks_filtx)[i]) %>%
+    tidyr::separate(col = peak, into = c("seqnames", "start", "end"), sep ="_")
+  temp$condition = paste0("only_", temp$condition)
+  spe_peaks_df = rbind(spe_peaks_df, temp)
+}
+
+common_peaks_df = data.frame(peak = peaks_all_filtx,
+                             condition = "common_allcond")  %>%
+    tidyr::separate(col = peak, into = c("seqnames", "start", "end"), sep ="_")
+
+peaks_df = rbind(spe_peaks_df, common_peaks_df)
+peaks_df$start = as.integer(peaks_df$start)
+peaks_df$end = as.integer(peaks_df$end)
+
+```
+
+<br>
+
+For each window, count the number of peaks that are specific to one condition or common to all.
+```{r}
+
+df_peaks_window = data.frame()
+
+for (i in 1:nrow(df_windows)) {
+  
+  # extract parameters of the window
+  chr_row = df_windows$chromosome[i]
+  start_row = df_windows$start[i]
+  end_row = df_windows$end[i]
+  
+  # total number of peaks in the window
+  df_tot = count_df %>% dplyr::filter(seqnames == chr_row & 
+                                        start >= start_row & 
+                                        end <= end_row)
+  totpeaks = data.frame(total_nbpeaks = nrow(df_tot))
+  
+  # number of peaks specific to one condition in the window
+  df_spe_com = peaks_df %>% dplyr::filter(seqnames == chr_row & 
+                                        start >= start_row & 
+                                        end <= end_row)
+
+  nbpeaks = data.frame("only_2DG_03h" = integer(), "only_2DG_12h"= integer(), 
+                       "only_2DG_24h"= integer(), "only_AOA_03h"= integer(), 
+                       "only_AOA_12h"= integer(), "only_AOA_24h"= integer(), 
+                       "common_allcond"= integer(), "only_DON_03h"= integer(), 
+                       "only_DON_12h"= integer(), "only_DON_24h"= integer(), 
+                       "only_MP_03h"= integer(), "only_MP_12h"= integer(), 
+                       "only_MP_24h"= integer(), "only_Xvivo_00h"= integer())
+  
+  temp = data.frame(table(df_spe_com$condition)) 
+  if (nrow(temp) != 0) {
+    temp = temp %>% tidyr::pivot_wider(names_from = "Var1", values_from = "Freq")
+    nbpeaks = rbind.fill(nbpeaks, temp)
+  } else {
+    nbpeaks[1,] = rep(0, 14)
+  }
+
+  # merge all the information into one data.frame
+  temp = cbind(df_windows[i,], totpeaks, nbpeaks)
+  df_peaks_window = rbind(df_peaks_window, temp)
+}
+
+df_peaks_window = df_peaks_window %>% replace(is.na(.), 0)
+
+write.csv2(df_peaks_window, paste0(directory_output, "df_peaks_windows.csv"))
+
+```
+
+<br>
+
+https://stackoverflow.com/questions/37299206/divide-all-columns-by-the-value-from-the-2nd-column-apply-for-all-rows  
+```{r}
+
+# Calcul ratio of peaks per category / total peak in the window
+df_ratio = df_peaks_window
+df_ratio[, -(1:4)] = sweep(df_ratio[, -(1:4)], 1, df_ratio[, 5], "/")
+df_ratio[, -(1:4)] = df_ratio[, -(1:4)]*100
+df_ratio[, -(1:4)] = round(df_ratio[, -(1:4)], 3)
+df_ratio = df_ratio %>% dplyr::select(-total_nbpeaks)
+
+write.csv2(df_ratio, paste0(directory_output, "df_ratio.csv"))
+
+# Statistical test 
+df_pval = data.frame()
+for (i in 1:nrow(df_ratio)) {
+  temp = df_ratio[i,]
+  common = temp$common_allcond
+  temp_pval = data.frame("pval_2DG_03h_VS_common" = ifelse(temp$only_2DG_03h == 0, NA, wilcox.test(temp$only_2DG_03h, common)$p.value),
+                       "pval_2DG_12h_VS_common" = ifelse(temp$only_2DG_12h == 0, NA, wilcox.test(temp$only_2DG_12h, common)$p.value),
+                       "pval_2DG_24h_VS_common" = ifelse(temp$only_2DG_24h == 0, NA, wilcox.test(temp$only_2DG_24h, common)$p.value),
+                       "pval_AOA_03h_VS_common" = ifelse(temp$only_AOA_03h == 0, NA, wilcox.test(temp$only_AOA_03h, common)$p.value),
+                       "pval_AOA_12h_VS_common" = ifelse(temp$only_AOA_12h == 0, NA, wilcox.test(temp$only_AOA_12h, common)$p.value),
+                       "pval_AOA_24h_VS_common" = ifelse(temp$only_AOA_24h == 0, NA, wilcox.test(temp$only_AOA_24h, common)$p.value),
+                       "pval_DON_03h_VS_common" = ifelse(temp$only_DON_03h == 0, NA, wilcox.test(temp$only_DON_03h, common)$p.value),
+                       "pval_DON_12h_VS_common" = ifelse(temp$only_DON_12h == 0, NA, wilcox.test(temp$only_DON_12h, common)$p.value),
+                       "pval_DON_24h_VS_common" = ifelse(temp$only_DON_24h == 0, NA, wilcox.test(temp$only_DON_24h, common)$p.value),
+                       "pval_MP_03h_VS_common" = ifelse(temp$only_MP_03h == 0, NA, wilcox.test(temp$only_MP_03h, common)$p.value),
+                       "pval_MP_12h_VS_common" = ifelse(temp$only_MP_12h == 0, NA, wilcox.test(temp$only_MP_12h, common)$p.value),
+                       "pval_MP_24h_VS_common" = ifelse(temp$only_MP_24h == 0, NA, wilcox.test(temp$only_MP_24h, common)$p.value),
+                       "pval_Xvivo_00h_VS_common" =ifelse(temp$only_Xvivo_00h == 0, NA, wilcox.test(temp$only_Xvivo_00h, common)$p.value))
+  temp_pval = cbind(df_ratio[i,1:4], temp_pval)
+  df_pval = rbind(df_pval, temp_pval)
+}
+
+
+```
+
+<br>
+
+
+
+<br>
+
+```{r}
+
+# Representation pour un chromosome 24hrs : specifique pour chaque cond et commun pour le chromosome 21 par exemple
+
+```
 
 
 <br><br><br>
