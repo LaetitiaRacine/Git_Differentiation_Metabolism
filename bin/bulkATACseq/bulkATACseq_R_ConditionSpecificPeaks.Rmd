@@ -40,6 +40,7 @@ library(GenomicRanges)
 library(ggplotify)
 library(karyoploteR)
 library(gridExtra)
+library(plyr)
 
 ```
 
@@ -988,26 +989,47 @@ write.csv2(df_ratio, paste0(directory_output, "df_ratio.csv"))
 
 # Statistical test 
 df_pval = data.frame()
+# for (i in 1:nrow(df_ratio)) {
+#   temp = df_ratio[i,]
+#   common = temp$common_allcond
+#   temp_pval = data.frame("pval_2DG_03h_VS_common" = ifelse(temp$only_2DG_03h == 0, NA, wilcox.test(temp$only_2DG_03h, common)$p.value),
+#                        "pval_2DG_12h_VS_common" = ifelse(temp$only_2DG_12h == 0, NA, wilcox.test(temp$only_2DG_12h, common)$p.value),
+#                        "pval_2DG_24h_VS_common" = ifelse(temp$only_2DG_24h == 0, NA, wilcox.test(temp$only_2DG_24h, common)$p.value),
+#                        "pval_AOA_03h_VS_common" = ifelse(temp$only_AOA_03h == 0, NA, wilcox.test(temp$only_AOA_03h, common)$p.value),
+#                        "pval_AOA_12h_VS_common" = ifelse(temp$only_AOA_12h == 0, NA, wilcox.test(temp$only_AOA_12h, common)$p.value),
+#                        "pval_AOA_24h_VS_common" = ifelse(temp$only_AOA_24h == 0, NA, wilcox.test(temp$only_AOA_24h, common)$p.value),
+#                        "pval_DON_03h_VS_common" = ifelse(temp$only_DON_03h == 0, NA, wilcox.test(temp$only_DON_03h, common)$p.value),
+#                        "pval_DON_12h_VS_common" = ifelse(temp$only_DON_12h == 0, NA, wilcox.test(temp$only_DON_12h, common)$p.value),
+#                        "pval_DON_24h_VS_common" = ifelse(temp$only_DON_24h == 0, NA, wilcox.test(temp$only_DON_24h, common)$p.value),
+#                        "pval_MP_03h_VS_common" = ifelse(temp$only_MP_03h == 0, NA, wilcox.test(temp$only_MP_03h, common)$p.value),
+#                        "pval_MP_12h_VS_common" = ifelse(temp$only_MP_12h == 0, NA, wilcox.test(temp$only_MP_12h, common)$p.value),
+#                        "pval_MP_24h_VS_common" = ifelse(temp$only_MP_24h == 0, NA, wilcox.test(temp$only_MP_24h, common)$p.value),
+#                        "pval_Xvivo_00h_VS_common" =ifelse(temp$only_Xvivo_00h == 0, NA, wilcox.test(temp$only_Xvivo_00h, common)$p.value))
+#   temp_pval = cbind(df_ratio[i,1:4], temp_pval)
+#   df_pval = rbind(df_pval, temp_pval)
+# }
+
+df_ratio[is.na(df_ratio)] = 0
+# not working when x = 0
 for (i in 1:nrow(df_ratio)) {
   temp = df_ratio[i,]
   common = temp$common_allcond
-  temp_pval = data.frame("pval_2DG_03h_VS_common" = ifelse(temp$only_2DG_03h == 0, NA, wilcox.test(temp$only_2DG_03h, common)$p.value),
-                       "pval_2DG_12h_VS_common" = ifelse(temp$only_2DG_12h == 0, NA, wilcox.test(temp$only_2DG_12h, common)$p.value),
-                       "pval_2DG_24h_VS_common" = ifelse(temp$only_2DG_24h == 0, NA, wilcox.test(temp$only_2DG_24h, common)$p.value),
-                       "pval_AOA_03h_VS_common" = ifelse(temp$only_AOA_03h == 0, NA, wilcox.test(temp$only_AOA_03h, common)$p.value),
-                       "pval_AOA_12h_VS_common" = ifelse(temp$only_AOA_12h == 0, NA, wilcox.test(temp$only_AOA_12h, common)$p.value),
-                       "pval_AOA_24h_VS_common" = ifelse(temp$only_AOA_24h == 0, NA, wilcox.test(temp$only_AOA_24h, common)$p.value),
-                       "pval_DON_03h_VS_common" = ifelse(temp$only_DON_03h == 0, NA, wilcox.test(temp$only_DON_03h, common)$p.value),
-                       "pval_DON_12h_VS_common" = ifelse(temp$only_DON_12h == 0, NA, wilcox.test(temp$only_DON_12h, common)$p.value),
-                       "pval_DON_24h_VS_common" = ifelse(temp$only_DON_24h == 0, NA, wilcox.test(temp$only_DON_24h, common)$p.value),
-                       "pval_MP_03h_VS_common" = ifelse(temp$only_MP_03h == 0, NA, wilcox.test(temp$only_MP_03h, common)$p.value),
-                       "pval_MP_12h_VS_common" = ifelse(temp$only_MP_12h == 0, NA, wilcox.test(temp$only_MP_12h, common)$p.value),
-                       "pval_MP_24h_VS_common" = ifelse(temp$only_MP_24h == 0, NA, wilcox.test(temp$only_MP_24h, common)$p.value),
-                       "pval_Xvivo_00h_VS_common" =ifelse(temp$only_Xvivo_00h == 0, NA, wilcox.test(temp$only_Xvivo_00h, common)$p.value))
+  temp_pval = data.frame("pval_2DG_03h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_2DG_03h, common)))$p.value,
+                       "pval_2DG_12h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_2DG_12h, common)))$p.value,
+                       "pval_2DG_24h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_2DG_24h, common)))$p.value,
+                       "pval_AOA_03h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_AOA_03h, common)))$p.value,
+                       "pval_AOA_12h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_AOA_12h, common)))$p.value,
+                       "pval_AOA_24h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_AOA_24h, common)))$p.value,
+                       "pval_DON_03h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_DON_03h, common)))$p.value,
+                       "pval_DON_12h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_DON_12h, common)))$p.value,
+                       "pval_DON_24h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_DON_24h, common)))$p.value,
+                       "pval_MP_03h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_MP_03h, common)))$p.value,
+                       "pval_MP_12h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_MP_12h, common)))$p.value,
+                       "pval_MP_24h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_MP_24h, common)))$p.value,
+                       "pval_Xvivo_00h_VS_common" = chisq.test(data.frame(peaks = c(temp$only_Xvivo_00h, common)))$p.value)
   temp_pval = cbind(df_ratio[i,1:4], temp_pval)
   df_pval = rbind(df_pval, temp_pval)
 }
-
 
 ```
 
@@ -1019,9 +1041,47 @@ for (i in 1:nrow(df_ratio)) {
 
 ```{r}
 
+# Display settings: https://bernatgel.github.io/karyoploter_tutorial//Tutorial/PlotParams/PlotParams.html 
+pp = getDefaultPlotParams(plot.type=1)
+pp$data1height = 10
+pp$ideogramheight = 6
+pp$bottommargin = 10
+pp$data1inmargin = 10
+
 # Representation pour un chromosome 24hrs : specifique pour chaque cond et commun pour le chromosome 21 par exemple
+detail.region <- toGRanges(data.frame("chr21", 10e6, 100e6))
+kp = plotKaryotype(plot.type = 1, chromosomes="chr21", plot.params = pp, zoom=detail.region)
+kpAddBaseNumbers(kp)
+    for (j in 1:length(spe_peaks_filtx)) {
+      gr_temp = subset(gr, region %in% spe_regions_filtx[[j]])
+      name_cond = str_extract(string = names(spe_peaks_filtx)[j], 
+                              pattern = "[:alnum:]+(?=_[:digit:]{2}h)")
+      name_sample = str_extract(string = names(spe_peaks_filtx)[j], 
+                                pattern = "[:alnum:]+_[:digit:]{2}h")
+      kpPlotRegions(kp, data=gr_temp, border=color_code[name_cond], r0=j-1, r1=j-0.6)
+      kpPlotDensity(kp, data=gr_temp, data.panel = 1, r0=j-0.6, r1=j-0.2)
+      kpAddLabels(kp, labels=name_sample, data.panel = 1, r0=j-1, r1=j-0.6)
+    }
 
 ```
+
+
+r>
+
+```{r}
+
+chromosomes = c("chr1", "chr2", "chr3", "chr4", "chr5", "chr6", "chr7", "chr8", 
+                "chr9", "chr10", "chr11", "chr12", "chr13", "chr14", "chr15", 
+                "chr16", "chr17", "chr18", "chr19", "chr20", "chr21", "chr22", 
+                "chrX", "chrY")
+
+
+
+```
+
+
+
+<br>
 
 
 <br><br><br>
