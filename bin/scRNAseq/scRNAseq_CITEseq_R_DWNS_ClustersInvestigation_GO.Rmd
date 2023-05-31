@@ -339,24 +339,39 @@ featureplot
 
 ```{r, fig.show="hide", results="hide"}
 
+# Save markers
 write.csv2(clust_markers, file = paste0(directory_output, "clust_markers.csv"), row.names = FALSE)
 write.csv2(top20_pos, file = paste0(directory_output, "top20_pos_markers.csv"), row.names = FALSE)
 write.csv2(top20_pos_filtered, file = paste0(directory_output, "top20_pos_filtered_markers.csv"), row.names = FALSE)
+
+# save GO results 
 saveRDS(object = list_GO_analysis, file = paste0(directory_output, "list_GO_clust.rds"))
+list_GO = unlist(unlist(list_GO_analysis,recursive=FALSE),recursive=FALSE)
+list_GO = list_GO[str_detect(names(list_GO), "ego_result")]
+list_GO = list_GO[str_detect(names(list_GO), "filter")]
+tab_GO = do.call("rbind", list_GO) %>%
+  rownames_to_column(var = "clust") %>%
+  dplyr::mutate(clust = str_extract(clust, "cluster_[:digit:]+")) %>%
+  separate(col = clust, into = c("clust", "number"), sep = "_") %>%
+  dplyr::mutate(number = as.integer(number)) %>%
+  dplyr::mutate(number = number - 1) %>%
+  dplyr::mutate(clust = paste0(clust, "_", number)) %>%
+  dplyr::select(-number)
+write.csv2(tab_GO, file = paste0(directory_output, "tab_GO.csv"), row.names = FALSE)
 
 # Save GO plots
 ggsave(plot = do.call("grid.arrange", c(list_GO_dotplot_nofilter, ncol = 7)),
        filename = paste0(directory_output, "GO_clust_dotplot_nofilter.svg"),
-       width = 40, height = 34)
+       width = 40, height = 40)
 ggsave(plot = do.call("grid.arrange", c(list_GO_dotplot_filter, ncol = 7)),
        filename = paste0(directory_output, "GO_clust_dotplot_filter.svg"),
-       width = 40, height = 34)
+       width = 40, height = 40)
 ggsave(plot = do.call("grid.arrange", c(list_GO_barplot_nofilter, ncol = 7)),
        filename = paste0(directory_output, "GO_clust_barplot_nofilter.svg"),
-       width = 40, height = 34)
+       width = 40, height = 40)
 ggsave(plot = do.call("grid.arrange", c(list_GO_barplot_filter, ncol = 7)),
        filename = paste0(directory_output, "GO_clust_barplot_filter.svg"),
-       width = 40, height = 34)
+       width = 40, height = 40)
 
 ## Save markers plots (feature and vln plot too big to be saved)
 ggsave(plot = pos_heatmap, width = 14, height = 24,
