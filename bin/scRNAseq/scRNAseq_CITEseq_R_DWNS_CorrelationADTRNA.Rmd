@@ -512,7 +512,7 @@ cat("Limits cluster 1 :", lim_clust1, "=> low", "\n",
 # Add kmean information in the tab
 protein_tab_cd133 = protein_tab_cd133 %>%
   dplyr::mutate(CD133_three_groups = ifelse(fit.cluster==1, "CD133_low", 
-                                           ifelse(fit.cluster==2, "CD34_high", "CD34_medium"))) %>%
+                                           ifelse(fit.cluster==2, "CD133_high", "CD133_medium"))) %>%
   tibble::rownames_to_column(var = "cell") %>%
   dplyr::select(cell, CD133_three_groups)
 
