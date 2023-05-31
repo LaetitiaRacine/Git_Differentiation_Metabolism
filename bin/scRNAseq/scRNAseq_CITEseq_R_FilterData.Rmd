@@ -482,23 +482,26 @@ summary_cell_tab = data.frame(condition = character(),
 
 for(i in 1:number_conditions) {
   # nFeature_RNA : number of genes detected in each cell
-  temp = data.frame(condition = rep(names(filtered_list_seurat_obj[i]), 4),
-                    statistic = c("min", "median", "mean", "max"),
+  temp = data.frame(condition = rep(names(filtered_list_seurat_obj[i]), 5),
+                    statistic = c("min", "median", "mean", "max", "sd"),
                     nbgenes_detected_per_cell = c(
                       min(filtered_list_seurat_obj[[i]]$nFeature_RNA), 
                       median(filtered_list_seurat_obj[[i]]$nFeature_RNA), 
                       mean(filtered_list_seurat_obj[[i]]$nFeature_RNA), 
-                      max(filtered_list_seurat_obj[[i]]$nFeature_RNA)),
+                      max(filtered_list_seurat_obj[[i]]$nFeature_RNA),
+                      sd(filtered_list_seurat_obj[[i]]$nFeature_RNA)),
                     percent_MT_RNA = c(
                       min(filtered_list_seurat_obj[[i]]$percent.mt), 
                       median(filtered_list_seurat_obj[[i]]$percent.mt),
                       mean(filtered_list_seurat_obj[[i]]$percent.mt),
-                      max(filtered_list_seurat_obj[[i]]$percent.mt)),
+                      max(filtered_list_seurat_obj[[i]]$percent.mt),
+                      sd(filtered_list_seurat_obj[[i]]$percent.mt)),
                     percent_RB_RNA = c(
                       min(filtered_list_seurat_obj[[i]]$percent.ribo), 
                       median(filtered_list_seurat_obj[[i]]$percent.ribo),
                       mean(filtered_list_seurat_obj[[i]]$percent.ribo),
-                      max(filtered_list_seurat_obj[[i]]$percent.ribo)))
+                      max(filtered_list_seurat_obj[[i]]$percent.ribo),
+                      sd(filtered_list_seurat_obj[[i]]$percent.ribo)))
   summary_cell_tab = rbind(summary_cell_tab, temp)
   
 }
@@ -508,6 +511,20 @@ summary_cell_tab %>%
   kable_styling()
 
 
+ctrl_sub = merge(x = filtered_list_seurat_obj[["CTRL"]],
+                 y = filtered_list_seurat_obj[["CTRL2"]])
+tab_ctrl = data.frame(condition = rep("CTRL1&2", 5),
+                      statistic = c("min", "median", "mean", "max", "sd"),
+                      nbgenes_detected_per_cell = c(
+                        min(ctrl_sub$nFeature_RNA), 
+                        median(ctrl_sub$nFeature_RNA), 
+                        mean(ctrl_sub$nFeature_RNA), 
+                        max(ctrl_sub$nFeature_RNA),
+                        sd(ctrl_sub$nFeature_RNA)))
+tab_ctrl  %>%
+  kable() %>%
+  kable_styling()
+    
 ```
 
 ```{r, Extract matrix per condition}
@@ -538,8 +555,7 @@ rm(list_mat_raw)
 
 ![](/home/rparmentier/Bureau/Git_Differentiation_Metabolism/data/matrix2.png)  
 
-meanUMI_per_gene_corrected : the cells with zero UMI for this gene are discarded for  
-this calculation so we have the mean UMI of the cells that expressed the gene studied.  
+meanUMI_per_gene_corrected : the cells with zero UMI for this gene are discarded for this calculation so we have the mean UMI of the cells that expressed the gene studied.    
 
 ![](/home/rparmentier/Bureau/Git_Differentiation_Metabolism/data/matrix3.png)
 
@@ -547,6 +563,11 @@ this calculation so we have the mean UMI of the cells that expressed the gene st
 
 # Extract statistic information
 list_ind_genes = list()
+list_histo_max = list()
+list_histo_max_zoom = list()
+list_histo_sum = list()
+list_histo_nbcells = list()
+                       
 for (i in 1:length(list_mat_detected)) {
   
     # Extract matrix 
@@ -568,10 +589,33 @@ for (i in 1:length(list_mat_detected)) {
       medianUMI_per_gene = rowMedians(temp_mat),
       meanUMI_per_gene = rowMeans(temp_mat),
       meanUMI_per_gene_corrected = round(rowMeans(temp_mean, na.rm = TRUE),3),
-      maxUMI_per_gene = rowMaxs(temp_mat))
+      maxUMI_per_gene = rowMaxs(temp_mat),
+      sdUMI_per_gene = rowSds(temp_mat))
     ind_genes[is.na(ind_genes)] = 0
        
     list_ind_genes[[i]] = ind_genes
+    
+    # Visualize distribution
+    histo_max = ggplot(data.frame(maxUMI_per_gene = rowMaxs(temp_mat)), aes(x=maxUMI_per_gene)) +
+      geom_histogram(binwidth = 20, fill = "#7AB5FF", col = "#1351A1") +
+      theme(axis.text.x = element_text(size = 8, angle = 90)) +
+      ggtitle(names(list_mat_detected[i]))
+    histo_max_zoom = ggplot(data.frame(maxUMI_per_gene = rowMaxs(temp_mat)), aes(x=maxUMI_per_gene)) +
+      geom_histogram(binwidth = 1, fill = "#7AB5FF", col = "#1351A1") +
+      coord_cartesian(xlim = c(0,50)) +
+      theme(axis.text.x = element_text(size = 8, angle = 90)) +
+      ggtitle(names(list_mat_detected[i]))
+    histo_sum = ggplot(data.frame(sumUMI_per_gene = rowMaxs(temp_mat)), aes(x=sumUMI_per_gene)) +
+      geom_histogram(binwidth = 20, fill = "#7AB5FF", col = "#1351A1") +
+      ggtitle(names(list_mat_detected[i]))
+    histo_nbcells = ggplot(data.frame(nbcells_expressing_gene = rowSums(temp_binary)), aes(x=nbcells_expressing_gene)) +
+      geom_histogram(binwidth = 20, fill = "#7AB5FF", col = "#1351A1") +
+      ggtitle(names(list_mat_detected[i]))
+    
+    list_histo_max[[i]] = histo_max
+    list_histo_max_zoom[[i]] = histo_max_zoom
+    list_histo_sum[[i]] = histo_sum
+    list_histo_nbcells[[i]] = histo_nbcells
     
 }
 
@@ -586,6 +630,14 @@ ind_genes_tab[1:100,] %>%
   scroll_box(width = "900px", height = "500px")
 
 ```
+```{r, fig.width=18, fig.height=18}
+
+do.call("grid.arrange", c(list_histo_max, ncol=3))
+do.call("grid.arrange", c(list_histo_max_zoom, ncol=3))
+do.call("grid.arrange", c(list_histo_sum, ncol=3))
+do.call("grid.arrange", c(list_histo_nbcells, ncol=3))
+
+```
 
 ```{r, Matrix info}
 
@@ -594,6 +646,7 @@ list_genes_detected_1cell = list()
 list_genes_detected_inf_equal_3cells = list()
 list_histo_cells = list()
 list_histo_genes = list()
+list_genes_allcells = list()
 
 for (i in 1:length(list_mat_detected)) {
   
@@ -635,7 +688,12 @@ for (i in 1:length(list_mat_detected)) {
     )
     
     list_summary_cond[[i]] = summary_condition
-    
+    list_genes_allcells[[i]] = rownames(temp_binary %>% 
+                                          dplyr::mutate(keep = ifelse(
+                                            rowSums(temp_binary) == ncol(temp_mat), 
+                                            TRUE, FALSE)) %>%
+                                          dplyr::filter(keep == TRUE)) 
+              
     # Extract list of noteworthy genes (maybe to remove later)
     list_genes_detected_1cell[[i]] = rownames(temp_binary[rowSums(temp_binary) == 1,])
     list_genes_detected_inf_equal_3cells[[i]] = rownames(temp_binary[rowSums(temp_binary) <= 3,])
@@ -657,9 +715,146 @@ for (i in 1:length(list_mat_detected)) {
 }
 
 names(list_summary_cond) = names(list_mat_detected)
+names(list_genes_allcells) = names(list_mat_detected)
 summary_cond_tab = dplyr::bind_rows(list_summary_cond, .id = "condition")
 
 ```
+
+```{r}
+
+for (i in 1:length(list_genes_allcells)) {
+  cat(length(list_genes_allcells[[i]]), "genes common to all cells in", 
+      names(list_genes_allcells[i]), ": \n",
+      list_genes_allcells[[i]], "\n")
+}
+
+print("Common genes for CTRL1 and CTRL2")
+Reduce(intersect, list(list_genes_allcells[["CTRL"]],
+                       list_genes_allcells[["CTRL2"]]))
+
+print("Common genes for CTRL1, CTRL2, CTRLaK, DON, DONaK, 2DG, 2DGaK, AOA, AOAaK")
+Reduce(intersect, list(list_genes_allcells[["CTRL"]],
+                       list_genes_allcells[["CTRL2"]],
+                       list_genes_allcells[["DON"]],
+                       list_genes_allcells[["DONaK"]],
+                       list_genes_allcells[["2DG"]],
+                       list_genes_allcells[["2DGaK"]],
+                       list_genes_allcells[["AOA"]],
+                       list_genes_allcells[["AOAaK"]],
+                       list_genes_allcells[["CTRLaK"]]))
+
+print("Common genes for CTRL1, CTRL2, CTRLaK, DON, DONaK, 2DG, 2DGaK, AOA, AOAaK, VPA")
+Reduce(intersect, list(list_genes_allcells[["CTRL"]],
+                       list_genes_allcells[["CTRL2"]],
+                       list_genes_allcells[["DON"]],
+                       list_genes_allcells[["DONaK"]],
+                       list_genes_allcells[["2DG"]],
+                       list_genes_allcells[["2DGaK"]],
+                       list_genes_allcells[["AOA"]],
+                       list_genes_allcells[["AOAaK"]],
+                       list_genes_allcells[["VPA"]],
+                       list_genes_allcells[["CTRLaK"]]))
+
+print("Common genes for all cells of DON but not in others conditions")
+setdiff(list_genes_allcells[["DON"]], 
+        c(list_genes_allcells[["CTRL"]],
+          list_genes_allcells[["CTRL2"]],
+          list_genes_allcells[["DONaK"]],
+          list_genes_allcells[["2DG"]],
+          list_genes_allcells[["2DGaK"]],
+          list_genes_allcells[["AOA"]],
+          list_genes_allcells[["AOAaK"]],
+          list_genes_allcells[["VPA"]],
+          list_genes_allcells[["CTRLaK"]]))
+
+print("Common genes for all cells of 2DG but not in others conditions")
+setdiff(list_genes_allcells[["2DG"]], 
+        c(list_genes_allcells[["CTRL"]],
+          list_genes_allcells[["CTRL2"]],
+          list_genes_allcells[["DONaK"]],
+          list_genes_allcells[["DON"]],
+          list_genes_allcells[["2DGaK"]],
+          list_genes_allcells[["AOA"]],
+          list_genes_allcells[["AOAaK"]],
+          list_genes_allcells[["VPA"]],
+          list_genes_allcells[["CTRLaK"]]))
+
+print("Common genes for all cells of AOA but not in others conditions")
+setdiff(list_genes_allcells[["AOA"]], 
+        c(list_genes_allcells[["CTRL"]],
+          list_genes_allcells[["CTRL2"]],
+          list_genes_allcells[["DONaK"]],
+          list_genes_allcells[["DON"]],
+          list_genes_allcells[["2DGaK"]],
+          list_genes_allcells[["2DG"]],
+          list_genes_allcells[["AOAaK"]],
+          list_genes_allcells[["VPA"]],
+          list_genes_allcells[["CTRLaK"]]))
+
+print("Common genes for all cells of VPA but not in others conditions")
+setdiff(list_genes_allcells[["VPA"]], 
+        c(list_genes_allcells[["CTRL"]],
+          list_genes_allcells[["CTRL2"]],
+          list_genes_allcells[["DONaK"]],
+          list_genes_allcells[["DON"]],
+          list_genes_allcells[["2DGaK"]],
+          list_genes_allcells[["2DG"]],
+          list_genes_allcells[["AOAaK"]],
+          list_genes_allcells[["AOA"]],
+          list_genes_allcells[["CTRLaK"]]))
+
+print("Common genes for all cells of DONaK but not in others conditions")
+setdiff(list_genes_allcells[["DONaK"]], 
+        c(list_genes_allcells[["CTRL"]],
+          list_genes_allcells[["CTRL2"]],
+          list_genes_allcells[["VPA"]],
+          list_genes_allcells[["DON"]],
+          list_genes_allcells[["2DGaK"]],
+          list_genes_allcells[["2DG"]],
+          list_genes_allcells[["AOAaK"]],
+          list_genes_allcells[["AOA"]],
+          list_genes_allcells[["CTRLaK"]]))
+
+print("Common genes for all cells of CTRLaK but not in others conditions")
+setdiff(list_genes_allcells[["CTRLaK"]], 
+        c(list_genes_allcells[["CTRL"]],
+          list_genes_allcells[["CTRL2"]],
+          list_genes_allcells[["VPA"]],
+          list_genes_allcells[["DON"]],
+          list_genes_allcells[["2DGaK"]],
+          list_genes_allcells[["2DG"]],
+          list_genes_allcells[["AOAaK"]],
+          list_genes_allcells[["AOA"]],
+          list_genes_allcells[["DONaK"]]))
+
+print("Common genes for all cells of 2DGaK but not in others conditions")
+setdiff(list_genes_allcells[["2DGaK"]], 
+        c(list_genes_allcells[["CTRL"]],
+          list_genes_allcells[["CTRL2"]],
+          list_genes_allcells[["VPA"]],
+          list_genes_allcells[["DON"]],
+          list_genes_allcells[["DONaK"]],
+          list_genes_allcells[["2DG"]],
+          list_genes_allcells[["AOAaK"]],
+          list_genes_allcells[["AOA"]],
+          list_genes_allcells[["CTRLaK"]]))
+
+print("Common genes for all cells of AOAaK but not in others conditions")
+setdiff(list_genes_allcells[["AOAaK"]], 
+        c(list_genes_allcells[["CTRL"]],
+          list_genes_allcells[["CTRL2"]],
+          list_genes_allcells[["VPA"]],
+          list_genes_allcells[["DON"]],
+          list_genes_allcells[["DONaK"]],
+          list_genes_allcells[["2DG"]],
+          list_genes_allcells[["2DGaK"]],
+          list_genes_allcells[["AOA"]],
+          list_genes_allcells[["CTRLaK"]]))
+
+saveRDS(list_genes_allcells, file = paste0(directory_output, "list_genes_allcells.rds"))
+
+```
+
 
 ![](/home/rparmentier/Bureau/Git_Differentiation_Metabolism/data/matrix4.png)
 
