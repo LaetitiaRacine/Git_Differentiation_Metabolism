@@ -156,7 +156,7 @@ Documentation : https://stackoverflow.com/questions/54030049/divide-all-columns-
 # Divide per the number of cells, multiply by a 1000 factor and round
 tab_number_norm = tab_number[-nrow(tab_number),]%>%
   dplyr::mutate_at(vars(-condition, -total_cell_per_condition), 
-                   ~ round((./ total_cell_per_condition)*1000)) %>%
+                   ~ round((./ total_cell_per_condition)*1000,1)) %>%
   dplyr::select(-total_cell_per_condition)
 tab_number_norm$total_cell_per_condition = rowSums(tab_number_norm[,-1])
 
@@ -205,7 +205,7 @@ Then we study the data in two alternative ways :
 tab_percent_cond = tab_number_norm %>% dplyr::filter(condition != "total_cell_per_cluster")
 tab_percent_cond = tab_percent_cond %>%
   dplyr::mutate_at(vars(-condition, -total_cell_per_condition), 
-                   ~ round((./ total_cell_per_condition)*100)) %>%
+                   ~ round((./ total_cell_per_condition)*100,1)) %>%
   dplyr::select(-total_cell_per_condition)
 
 tab_percent_cond %>%
@@ -222,7 +222,7 @@ tab_percent_clust = tab_percent_clust[-1,] %>%
   rownames_to_column(var = "cluster")
 tab_percent_clust = tab_percent_clust %>%
   dplyr::mutate_at(vars(-cluster, -total_cell_per_cluster), 
-                   ~ round((./ total_cell_per_cluster)*100)) %>%
+                   ~ round((./ total_cell_per_cluster)*100,1)) %>%
   dplyr::select(-total_cell_per_cluster)
 
 tab_percent_clust %>%
@@ -516,7 +516,7 @@ tab_distripeaks_stat = tab_distripeaks_clust %>%
                 max_nbpeaks_percell = max(total_nbpeaks_percell),
                 min_nbpeaks_percell = min(total_nbpeaks_percell),
                 var_nbpeaks_percell = round(sd(total_nbpeaks_percell))) %>%
-  dplyr::mutate(percent_cell_clust = round((nbcells_clust/ncol(seurat_merged))*100)) %>%
+  dplyr::mutate(percent_cell_clust = round((nbcells_clust/ncol(seurat_merged))*100, 1)) %>%
   dplyr::ungroup() %>%
   dplyr::select(peaks_category, clust, nbcells_clust, percent_cell_clust, median_nbpeaks_percell, 
                 mean_nbpeaks_percell, max_nbpeaks_percell, min_nbpeaks_percell, var_nbpeaks_percell) %>%
