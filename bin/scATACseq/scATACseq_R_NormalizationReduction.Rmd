@@ -305,7 +305,8 @@ seurat_common_merged@meta.data = seurat_common_merged@meta.data %>%
                 -peaks_snn_res.1,-seurat_clusters)
 
 plot_clusters = DimPlot(seurat_common_merged, 
-                        reduction = "umap", 
+                        reduction = "umap",
+                        label = TRUE,
                         group.by = "peaks_snn_res.0.25") + 
   ggtitle("Resolution_0.25") 
 plot_clusters
