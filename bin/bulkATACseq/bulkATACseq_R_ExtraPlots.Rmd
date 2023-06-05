@@ -1,0 +1,309 @@
+---
+title: "bulkATACseq_R_Extraplots"
+author: "Laëtitia Racine"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+date: "2023-06-05"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r, Setup, include=F}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(knitr)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(kableExtra)
+library(pheatmap)
+library(gridExtra)
+library(patchwork)
+library(ggVennDiagram)
+library(DESeq2)
+
+```
+
+```{r, Working directory}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/bulkATACseq_R_Extraplots/"))
+dir.create(path = paste0(directory, "exp/bulkATACseq_R_Extraplots/", 
+                         current_date))
+directory_output = paste0(directory, "exp/bulkATACseq_R_Extraplots/", 
+                          current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/bulkATACseq_R_Multiparametric_DifferentialAccessibility/"))
+# count_df = read.csv2(paste0(dir, "/", "readcount_df_peaks_union_allsamples.csv"), row.names=FALSE)
+count_df = read.csv2("/home/rparmentier/Bureau/Git_Differentiation_Metabolism/exp/bulkATACseq_exp_commit_0255d2601f36a88a1907dc62b938a9839e28d6c1/bulkATACseq_R_Multiparametric_DifferentialAccessibility/20230411/readcount_df_peaks_union_allsamples.csv")
+
+```
+
+# Venn diagramm
+
+All peaks, how many are shared between the conditions ?
+
+```{r}
+
+tab_venn = count_df[,str_detect(colnames(count_df), pattern = "peaks_in")]
+list_peaks = list()
+
+for (i in 1:ncol(tab_venn)) {
+  cond_time = str_extract(colnames(tab_venn)[i], pattern = "[:alnum:]+_[:digit:]{2}h")
+  temp_tab = as.data.frame(tab_venn[,i]) 
+  colnames(temp_tab) = "peak"
+  rownames(temp_tab) = rownames(tab_venn)
+  temp_tab = temp_tab %>% dplyr::filter(peak == TRUE)
+  list_peaks[[cond_time]] = rownames(temp_tab)
+}
+
+```
+
+```{r, fig.width = 16, fig.height = 18}
+
+# CTRL vs DON
+
+CTRLDON_03h = ggVennDiagram(x = list(CTRL = list_peaks[["MP_03h"]], 
+                                     DON = list_peaks[["DON_03h"]])) +
+  theme(legend.position = "none") +
+  ggtitle("03h")
+
+CTRLDON_12h = ggVennDiagram(x = list(CTRL = list_peaks[["MP_12h"]], 
+                                     DON = list_peaks[["DON_12h"]])) +
+  theme(legend.position = "none") +
+  ggtitle("12h")
+
+CTRLDON_24h = ggVennDiagram(x = list(CTRL = list_peaks[["MP_24h"]], 
+                                     DON = list_peaks[["DON_24h"]])) +
+  theme(legend.position = "none") +
+  ggtitle("24h")
+
+# CTRL vs 2DG
+
+CTRL2DG_03h = ggVennDiagram(x = list(CTRL = list_peaks[["MP_03h"]], 
+                                     DDG = list_peaks[["2DG_03h"]])) +
+  theme(legend.position = "none") +
+  ggtitle("03h")
+
+CTRL2DG_12h = ggVennDiagram(x = list(CTRL = list_peaks[["MP_12h"]], 
+                                     DDG = list_peaks[["2DG_12h"]])) +
+  theme(legend.position = "none") +
+  ggtitle("12h")
+
+CTRL2DG_24h = ggVennDiagram(x = list(CTRL = list_peaks[["MP_24h"]], 
+                                     DDG = list_peaks[["2DG_24h"]])) +
+  theme(legend.position = "none") +
+  ggtitle("24h")
+
+# CTRL vs AOA
+
+CTRLAOA_03h = ggVennDiagram(x = list(CTRL = list_peaks[["MP_03h"]], 
+                                     AOA = list_peaks[["AOA_03h"]])) +
+  theme(legend.position = "none") +
+  ggtitle("03h")
+
+CTRLAOA_12h = ggVennDiagram(x = list(CTRL = list_peaks[["MP_12h"]], 
+                                     DDG = list_peaks[["AOA_12h"]])) +
+  theme(legend.position = "none") +
+  ggtitle("12h")
+
+CTRLAOA_24h = ggVennDiagram(x = list(CTRL = list_peaks[["MP_24h"]], 
+                                     DDG = list_peaks[["AOA_24h"]])) +
+  theme(legend.position = "none") +
+  ggtitle("24h")
+
+```
+
+```{r, fig.width = 14, fig.height = 16}
+
+(CTRLDON_03h | CTRLDON_12h | CTRLDON_24h) /
+  (CTRL2DG_03h | CTRL2DG_12h | CTRL2DG_24h) /
+  (CTRLAOA_03h | CTRLAOA_12h | CTRLAOA_24h)
+
+```
+
+```{r, fig.show="hide"}
+
+ggsave(plot = (CTRLDON_03h | CTRLDON_12h | CTRLDON_24h) /
+  (CTRL2DG_03h | CTRL2DG_12h | CTRL2DG_24h) /
+  (CTRLAOA_03h | CTRLAOA_12h | CTRLAOA_24h), 
+  filename = paste0(directory_output, "Venn_diagrams.svg"),
+  height = 16, width = 14)
+
+```
+
+# Volcano of DA peaks with all peaks category 
+
+Common peaks only : we check is they are more or less accessible. 
+
+```{r, fig.show="hide"}
+
+combination = list(c("MP_03h","DON_03h"),c("MP_12h","DON_12h"), c("MP_24h","DON_24h"), 
+                   c("MP_03h","2DG_03h"),c("MP_12h","2DG_12h"), c("MP_24h","2DG_24h"),
+                   c("MP_03h","AOA_03h"),c("MP_12h","AOA_12h"), c("MP_24h","AOA_24h"))
+
+volcano_DEseq_fun = function(comb, tab_count) {
+  
+  # Extract conditions information
+  cond1 = comb[1]
+  cond2 = comb[2] 
+  color_cond = str_extract(cond2, pattern = "[:alnum:]+(?=_[:digit:])")
+  color_plot = color_code[[color_cond]]
+  name = paste0(cond1, "_vs_", cond2)
+  col_peak_cond1 = str_subset(string = colnames(tab_count), pattern = paste0("peaks_in_", cond1))
+  col_peak_cond2 = str_subset(string = colnames(tab_count), pattern = paste0("peaks_in_", cond2))
+  col_read_cond1 = str_subset(string = colnames(tab_count), 
+                              pattern = paste0(cond1, "_D[:digit:]_downsampled.bam"))
+  col_read_cond2 = str_subset(string = colnames(tab_count), 
+                              pattern = paste0(cond2, "_D[:digit:]_downsampled.bam"))
+  
+  # Extract the read counts for the two conditions
+  matrix_peaks = tab_count
+  ## put region number as rownames
+  rownames(matrix_peaks) = matrix_peaks$region
+  ## keep only the regions that correspond to peaks in both conditions
+  matrix_peaks = matrix_peaks %>% 
+    dplyr::filter(!!as.symbol(col_peak_cond1) == TRUE & !!as.symbol(col_peak_cond2) == TRUE) 
+  ## keep only the reads from the two conditions
+  matrix_peaks = matrix_peaks[colnames(matrix_peaks) %in% c(col_read_cond1, col_read_cond2)]
+  
+  # DEseq2 parameters
+  coldata <- data.frame(sample = colnames(matrix_peaks)) %>%
+    dplyr::mutate(condition = ifelse(str_detect(sample, pattern = cond1), "before", "after")) %>%
+    dplyr::mutate(type = "paired-end")
+  
+  # Normalize data with DEseq
+  dds <- DESeqDataSetFromMatrix(
+    countData = matrix_peaks,
+    colData = coldata,
+    design = ~ condition)
+  dds$condition <- relevel(dds$condition, ref = "before") 
+  dds <- DESeq(dds)
+  
+  # Extract matrix count from deseq
+  cm = data.frame(counts(dds, normalized=TRUE))
+  
+  # Extract statistics from deseq
+  res = as_tibble(results(dds)) 
+  res = res %>% 
+    dplyr::mutate(region = rownames(cm), .before = baseMean) %>%
+    dplyr::mutate(regulation = case_when(pvalue < 0.01 ~ "significative", 
+                                         pvalue > 0.01 ~ "non-significative")) %>%
+    dplyr::filter(!is.na(padj))
+
+plot1 = ggplot(res, aes(x = log2FoldChange, y = -1 * log10(pvalue))) +
+    geom_point(size = 3, alpha = 0.5, fill = NA,  color = color_plot, shape = 21, stroke = 2) +
+    geom_hline(aes(yintercept = 2), colour = "red", linetype = "dashed") +
+    geom_text(label = "p-value = 0.01", colour = "red", aes(x = -5, y = 3), size = 3) +
+    coord_cartesian(xlim = c(-7, 7), ylim = c(NA, 7.5)) + 
+    labs(subtitle = name, x = "log2(FoldChange)", y = "-log10(Pvalue)") +
+    theme(axis.line.y = element_line(color = "black"),
+          axis.line.x = element_line(color = "black"),
+          legend.position = "none",
+          axis.title = element_text(size = 10),
+          plot.subtitle = element_text(size = 14, hjust = 0.5))
+
+plot2 = ggplot(res, aes(x = log2FoldChange, y = -1 * log10(pvalue))) +
+    geom_point(size = 3, alpha = 0.5, fill = NA,  color = color_plot, shape = 21, stroke = 2) +
+    geom_hline(aes(yintercept = 1.30103), colour = "red", linetype = "dashed") +
+    geom_text(label = "p-value = 0.05", colour = "red", aes(x = -5, y = 3), size = 3) +
+    coord_cartesian(xlim = c(-7, 7), ylim = c(NA, 7.5)) + 
+    labs(subtitle = name, x = "log2(FoldChange)", y = "-log10(Pvalue)") +
+    theme(axis.line.y = element_line(color = "black"),
+          axis.line.x = element_line(color = "black"),
+          legend.position = "none",
+          axis.title = element_text(size = 10),
+          plot.subtitle = element_text(size = 14, hjust = 0.5))
+
+  ## save plot 
+  ggsave(plot1, width = 8, height = 8,
+         filename = paste0(directory_output, name, "_pval0.01_volcano.svg"))
+  ggsave(plot2, width = 8, height = 8,
+         filename = paste0(directory_output, name, "_pval0.05_volcano.svg"))
+  
+  # Output function
+  return(list(volcano_plot1 = plot1,
+              volcano_plot2 = plot2,
+              deseq_res = res,
+              matrix_count = cm))
+
+}
+
+
+list_deseq_volcano = list()
+for(i in 1:length(combination)) {
+  list_name = paste0(combination[[i]][1], "_vs_", combination[[i]][2])
+  list_deseq_volcano[[list_name]] = volcano_DEseq_fun(comb = combination[[i]], 
+                                                      tab_count = count_df)
+}
+
+```
+
+```{r, fig.width = 14, fig.height = 16}
+
+list_volcano = unlist(list_deseq_volcano, recursive=FALSE)
+list_volcano = list_volcano[str_detect(names(list_volcano), "volcano_plot")]
+
+list_volcano_001 = list_volcano[str_detect(names(list_volcano), "plot1")]
+do.call("grid.arrange", c(list_volcano_001, ncol = 3))
+
+list_volcano_005 = list_volcano[str_detect(names(list_volcano), "plot2")]
+do.call("grid.arrange", c(list_volcano_005, ncol = 3))
+
+```
+
+```{r, fig.show = "hide"}
+
+ggsave(plot = do.call("grid.arrange", c(list_volcano_001, ncol = 3)),
+       filename = paste0(directory_output, "pvalue0.01_volcano_plots.png"),
+       width = 14, height = 16)
+
+ggsave(plot = do.call("grid.arrange", c(list_volcano_005, ncol = 3)),
+       filename = paste0(directory_output, "pvalue0.05_volcano_plots.png"),
+       width = 14, height = 16)
+
+```
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric (end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results="hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
