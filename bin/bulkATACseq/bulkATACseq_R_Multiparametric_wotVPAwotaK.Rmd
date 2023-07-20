@@ -178,9 +178,24 @@ plot_pca = ggplot(data=pcaData, aes(x = PC1, y = PC2)) +
   ylab(paste0("PC2: ", percentVar[2], "% variance")) 
 plot_pca
 
+# ggsave(plot = plot_pca,
+#        filename = paste0(directory_output, "ATAC_pca_samplesWoT_VPA_aK.png"),
+#        width = 16*0.75, height = 9*0.75)
+# 
 ggsave(plot = plot_pca,
-       filename = paste0(directory_output, "ATAC_pca_samplesWoT_VPA_aK.png"),
+       filename = paste0(directory_output, "ATAC_pca_samplesWoT_VPA_aK_n1.svg"),
        width = 16*0.75, height = 9*0.75)
+ggsave(plot = plot_pca,
+       filename = paste0(directory_output, "ATAC_pca_samplesWoT_VPA_aK_n2.svg"),
+       width = 10*0.75, height = 9*0.75)
+ggsave(plot = plot_pca,
+       filename = paste0(directory_output, "ATAC_pca_samplesWoT_VPA_aK_n3.svg"),
+       width = 9*0.75, height = 9*0.75)
+
+
+ggsave(plot = plot_pca,
+       filename = paste0(directory_output, "ATAC_pca_samplesWoT_VPA_aK_n4.svg"),
+       width = 11*0.75, height = 8*0.75)
 
 ```
 
