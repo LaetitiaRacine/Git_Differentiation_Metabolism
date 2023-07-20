@@ -283,10 +283,16 @@ do.call("grid.arrange", c(list_volcano_005, ncol = 3))
 ggsave(plot = do.call("grid.arrange", c(list_volcano_001, ncol = 3)),
        filename = paste0(directory_output, "pvalue0.01_volcano_plots.png"),
        width = 14, height = 16)
+# ggsave(plot = do.call("grid.arrange", c(list_volcano_001, ncol = 3)),
+#        filename = paste0(directory_output, "pvalue0.01_volcano_plots.svg"),
+#        width = 14, height = 16)
 
 ggsave(plot = do.call("grid.arrange", c(list_volcano_005, ncol = 3)),
        filename = paste0(directory_output, "pvalue0.05_volcano_plots.png"),
        width = 14, height = 16)
+# ggsave(plot = do.call("grid.arrange", c(list_volcano_005, ncol = 3)),
+#        filename = paste0(directory_output, "pvalue0.05_volcano_plots.svg"),
+#        width = 14, height = 16)
 
 ```
 
