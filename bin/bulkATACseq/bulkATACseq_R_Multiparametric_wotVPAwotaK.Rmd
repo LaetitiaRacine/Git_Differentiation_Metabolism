@@ -1,0 +1,267 @@
+---
+title: "bulkATACseq_R_Multiparametric_wotVPAwotaK"
+author: "Laëtitia Racine"
+date: "2023-03-27"
+subtitle: "Last modification : `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float: false
+    theme: journal
+---
+
+<style>
+body {text-align: justify}
+</style>
+
+```{r, Setup, include=F}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+```
+
+```{r, Dependencies}
+
+library(knitr)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(kableExtra)
+library(DESeq2)
+library(Rsubread)
+library(tidyverse) # column_to_rownames() function
+library(pheatmap)
+
+```
+
+```{r, Working directory}
+
+# Load working directories
+directory = str_extract(string = getwd(), pattern = "[:graph:]+(?=bin)")
+start_time = Sys.time()
+
+# Create a unique folder for output corresponding to the date of the day
+current_date = format(Sys.time(), "%Y%m%d")
+dir.create(path = paste0(directory, "exp/bulkATACseq_R_Multiparametric_wotVPA_wotaK/"))
+dir.create(path = paste0(directory, "exp/bulkATACseq_R_Multiparametric_wotVPA_wotaK/", 
+                         current_date))
+directory_output = paste0(directory, "exp/bulkATACseq_R_Multiparametric_wotVPA_wotaK/", 
+                          current_date, "/")
+
+# Load external script with functions and constants
+source(file = paste0(directory, "bin/", "functions_constants.R"))
+
+```
+
+Analysis based on : https://tobiasrausch.com/courses/atac/atac-seq-data-analysis.html  
+Same analysis as in the first part of bulkATACseq_R_Multiparametric_DifferentialAccessibility.Rmd.  
+We want to calculate the PCA without the VPA sample.  
+We use the count_df table as input and we remove VPA information.  
+
+```{r, Input loading}
+
+dir = pic_last_dir(paste0(directory, "exp/bulkATACseq_R_Multiparametric_DifferentialAccessibility/"))
+count_df = read.csv2(paste0(dir, "/readcount_df_peaks_union_allsamples.csv"))
+count_df = count_df %>% dplyr::select(!str_subset(colnames(count_df), "VPA"))
+count_df = count_df %>% dplyr::select(!str_subset(colnames(count_df), "aK"))
+# automatix X is added when object is loaded
+colnames(count_df) = str_replace_all(string = colnames(count_df), pattern = "X2DG", replacement = "2DG")
+
+```
+
+
+<br><br><br>
+
+
+# Perform DataNormalization with DEseq
+
+https://www.rdocumentation.org/packages/DESeq2/versions/1.12.3/topics/DESeqDataSet-class    
+https://tobiasrausch.com/courses/atac/atac-seq-data-analysis.html#data-normalization    
+```{r}
+
+# Extract the matrix with number of reads in each merged donors
+cols_to_keep = str_subset(string = colnames(count_df), 
+                          pattern = "D[:digit:].D[:digit:]_downsampled.bam")
+counts = count_df[ , cols_to_keep]
+
+## Extract information in the colnames
+coldata = data.frame(file = cols_to_keep, 
+                     name = unlist(str_extract_all(cols_to_keep, 
+                                                   pattern=".+(?=_downsampled.bam)"))) %>%
+  dplyr::mutate(donors = str_extract(name, pattern = "D[:digit:].+")) %>%
+  dplyr::mutate(condtime = paste0(str_extract(name, pattern = ".+(?=h)"), "h")) %>% 
+  tidyr::separate(col = condtime, into = c("condition", "time"), remove = TRUE) 
+coldata = coldata %>%
+  tidyr::unite(condition_time, condition, time, sep = "_", remove = FALSE) %>%
+  remove_rownames %>%
+  column_to_rownames(var = "file") %>%
+  dplyr::select(-name)
+
+# Data normalization with DEseq
+dds = DESeqDataSetFromMatrix(
+  countData = counts, 
+  colData = coldata, 
+  design = ~ condition)
+dds = DESeq(dds)
+saveRDS(dds, paste0(directory_output, "DEseq_readcount_union_allsamples.rds"))
+
+# Organize DEseq results in a table
+cm = data.frame(counts(dds, normalized=TRUE)) %>%
+  tibble::rownames_to_column("region") %>%
+  tidyr::separate(region, c("seqnames", "start", "end"), remove = FALSE) %>%
+  column_to_rownames("region")
+colnames(cm) = str_replace_all(colnames(cm), pattern = "X2DG", replacement = "2DG")
+write.csv2(x = cm, row.names = FALSE,
+           file = paste0(directory_output, "DEseq_readcount_df_union_allsamples.csv"))
+
+# Visualize the table 
+cm[1:20, ] %>%
+  kable(caption = "First 20 rows of the 'cm' table") %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "250px")
+
+```
+
+
+# Principal Component Analysis (PCA)
+
+https://tobiasrausch.com/courses/atac/atac-seq-data-analysis.html#principal-component-analysis-pca  
+
+<br>
+
+**Choice of PC for the plot**  
+We want to select the PCs that explain the most the variance.   
+```{r}
+
+pca = prcomp(t(cm[,-c(1:3)]))
+print(summary(pca))
+pcaData = as.data.frame(pca$x)
+pcaData$sample=rownames(pcaData)
+coldata = coldata %>% rownames_to_column(var = "sample")
+pcaData=merge(pcaData, coldata)
+percentVar = round(100*(pca$sdev^2/sum(pca$sdev^2)))
+
+varexp = data.frame(x=1:length(percentVar), y=percentVar)
+varexp$x = factor(varexp$x)
+ggplot(data=varexp, aes(x=x, y=y)) + 
+  geom_bar(stat="identity") + 
+  xlab("Principal Component") + 
+  ylab("Proportion of variation (%)")
+
+```
+We choose PC1 and PC2.
+
+<br>
+
+**Plot the PCA**
+```{r}
+ 
+plot_pca = ggplot(data=pcaData, aes(x = PC1, y = PC2)) +
+  geom_point(aes(colour = condition, shape = time), size=6) +
+  scale_color_manual(values = color_code, limits = force) +
+  scale_shape_manual(values=c(15, 16, 17, 7)) +
+  ggtitle("PCA on normalized read counts from union of all samples") +
+  theme(legend.position = "right",
+        plot.title = element_text(hjust = 0.5, face = "bold", colour= "black", size = 16),
+        strip.text.x = element_text(size=11, color="black", face="bold.italic"),
+        axis.line.y = element_line(colour = "black"),
+        axis.text.y = element_text(size = 11, colour = "black"),
+        axis.ticks.y = element_line() ,
+        axis.title.y = element_text(vjust = 1 ,size = 14),
+        axis.title.x = element_text(vjust = 1 ,size = 14),
+        axis.text.x = element_text(size = 11, colour = "black"),
+        axis.ticks = element_blank()) +
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) 
+plot_pca
+
+ggsave(plot = plot_pca,
+       filename = paste0(directory_output, "ATAC_pca_samplesWoT_VPA_aK.png"),
+       width = 16*0.75, height = 9*0.75)
+
+```
+
+Comment : Time point 00h, 03h and 12h are separated by peaks from PC1. For those time points, the different conditions are really close to each other. The conditions start to differ at 24h, they are separated on the plot by peaks from PC2 mostly but also PC1.
+
+<br>
+
+**Loadings from each PCs**  
+Which peaks contribute the most to the separation of the samples ?  
+```{r}
+
+# Peaks contribution for each PC
+loadings = abs(pca$rotation)
+contribution = as.data.frame(sweep(loadings, 2, colSums(loadings), "/"))
+
+# 500 peaks with the highest contribution for PC1
+pc1_500peaks = contribution %>% dplyr::arrange(desc(PC1))
+pc1_500peaks = rownames(pc1_500peaks[1:500,])
+
+# 500 peaks with the highest contribution for PC2
+pc2_500peaks = contribution %>% dplyr::arrange(desc(PC2))
+pc2_500peaks = rownames(pc2_500peaks[1:500,])
+
+# list of interesting peaks for all samples
+pc1_pc2_peaks = intersect(pc1_500peaks, pc2_500peaks)
+pc1_only_peaks = setdiff(pc1_500peaks, pc2_500peaks)
+pc2_only_peaks = setdiff(pc1_500peaks, pc2_500peaks)
+
+```
+
+<br>
+
+## Peaks investigation 
+
+**Heatmap on the 500 peaks with the highest loading for PC1 and PC2**
+```{r, fig.height=16, fig.width = 8, results="hold"}
+
+# Prepare dataframe for heatmap
+cm_heatmap = cm[, -c(1:3)]
+colnames(cm_heatmap) = str_replace_all(colnames(cm_heatmap),"(.D[:digit:])+_downsampled.bam","")
+cm_heatmap = cm_heatmap %>%
+  dplyr::select(Xvivo_00h, MP_03h, MP_12h, MP_24h, DON_03h,
+                DON_12h, DON_24h, '2DG_03h', '2DG_12h', '2DG_24h',
+                AOA_03h, AOA_12h, AOA_24h, aK_24h)
+# heatmap on peaks from PC1
+mat_pc1 = cm_heatmap %>% dplyr::filter(row.names(cm_heatmap) %in% pc1_only_peaks)
+mat_pc1 = mat_pc1 - rowMeans(mat_pc1)
+pheatmap(mat_pc1, scale="row", cluster_rows = FALSE, cluster_cols = FALSE, fontsize_row = 5)
+
+# heatmap on peaks from PC2
+mat_pc2 = cm_heatmap %>% dplyr::filter(row.names(cm_heatmap) %in% pc2_only_peaks)
+mat_pc2 = mat_pc2 - rowMeans(mat_pc2)
+pheatmap(mat_pc2, scale="row", cluster_rows = FALSE, cluster_cols = FALSE, fontsize_row = 5)
+
+# heatmap on peaks from PC1 and PC2
+mat_pc1_pc2 = cm_heatmap %>% dplyr::filter(row.names(cm_heatmap) %in% pc1_pc2_peaks)
+mat_pc1_pc2 = mat_pc1_pc2 - rowMeans(mat_pc1_pc2)
+pheatmap(mat_pc1_pc2, scale="row", cluster_rows=FALSE, cluster_cols=FALSE, fontsize_row=5)
+
+```
+
+
+<br><br><br>
+
+
+
+```{r, Rsession}
+
+end_time = Sys.time()
+cat("Total execution time : ", as.numeric(end_time - start_time, units = "mins"), "minutes")
+
+# Show package version
+sessionInfo()
+
+```
+
+```{r, results="hide"}
+
+# Clean working space and memory 
+rm(list = ls())
+gc()
+
+```
+
