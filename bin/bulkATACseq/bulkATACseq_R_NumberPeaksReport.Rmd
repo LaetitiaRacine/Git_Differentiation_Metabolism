@@ -229,9 +229,9 @@ nbpeaks_percond_filter = ggplot(df_peaks_annotation_filter,
 grid.arrange(grobs = list(nbpeaks_percond_filter, nbpeaks_pertime_filter), ncol = 2, nrow = 1)
 
 # save plots
-ggsave(plot = nbpeaks_pertime, width = 16*0.75, height = 9*0.75,
+ggsave(plot = nbpeaks_pertime_filter, width = 16*0.75, height = 9*0.75,
        filename = paste0(directory_output, "plot_nbpeaks_pertime_filter.svg"))
-ggsave(plot = nbpeaks_percond, width = 16*0.75, height = 9*0.75,
+ggsave(plot = nbpeaks_percond_filter, width = 16*0.75, height = 9*0.75,
        filename = paste0(directory_output, "plot_nbpeaks_percond_filter.svg"))
 
 ```
