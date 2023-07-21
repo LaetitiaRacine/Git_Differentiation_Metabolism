@@ -500,6 +500,12 @@ saveRDS(merged_prep, paste0(directory_output, "merged_all_prep_1-40dim.rds"))
 
 The object *merged_all_prep_1-40dim.rds* is ready to use for further downstream analysis. It contains merged controls (with same ident) and merged drugs condition (with different ident). The normalized matrix can be found in the SCT assay and the clusters are the optimal ones. The cluster information is available in the *cluster metadata column* for each cell.   
   
+```{r, for article}
+res_choice_light = DimPlot(merged_all, label = FALSE, reduction = "umap", group.by = "clusters")
+ggsave(plot = res_choice_light,
+       filename = paste0(directory_output, "umap_clusters_res_choice_light.svg"),
+       height = 8, width = 6)
+```
   
 # Analysis on the SCT normalized object WITH cell cycle regression
 
