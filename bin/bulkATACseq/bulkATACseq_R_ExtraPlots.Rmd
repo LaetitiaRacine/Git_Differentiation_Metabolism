@@ -296,6 +296,104 @@ ggsave(plot = do.call("grid.arrange", c(list_volcano_005, ncol = 3)),
 
 ```
 
+
+# Volcano plots format épuré pour article
+
+```{r, fig.show="hide"}
+
+combination = list(c("MP_03h","DON_03h"),c("MP_12h","DON_12h"), c("MP_24h","DON_24h"), 
+                   c("MP_03h","2DG_03h"),c("MP_12h","2DG_12h"), c("MP_24h","2DG_24h"),
+                   c("MP_03h","AOA_03h"),c("MP_12h","AOA_12h"), c("MP_24h","AOA_24h"))
+
+volcano_DEseq_light_fun = function(comb, tab_count) {
+  
+  # Extract conditions information
+  cond1 = comb[1]
+  cond2 = comb[2] 
+  color_cond = str_extract(cond2, pattern = "[:alnum:]+(?=_[:digit:])")
+  color_plot = color_code[[color_cond]]
+  name = paste0(cond1, "_vs_", cond2)
+  col_peak_cond1 = str_subset(string = colnames(tab_count), pattern = paste0("peaks_in_", cond1))
+  col_peak_cond2 = str_subset(string = colnames(tab_count), pattern = paste0("peaks_in_", cond2))
+  col_read_cond1 = str_subset(string = colnames(tab_count), 
+                              pattern = paste0(cond1, "_D[:digit:]_downsampled.bam"))
+  col_read_cond2 = str_subset(string = colnames(tab_count), 
+                              pattern = paste0(cond2, "_D[:digit:]_downsampled.bam"))
+  
+  # Extract the read counts for the two conditions
+  matrix_peaks = tab_count
+  ## put region number as rownames
+  rownames(matrix_peaks) = matrix_peaks$region
+  ## keep only the regions that correspond to peaks in both conditions
+  matrix_peaks = matrix_peaks %>% 
+    dplyr::filter(!!as.symbol(col_peak_cond1) == TRUE & !!as.symbol(col_peak_cond2) == TRUE) 
+  ## keep only the reads from the two conditions
+  matrix_peaks = matrix_peaks[colnames(matrix_peaks) %in% c(col_read_cond1, col_read_cond2)]
+  
+  # DEseq2 parameters
+  coldata <- data.frame(sample = colnames(matrix_peaks)) %>%
+    dplyr::mutate(condition = ifelse(str_detect(sample, pattern = cond1), "before", "after")) %>%
+    dplyr::mutate(type = "paired-end")
+  
+  # Normalize data with DEseq
+  dds <- DESeqDataSetFromMatrix(
+    countData = matrix_peaks,
+    colData = coldata,
+    design = ~ condition)
+  dds$condition <- relevel(dds$condition, ref = "before") 
+  dds <- DESeq(dds)
+  
+  # Extract matrix count from deseq
+  cm = data.frame(counts(dds, normalized=TRUE))
+  
+  # Extract statistics from deseq
+  res = as_tibble(results(dds)) 
+  res = res %>% 
+    dplyr::mutate(region = rownames(cm), .before = baseMean) %>%
+    dplyr::mutate(regulation = case_when(pvalue < 0.01 ~ "significative", 
+                                         pvalue > 0.01 ~ "non-significative")) %>%
+    dplyr::filter(!is.na(padj))
+
+plot = ggplot(res, aes(x = log2FoldChange, y = -1 * log10(pvalue))) +
+    geom_point(size = 3, alpha = 0.5, fill = NA,  color = color_plot, shape = 21, stroke = 2) +
+    geom_hline(aes(yintercept = 1.30103), colour = "red", linetype = "dashed") +
+    coord_cartesian(xlim = c(-7, 7), ylim = c(NA, 7.5)) + 
+  theme(axis.line.y = element_line(color = "black"),
+          axis.line.x = element_line(color = "black"),
+          axis.text.x = element_blank(),
+          axis.text.y = element_blank(),
+          legend.position = "none",
+          axis.title = element_blank(),
+          plot.title = element_blank())
+
+  ## save plot 
+  ggsave(plot, width = 8, height = 8,
+         filename = paste0(directory_output, name, "_pval0.05_volcano_light.png"))
+  
+  # Output function
+  return(list(volcano_plot = plot,
+              deseq_res = res,
+              matrix_count = cm))
+
+}
+
+
+list_deseq_volcano_light = list()
+for(i in 1:length(combination)) {
+  list_name = paste0(combination[[i]][1], "_vs_", combination[[i]][2])
+  list_deseq_volcano_light[[list_name]] = volcano_DEseq_light_fun(comb = combination[[i]], 
+                                                      tab_count = count_df)
+}
+
+```
+
+
+
+
+
+
+
+
 ```{r, Rsession}
 
 end_time = Sys.time()
