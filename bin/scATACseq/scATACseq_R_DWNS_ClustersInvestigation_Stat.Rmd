@@ -281,6 +281,33 @@ bp_cond
 
 ```
 
+
+```{r}
+
+temp_clust_nb = tab_number_norm[-nrow(tab_number_norm),-ncol(tab_number_norm)]
+temp_clust_nb = temp_clust_nb %>% tidyr::pivot_longer(cols = 2:ncol(temp_clust_nb),
+                                                       names_to = "cluster",
+                                                       values_to = "cell_number")
+temp_clust_nb$cluster =  factor(temp_clust_nb$cluster,
+                             levels = c("cluster_0", "cluster_1", "cluster_2", 
+                                        "cluster_3", "cluster_4", "cluster_5",
+                                        "cluster_6", "cluster_7", "cluster_8",
+                                        "cluster_9", "cluster_10", "cluster_11", 
+                                        "cluster_12", "cluster_13", "cluster_14",
+                                        "cluster_15"))
+
+bp_clust_nb = ggplot(temp_clust_nb, aes(x=cluster, y=cell_number, fill=condition))+
+  geom_bar(width = 0.8, stat = "identity") +
+  scale_fill_manual(values = color_code, limits = force) +
+  coord_flip()
+bp_clust_nb
+
+ggsave(plot = bp_clust_nb, width = 8, height = 12,
+       filename = paste0(directory_output, "barplot_clust_nbcellcomp.svg"))
+
+```
+
+
 ```{r, pie plots1, fig.width = 14, fig.height = 24}
 
 ###########
