@@ -819,6 +819,39 @@ saveRDS(object = merged_all, paste0(directory_output, "merged_all_CITEgroups.rds
 
 ```
 
+
+```{r, figure article UMAP, fig.width = 24, fig.height = 6}
+
+umap_cluster_light = DimPlot(merged_all, 
+                       label = FALSE, 
+                       reduction = "umap", 
+                       group.by = "clusters") +
+  NoLegend() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        title = element_blank())
+
+umap_two_cd34_light = DimPlot(merged_all,
+                    reduction = "umap", 
+                    group.by = "CD34_two_groups") +
+  NoLegend() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        title = element_blank())
+
+umap_two_cd133_light = DimPlot(merged_all,
+                     reduction = "umap", 
+                     group.by = "CD133_two_groups") +
+  NoLegend() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        title = element_blank())
+
+ggsave(plot = umap_cluster_light|umap_two_cd34_light|umap_two_cd133_light, width = 24, height = 6,
+       filename = paste0(directory_output, "umap_adt_clusters_twogroups_light.png"))
+
+```
+
 ```{r, Rsession}
 
 end_time = Sys.time()
